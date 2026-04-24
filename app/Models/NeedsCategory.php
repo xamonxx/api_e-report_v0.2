@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PendingConfirmation;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -9,7 +10,11 @@ class NeedsCategory extends Model
 {
     use HasFactory;
 
+    public const OTHER_OPTION_LABEL = 'Lain-lain';
+
     public const DISPLAY_NAMES = [
+        PendingConfirmation::LABEL,
+        self::OTHER_OPTION_LABEL,
         'Kitchenset',
         'Wall Moulding',
         'Backdrop TV',

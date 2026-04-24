@@ -3,6 +3,8 @@
 namespace App\Http\Requests;
 
 use App\Models\Consultation;
+use App\Models\NeedsCategory;
+use App\Support\PendingConfirmation;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -11,6 +13,8 @@ class ConsultationRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
+        $pendingConfirmationCategoryId = $this->resolveNeedsCategoryId(PendingConfirmation::LABEL);
+        $otherNeedsCategoryId = $this->resolveNeedsCategoryId(NeedsCategory::OTHER_OPTION_LABEL);
         $productIds = $this->input('needs_category_ids');
 
         if ($productIds === null && $this->filled('needs_category_id')) {
@@ -28,6 +32,23 @@ class ConsultationRequest extends FormRequest
             ->values()
             ->all();
 
+        if ($productIds === [] && $pendingConfirmationCategoryId) {
+            $productIds = [$pendingConfirmationCategoryId];
+        }
+
+        if (
+            $pendingConfirmationCategoryId
+            && count($productIds) > 1
+            && in_array($pendingConfirmationCategoryId, $productIds, true)
+        ) {
+            $productIds = array_values(
+                array_filter(
+                    $productIds,
+                    fn (int $id) => $id !== $pendingConfirmationCategoryId
+                )
+            );
+        }
+
         $trimmed = function ($value) {
             if ($value === null) {
                 return null;
@@ -38,13 +59,22 @@ class ConsultationRequest extends FormRequest
             return $clean === '' ? null : $clean;
         };
 
+        $province = $trimmed($this->input('province')) ?? PendingConfirmation::LABEL;
+        $city = $trimmed($this->input('city')) ?? PendingConfirmation::LABEL;
+        $district = $trimmed($this->input('district')) ?? PendingConfirmation::LABEL;
+        $productDetails = $trimmed($this->input('product_details'));
+
+        if (! $otherNeedsCategoryId || ! in_array($otherNeedsCategoryId, $productIds, true)) {
+            $productDetails = null;
+        }
+
         $this->merge([
             'client_name' => $trimmed($this->input('client_name')),
-            'province' => $trimmed($this->filled('province') ? $this->input('province') : null),
-            'city' => $trimmed($this->filled('city') ? $this->input('city') : null),
-            'district' => $trimmed($this->filled('district') ? $this->input('district') : null),
+            'province' => $province,
+            'city' => $city,
+            'district' => $district,
             'address' => $trimmed($this->filled('address') ? $this->input('address') : null),
-            'product_details' => $trimmed($this->filled('product_details') ? $this->input('product_details') : null),
+            'product_details' => $productDetails,
             'notes' => $trimmed($this->filled('notes') ? $this->input('notes') : null),
             'needs_category_ids' => $productIds,
         ]);
@@ -105,7 +135,14 @@ class ConsultationRequest extends FormRequest
             ],
             'needs_category_ids' => ['required', 'array', 'min:1'],
             'needs_category_ids.*' => ['required', 'integer', 'exists:needs_categories,id'],
-            'product_details'    => ['nullable', 'string', 'min:3', 'max:1500', 'regex:/^[^<>]+$/'],
+            'product_details'    => [
+                Rule::requiredIf(fn () => $this->hasOtherNeedsCategorySelected()),
+                'nullable',
+                'string',
+                'min:3',
+                'max:1500',
+                'regex:/^[^<>]+$/',
+            ],
             'status_category_id' => 'required|exists:status_categories,id',
             'notes'              => ['nullable', 'string', 'min:3', 'max:1000', 'regex:/^[^<>]+$/'], // No HTML tags
             'consultation_date'  => 'nullable|date',
@@ -161,10 +198,33 @@ class ConsultationRequest extends FormRequest
             'needs_category_ids.array'    => 'Format nama produk tidak valid.',
             'needs_category_ids.min'      => 'Minimal satu nama produk wajib dipilih.',
             'needs_category_ids.*.exists' => 'Nama produk yang dipilih tidak valid.',
+            'product_details.required'    => 'Detaile Keterangan wajib diisi ketika produk Lain-lain dipilih.',
             'product_details.regex'       => 'Detail produk tidak boleh mengandung tag HTML atau simbol < >.',
             'status_category_id.required' => 'Status wajib dipilih.',
             'status_category_id.exists'   => 'Status tidak valid.',
         ];
+    }
+
+    private function hasOtherNeedsCategorySelected(): bool
+    {
+        $otherNeedsCategoryId = $this->resolveNeedsCategoryId(NeedsCategory::OTHER_OPTION_LABEL);
+
+        if (! $otherNeedsCategoryId) {
+            return false;
+        }
+
+        return collect($this->input('needs_category_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->contains($otherNeedsCategoryId);
+    }
+
+    private function resolveNeedsCategoryId(string $name): ?int
+    {
+        $id = NeedsCategory::query()
+            ->where('name', $name)
+            ->value('id');
+
+        return $id ? (int) $id : null;
     }
 
     private function duplicateCheckPayload(): array

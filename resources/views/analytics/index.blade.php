@@ -298,6 +298,97 @@
     </div>
 </div>
 
+@php
+    $pendingConfirmationCards = [
+        [
+            'eyebrow' => 'Provinsi',
+            'title' => '% Belum Konfirmasi',
+            'description' => 'Lead yang provinsinya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
+            'count_label' => 'Provinsi Belum Confirm',
+            'icon' => 'public',
+            'border_class' => 'border-amber-500/15',
+            'eyebrow_class' => 'text-amber-700',
+            'icon_wrap_class' => 'bg-amber-500/10',
+            'icon_class' => 'text-amber-700',
+            'count_class' => 'text-amber-700',
+            'bar_class' => 'bg-amber-500',
+            'data' => $pendingConfirmationStats['province'] ?? ['count' => 0, 'percentage' => 0],
+        ],
+        [
+            'eyebrow' => 'Kota / Kabupaten',
+            'title' => '% Belum Konfirmasi',
+            'description' => 'Lead yang kota/kabupatennya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
+            'count_label' => 'Kota Belum Confirm',
+            'icon' => 'location_city',
+            'border_class' => 'border-sky-500/15',
+            'eyebrow_class' => 'text-sky-700',
+            'icon_wrap_class' => 'bg-sky-500/10',
+            'icon_class' => 'text-sky-700',
+            'count_class' => 'text-sky-700',
+            'bar_class' => 'bg-sky-500',
+            'data' => $pendingConfirmationStats['city'] ?? ['count' => 0, 'percentage' => 0],
+        ],
+        [
+            'eyebrow' => 'Kecamatan',
+            'title' => '% Belum Konfirmasi',
+            'description' => 'Lead yang kecamatannya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
+            'count_label' => 'Kecamatan Belum Confirm',
+            'icon' => 'pin_drop',
+            'border_class' => 'border-violet-500/15',
+            'eyebrow_class' => 'text-violet-700',
+            'icon_wrap_class' => 'bg-violet-500/10',
+            'icon_class' => 'text-violet-700',
+            'count_class' => 'text-violet-700',
+            'bar_class' => 'bg-violet-500',
+            'data' => $pendingConfirmationStats['district'] ?? ['count' => 0, 'percentage' => 0],
+        ],
+        [
+            'eyebrow' => 'Kebutuhan Produk',
+            'title' => '% Belum Konfirmasi',
+            'description' => 'Lead yang produk kebutuhannya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
+            'count_label' => 'Produk Belum Confirm',
+            'icon' => 'assignment',
+            'border_class' => 'border-rose-500/15',
+            'eyebrow_class' => 'text-rose-700',
+            'icon_wrap_class' => 'bg-rose-500/10',
+            'icon_class' => 'text-rose-700',
+            'count_class' => 'text-rose-700',
+            'bar_class' => 'bg-rose-500',
+            'data' => $pendingConfirmationStats['product'] ?? ['count' => 0, 'percentage' => 0],
+        ],
+    ];
+@endphp
+
+<div class="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+    @foreach($pendingConfirmationCards as $card)
+    <div class="bg-surface-container-lowest p-6 sm:p-7 rounded-2xl shadow-sm border {{ $card['border_class'] }} animate-fade-in">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <div class="text-[10px] font-bold uppercase tracking-[0.18em] {{ $card['eyebrow_class'] }}">{{ $card['eyebrow'] }}</div>
+                <h3 class="mt-2 text-xl font-bold font-headline text-on-surface">{{ $card['title'] }}</h3>
+                <p class="mt-1 text-xs text-on-surface-variant">{{ $card['description'] }}</p>
+            </div>
+            <div class="rounded-2xl p-3 {{ $card['icon_wrap_class'] }} {{ $card['icon_class'] }}">
+                <x-icon name="{{ $card['icon'] }}" class="w-6 h-6" />
+            </div>
+        </div>
+        <div class="mt-6 flex items-end justify-between gap-4">
+            <div>
+                <div class="text-4xl font-extrabold font-headline text-on-surface">{{ number_format((float) ($card['data']['percentage'] ?? 0), 1) }}%</div>
+                <div class="mt-2 text-sm font-semibold text-on-surface">{{ number_format($card['data']['count'] ?? 0) }} dari {{ number_format($totalLeads) }} lead</div>
+            </div>
+            <div class="rounded-xl bg-surface-container-low px-3 py-2 text-right">
+                <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{{ $card['count_label'] }}</div>
+                <div class="mt-1 text-lg font-extrabold {{ $card['count_class'] }}">{{ number_format($card['data']['count'] ?? 0) }}</div>
+            </div>
+        </div>
+        <div class="mt-5 h-2.5 w-full overflow-hidden rounded-full bg-surface-container-high">
+            <div class="h-full rounded-full transition-all duration-700 {{ $card['bar_class'] }}" style="width: {{ min((float) ($card['data']['percentage'] ?? 0), 100) }}%;"></div>
+        </div>
+    </div>
+    @endforeach
+</div>
+
 @if($insights->isNotEmpty())
 <div class="mt-8 rounded-2xl border border-surface-container-low bg-surface-container-lowest p-6 sm:p-8 shadow-sm">
     <div class="mb-4">

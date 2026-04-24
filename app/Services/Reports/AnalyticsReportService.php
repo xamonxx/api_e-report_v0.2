@@ -8,6 +8,7 @@ use App\Models\Consultation;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Models\User;
+use App\Support\PendingConfirmation;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -44,6 +45,7 @@ class AnalyticsReportService
         $rawRows = $this->buildRawRows($query);
         $trendSeries = $this->buildTrendSeries($query, $period);
         $dataQuality = $this->buildDataQuality($query, $period, $totalLeads);
+        $pendingConfirmationStats = $this->buildPendingConfirmationStats($query, $totalLeads);
         $funnel = $this->buildFunnel($totalLeads, $totalSurveys, $totalDeals);
         $topPerformers = $this->buildTopPerformers(
             $statusDistribution,
@@ -79,6 +81,7 @@ class AnalyticsReportService
             'adminRanking' => $adminRanking,
             'trendSeries' => $trendSeries,
             'dataQuality' => $dataQuality,
+            'pendingConfirmationStats' => $pendingConfirmationStats,
             'funnel' => $funnel,
             'topPerformers' => $topPerformers,
             'summaryStats' => $summaryStats,
@@ -157,7 +160,7 @@ class AnalyticsReportService
         $distribution = $items->reduce(function (array $carry, $value) {
             $label = $this->cleanLocationLabel($value);
 
-            if ($label === null) {
+            if ($label === null || $this->isPendingConfirmationValue($label)) {
                 return $carry;
             }
 
@@ -400,12 +403,22 @@ class AnalyticsReportService
     {
         $rows = (clone $query)->get(['province', 'city', 'notes', 'phone', 'created_by', 'consultation_date', 'updated_at']);
 
-        $provinceFilled = $rows->filter(fn ($row) => filled(trim((string) $row->province)))->count();
-        $cityFilled = $rows->filter(fn ($row) => filled(trim((string) $row->city)))->count();
+        $provinceFilled = $rows->filter(fn ($row) => $this->isConfirmedLocationValue($row->province))->count();
+        $cityFilled = $rows->filter(fn ($row) => $this->isConfirmedLocationValue($row->city))->count();
         $notesFilled = $rows->filter(fn ($row) => filled(trim((string) $row->notes)))->count();
-        $locationComplete = $rows->filter(fn ($row) => filled(trim((string) $row->province)) && filled(trim((string) $row->city)))->count();
-        $uniqueProvinces = $rows->pluck('province')->filter()->map(fn ($value) => trim((string) $value))->unique()->count();
-        $uniqueCities = $rows->pluck('city')->filter()->map(fn ($value) => trim((string) $value))->unique()->count();
+        $locationComplete = $rows->filter(
+            fn ($row) => $this->isConfirmedLocationValue($row->province) && $this->isConfirmedLocationValue($row->city)
+        )->count();
+        $uniqueProvinces = $rows->pluck('province')
+            ->map(fn ($value) => $this->cleanLocationLabel($value))
+            ->filter(fn ($value) => $value !== null && ! $this->isPendingConfirmationValue($value))
+            ->unique(fn ($value) => $this->normalizeLocation($value))
+            ->count();
+        $uniqueCities = $rows->pluck('city')
+            ->map(fn ($value) => $this->cleanLocationLabel($value))
+            ->filter(fn ($value) => $value !== null && ! $this->isPendingConfirmationValue($value))
+            ->unique(fn ($value) => $this->normalizeLocation($value))
+            ->count();
         $activeAdmins = $rows->pluck('created_by')->filter()->unique()->count();
         $activeDays = $rows->pluck('consultation_date')->filter()->map(fn ($value) => Carbon::parse($value)->toDateString())->unique()->count();
         $duplicatePhones = $rows->pluck('phone')
@@ -434,6 +447,69 @@ class AnalyticsReportService
             'duplicate_phone_rows' => $duplicatePhones,
             'latest_update' => $latestUpdate ? Carbon::parse($latestUpdate)->format('d/m/Y H:i') : '-',
             'period_days' => $period['start']->diffInDays($period['end']) + 1,
+        ];
+    }
+
+    private function buildPendingConfirmationStats(Builder $query, int $totalLeads): array
+    {
+        $pendingConfirmationCategoryId = NeedsCategory::query()
+            ->where('name', PendingConfirmation::LABEL)
+            ->value('id');
+
+        $provinceCount = (clone $query)
+            ->where(fn (Builder $builder) => $this->applyPendingConfirmationConstraint($builder, 'province'))
+            ->count();
+
+        $cityCount = (clone $query)
+            ->where(fn (Builder $builder) => $this->applyPendingConfirmationConstraint($builder, 'city'))
+            ->count();
+
+        $districtCount = (clone $query)
+            ->where(fn (Builder $builder) => $this->applyPendingConfirmationConstraint($builder, 'district'))
+            ->count();
+
+        $productCount = 0;
+
+        if ($pendingConfirmationCategoryId) {
+            if (Consultation::hasNeedsCategoryPivot()) {
+                $productCount = (clone $query)
+                    ->where(function (Builder $builder) use ($pendingConfirmationCategoryId) {
+                        $builder->where('needs_category_id', $pendingConfirmationCategoryId)
+                            ->orWhereHas(
+                                'needsCategories',
+                                fn (Builder $relationQuery) => $relationQuery->where('needs_categories.id', $pendingConfirmationCategoryId)
+                            );
+                    })
+                    ->distinct()
+                    ->count('consultations.id');
+            } else {
+                $productCount = (clone $query)
+                    ->where('needs_category_id', $pendingConfirmationCategoryId)
+                    ->count();
+            }
+        }
+
+        return [
+            'province' => [
+                'count' => $provinceCount,
+                'percentage' => $this->toRate($provinceCount, $totalLeads),
+                'label' => PendingConfirmation::LABEL,
+            ],
+            'city' => [
+                'count' => $cityCount,
+                'percentage' => $this->toRate($cityCount, $totalLeads),
+                'label' => PendingConfirmation::LABEL,
+            ],
+            'district' => [
+                'count' => $districtCount,
+                'percentage' => $this->toRate($districtCount, $totalLeads),
+                'label' => PendingConfirmation::LABEL,
+            ],
+            'product' => [
+                'count' => $productCount,
+                'percentage' => $this->toRate($productCount, $totalLeads),
+                'label' => PendingConfirmation::LABEL,
+            ],
         ];
     }
 
@@ -643,6 +719,29 @@ class AnalyticsReportService
         $label = trim(preg_replace('/\s+/', ' ', $value));
 
         return $label !== '' ? $label : null;
+    }
+
+    private function isConfirmedLocationValue(?string $value): bool
+    {
+        $label = $this->cleanLocationLabel($value);
+
+        return $label !== null && ! $this->isPendingConfirmationValue($label);
+    }
+
+    private function isPendingConfirmationValue(?string $value): bool
+    {
+        $label = $this->cleanLocationLabel($value);
+
+        if ($label === null) {
+            return false;
+        }
+
+        return $this->normalizeLocation($label) === $this->normalizeLocation(PendingConfirmation::LABEL);
+    }
+
+    private function applyPendingConfirmationConstraint(Builder $query, string $column): void
+    {
+        $query->whereRaw("LOWER(TRIM(COALESCE({$column}, ''))) = ?", [mb_strtolower(PendingConfirmation::LABEL)]);
     }
 
     private function normalizeLocation(?string $value): string

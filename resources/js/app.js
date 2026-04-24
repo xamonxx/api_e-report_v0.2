@@ -420,6 +420,15 @@ window.modalLocationAutoFill = function modalLocationAutoFill(initialCity = '', 
             this.showDistrictSuggestions = false;
             this.districtSuggestions = [];
         },
+        setPendingConfirmation(label = 'Belum ada konfirmasi') {
+            this.province = label;
+            this.city = label;
+            this.district = label;
+            this.showCitySuggestions = false;
+            this.showDistrictSuggestions = false;
+            this.citySuggestions = [];
+            this.districtSuggestions = [];
+        },
     };
 };
 

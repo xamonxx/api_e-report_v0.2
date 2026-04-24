@@ -30,6 +30,13 @@
         </div>
         @endif
 
+        @php
+            $pendingConfirmationLabel = \App\Support\PendingConfirmation::LABEL;
+            $pendingConfirmationProductId = $categories->firstWhere('name', $pendingConfirmationLabel)?->id;
+            $otherNeedsLabel = \App\Models\NeedsCategory::OTHER_OPTION_LABEL;
+            $otherNeedsProductId = $categories->firstWhere('name', $otherNeedsLabel)?->id;
+        @endphp
+
         <form method="POST" action="{{ route('consultations.store') }}" class="space-y-6 sm:space-y-8">
             @csrf
 
@@ -60,6 +67,18 @@
 
             {{-- Province + City (with auto-fill) --}}
             <div x-data="cityAutoFill(@js(old('city', '')), @js(old('province', '')), @js(old('district', '')))" class="space-y-5 sm:space-y-6">
+                <div class="flex items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                    <div>
+                        <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">Quick Action Wilayah</div>
+                        <p class="mt-1 text-xs text-on-surface-variant">Isi provinsi, kota, dan kecamatan sekaligus dengan status belum terkonfirmasi.</p>
+                    </div>
+                    <button type="button"
+                            @click="setPendingConfirmation(@js($pendingConfirmationLabel))"
+                            class="inline-flex shrink-0 items-center justify-center rounded-xl border border-amber-600/20 bg-white px-4 py-2.5 text-xs font-bold text-amber-700 shadow-sm transition hover:bg-amber-50">
+                        Belum Ada Konfirmasi
+                    </button>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
                     <div class="space-y-2">
                         <label for="province" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">
@@ -242,6 +261,7 @@
                 $selectedProductIds = collect(old('needs_category_ids', old('needs_category_id') ? [old('needs_category_id')] : []))
                     ->map(fn ($value) => (string) $value)
                     ->all();
+                $oldProductDetails = old('product_details');
             @endphp
 
             {{-- Product + Status --}}
@@ -249,16 +269,61 @@
                  x-data="{
                     productOptions: @js($categories->map(fn($category) => ['id' => (string) $category->id, 'name' => $category->name])->values()),
                     selectedProductIds: @js($selectedProductIds),
+                    pendingConfirmationProductId: @js($pendingConfirmationProductId ? (string) $pendingConfirmationProductId : null),
+                    otherNeedsProductId: @js($otherNeedsProductId ? (string) $otherNeedsProductId : null),
+                    normalizeSelectedProducts(value) {
+                        const ids = [...new Set((Array.isArray(value) ? value : [value]).map((item) => String(item ?? '')).filter(Boolean))];
+                        const lastSelectedId = ids[ids.length - 1] ?? null;
+
+                        if (!this.pendingConfirmationProductId || !ids.includes(this.pendingConfirmationProductId) || ids.length <= 1) {
+                            return ids;
+                        }
+
+                        return lastSelectedId === this.pendingConfirmationProductId
+                            ? [this.pendingConfirmationProductId]
+                            : ids.filter((id) => id !== this.pendingConfirmationProductId);
+                    },
+                    setPendingConfirmationProduct() {
+                        if (!this.pendingConfirmationProductId) {
+                            return;
+                        }
+
+                        this.selectedProductIds = [this.pendingConfirmationProductId];
+                    },
+                    shouldShowOtherDetails() {
+                        return !!this.otherNeedsProductId && this.selectedProductIds.includes(this.otherNeedsProductId);
+                    },
                     selectedProducts() {
                         return this.selectedProductIds
                             .map((id) => this.productOptions.find((option) => option.id === String(id)))
                             .filter(Boolean);
                     }
-                 }">
+                 }"
+                 x-init="
+                    if (!selectedProductIds.length && pendingConfirmationProductId) {
+                        selectedProductIds = [pendingConfirmationProductId];
+                    }
+                    selectedProductIds = normalizeSelectedProducts(selectedProductIds);
+                    $watch('selectedProductIds', (value) => {
+                        const normalized = normalizeSelectedProducts(value);
+                        if (JSON.stringify(normalized) !== JSON.stringify(value)) {
+                            selectedProductIds = normalized;
+                        }
+                    });
+                 ">
                 <div class="space-y-3">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-1">
                         <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Nama Produk <span class="text-error">*</span></label>
-                        <span class="text-[11px] text-outline-variant">Boleh pilih lebih dari satu produk.</span>
+                        <div class="flex items-center gap-3 flex-wrap">
+                            @if($pendingConfirmationProductId)
+                            <button type="button"
+                                    @click="setPendingConfirmationProduct()"
+                                    class="inline-flex items-center justify-center rounded-xl border border-amber-600/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-500/15">
+                                Pilih Belum Ada Konfirmasi
+                            </button>
+                            @endif
+                            <span class="text-[11px] text-outline-variant">Boleh pilih lebih dari satu produk.</span>
+                        </div>
                     </div>
 
                     <div class="rounded-lg border border-primary/15 bg-primary/5 px-3 py-2.5">
@@ -296,11 +361,20 @@
                     </div>
                 </div>
 
-                <div class="space-y-2">
-                    <label for="product_details" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Detail Kebutuhan Produk</label>
+                <div x-show="shouldShowOtherDetails()"
+                     x-cloak
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 translate-y-2"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="space-y-2">
+                    <label for="product_details" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">
+                        Detaile Keterangan <span class="text-error">*</span>
+                    </label>
                     <textarea id="product_details" name="product_details" rows="3" maxlength="1500"
+                              x-bind:required="shouldShowOtherDetails()"
+                              x-bind:disabled="!shouldShowOtherDetails()"
                               class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 resize-none shadow-inner placeholder:text-outline-variant leading-relaxed font-medium"
-                              placeholder="Contoh: kitchen set letter L, finishing HPL oak, wardrobe 3 pintu, dan detail brief produk lainnya...">{{ old('product_details') }}</textarea>
+                              placeholder="Jelaskan kebutuhan produk untuk pilihan Lain-lain...">{{ $oldProductDetails }}</textarea>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
