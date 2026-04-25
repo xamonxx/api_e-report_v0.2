@@ -1,21 +1,20 @@
 {
   "status": "commited",
-  "type": "backend",
+  "type": "frontend",
   "scope": "codebase",
   "localEndpoint": "http://localhost:8000/login",
-  "backendAuthType": "basic token",
-  "backendUsername": "superadmin@pc.com",
-  "backendPassword": "123321",
+  "loginUser": "superadmin@pc.com",
+  "loginPassword": "123321",
   "executionArgs": {
     "projectName": "web_fromKonsul",
     "projectPath": "c:\\laragon\\www\\web_fromKonsul\\web_fromKonsul",
     "testIds": [],
-    "additionalInstruction": "1. IMPORTANT: This is a Laravel Web SSR application, NOT a JSON REST API. Endpoints return HTML (views) or redirects. DO NOT use `response.json()` anywhere as it will cause JSONDecodeError. Verify responses by checking `response.text` for expected HTML or success/error text.\n2. Laravel projects require a CSRF token. All POST, PUT, DELETE requests must include a '_token' field in the payload. Your GET /login request will return a HTML page containing a hidden input named '_token'. Extract this token using regex or html.parser. DO NOT use beautifulsoup (bs4).\n3. The valid credentials in the database are email: 'superadmin@pc.com' and password: '123321'.\n4. Because of proxy tunneling, a successful login or redirect might return a 200 OK instead of a 302 redirect. Assert that the status code is either 200 or 302. The session cookie is 'atelier_crm_session', so verify its presence for authenticated state. Use these rules across all test scripts.",
+    "additionalInstruction": "",
     "serverMode": "development",
     "envs": {
       "API_KEY": "sk-user-I4nJz3gSDMJtV8bTD2jRxkw37Bl_Lv4mASVEQ5CBk8kRBXXS4WAdaP-0GnQ3SjmShtWg7IBcWqXR7DLWYQPPENiEqxjWKzqG65M4KX8fppQu2zVYpoyz8xi2CEFM2XV01ow"
     }
   },
-  "serverPort": 53871,
-  "proxy": "http://ed03dc27-79cb-40db-887f-f6efb6fc0855:SCtgU18hPxl4MkBPiAGF4kiSoB7hqOUZ@tun.testsprite.com:8080"
+  "serverPort": 60490,
+  "proxy": "http://92aafd22-2088-4d45-a4b6-f4c96fbcdc87:v4ltQbgKrBOzI9UrLpvEKtBEDIES0wd3@tun.testsprite.com:8080"
 }

@@ -1127,7 +1127,19 @@ html.dark .login-panel {
 }
 
 .login-modal-backdrop {
-    background: rgb(var(--color-inverse-surface-rgb) / 0.62);
+    background:
+        radial-gradient(circle at 15% 12%, rgb(var(--color-primary-rgb) / 0.09), transparent 34%),
+        rgb(var(--color-inverse-surface-rgb) / 0.5);
+    backdrop-filter: blur(10px) saturate(112%);
+    -webkit-backdrop-filter: blur(10px) saturate(112%);
+}
+
+html.dark .login-modal-backdrop {
+    background:
+        radial-gradient(circle at 16% 11%, rgb(var(--color-primary-rgb) / 0.1), transparent 38%),
+        rgb(3 8 15 / 0.55);
+    backdrop-filter: blur(12px) saturate(118%);
+    -webkit-backdrop-filter: blur(12px) saturate(118%);
 }
 
 .consultation-modal-backdrop {
@@ -1783,3 +1795,14 @@ html.dark .product-picked-chip {
         grid-template-columns: repeat(6, minmax(0, 1fr));
     }
 }
+
+@media (max-height: 800px) {
+    .login-hero-slide {
+        transform: scale(0.85);
+        transform-origin: top center;
+    }
+    .login-hero-panel {
+        min-height: 520px;
+    }
+}
+

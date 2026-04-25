@@ -275,13 +275,13 @@
                         const ids = [...new Set((Array.isArray(value) ? value : [value]).map((item) => String(item ?? '')).filter(Boolean))];
                         const lastSelectedId = ids[ids.length - 1] ?? null;
 
-                        if (!this.pendingConfirmationProductId || !ids.includes(this.pendingConfirmationProductId) || ids.length <= 1) {
-                            return ids;
-                        }
+                        const isPendingLast = this.pendingConfirmationProductId && lastSelectedId === this.pendingConfirmationProductId;
+                        const isOtherLast = this.otherNeedsProductId && lastSelectedId === this.otherNeedsProductId;
 
-                        return lastSelectedId === this.pendingConfirmationProductId
-                            ? [this.pendingConfirmationProductId]
-                            : ids.filter((id) => id !== this.pendingConfirmationProductId);
+                        if (isPendingLast) return [this.pendingConfirmationProductId];
+                        if (isOtherLast) return [this.otherNeedsProductId];
+
+                        return ids.filter(id => id !== this.pendingConfirmationProductId && id !== this.otherNeedsProductId);
                     },
                     setPendingConfirmationProduct() {
                         if (!this.pendingConfirmationProductId) {
@@ -337,7 +337,7 @@
                             </template>
                         </div>
                         <p class="mt-2 text-[11px] leading-relaxed text-outline-variant" x-show="!selectedProducts().length" x-cloak>
-                            Pilih satu atau beberapa produk. Semua pilihan akan tersimpan untuk satu client.
+                            Pilih satu atau beberapa produk. Semua pilihan akan tersimpan untuk satu klien.
                         </p>
                     </div>
                 </div>
@@ -346,10 +346,17 @@
                     <div class="product-picker-panel">
                         <div class="product-picker-grid">
                         @foreach($categories as $category)
+                        @php
+                            $isPending = $category->name === \App\Support\PendingConfirmation::LABEL;
+                            $isOther = $category->name === \App\Models\NeedsCategory::OTHER_OPTION_LABEL;
+                            $labelColor = '';
+                            if ($isPending) $labelColor = 'text-amber-600 dark:text-amber-400 font-bold';
+                            elseif ($isOther) $labelColor = 'text-sky-600 dark:text-sky-400 font-bold';
+                        @endphp
                         <label class="product-picker-item">
                             <input type="checkbox" name="needs_category_ids[]" value="{{ $category->id }}" class="peer sr-only" x-model="selectedProductIds"
                                    {{ in_array((string) $category->id, $selectedProductIds, true) ? 'checked' : '' }}>
-                            <span class="product-picker-item__label">
+                            <span class="product-picker-item__label {{ $labelColor }}">
                                 {{ $category->name }}
                             </span>
                             <span class="product-picker-item__check">
@@ -368,7 +375,7 @@
                      x-transition:enter-end="opacity-100 translate-y-0"
                      class="space-y-2">
                     <label for="product_details" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">
-                        Detaile Keterangan <span class="text-error">*</span>
+                        Detail Keterangan <span class="text-error">*</span>
                     </label>
                     <textarea id="product_details" name="product_details" rows="3" maxlength="1500"
                               x-bind:required="shouldShowOtherDetails()"

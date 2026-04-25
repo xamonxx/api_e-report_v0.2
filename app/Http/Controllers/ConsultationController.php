@@ -65,7 +65,7 @@ class ConsultationController extends Controller
             ->get();
 
         // Data needed for Create Consultation Modal
-        $previewAccountId = $user->isAdmin() ? $user->account_id : ($accounts->first()->id ?? 1);
+        $previewAccountId = $user->isAdmin() ? $user->account_id : ($accounts->first()?->id ?? 1);
         $newId = Consultation::generateConsultationId($previewAccountId);
         $categories = NeedsCategory::forConsultationOptions()->get();
         $provinces = config('wilayah.provinces');
@@ -79,7 +79,7 @@ class ConsultationController extends Controller
         $accounts = $user->isSuperAdmin() ? Account::orderBy('name')->get() : ($user->account ? collect([$user->account]) : collect([]));
         
         // Dapatkan default account ID untuk preview ID Consultation
-        $previewAccountId = $user->isAdmin() ? $user->account_id : ($accounts->first()->id ?? 1);
+        $previewAccountId = $user->isAdmin() ? $user->account_id : ($accounts->first()?->id ?? 1);
         
         $newId = Consultation::generateConsultationId($previewAccountId);
         $categories = NeedsCategory::forConsultationOptions()->get();
@@ -91,6 +91,17 @@ class ConsultationController extends Controller
         return view('consultations.create', compact('newId', 'categories', 'statuses', 'accounts', 'provinces'));
     }
 
+    /**
+     * Store new consultation (lead).
+     *
+     * Security improvements:
+     * - DB::transaction for atomicity (prevents partial writes)
+     * - Authorization: admin can only create for their own account
+     * - Idempotency: deduplication check via findDuplicateLead()
+     * - Input whitelist: only validated fields are accepted
+     * - XSS: regex validation on all text fields in ConsultationRequest
+     * - audit: created_by automatically set
+     */
     public function store(ConsultationRequest $request)
     {
         $user = auth()->user();
@@ -100,14 +111,14 @@ class ConsultationController extends Controller
             ->unique()
             ->values();
 
-        // Security: admin can only create for their own account
+        // ── Authorization: admin restricted to own account ───────
         if ($user->isAdmin()) {
             if ($user->account_id != $validated['account_id']) {
-                abort(403);
+                abort(403, 'Anda tidak memiliki izin untuk membuat data pada akun lain.');
             }
         }
 
-        // Deduplication Check
+        // ── Deduplication Check (idempotency protection) ─────────
         if ($duplicate = Consultation::findDuplicateLead($validated)) {
             return back()
                 ->withErrors(['client_name' => 'Lead dengan data yang sama sudah terdaftar pada akun ini.'])
@@ -174,6 +185,16 @@ class ConsultationController extends Controller
         return view('consultations.edit', compact('consultation', 'categories', 'statuses', 'accounts', 'provinces'));
     }
 
+    /**
+     * Update existing consultation.
+     *
+     * Security improvements:
+     * - Authorization policy check
+     * - Admin restricted to own account
+     * - Deduplication check (ignoring current record ID)
+     * - DB::transaction for atomicity
+     * - Only validated fields are updated (prevents NULL overwrite)
+     */
     public function update(ConsultationRequest $request, Consultation $consultation)
     {
         $this->authorize('update', $consultation);
@@ -185,11 +206,14 @@ class ConsultationController extends Controller
             ->unique()
             ->values();
 
+        // ── Authorization: admin restricted to own account ───────
         if ($user->isAdmin()) {
             if ($user->account_id != $validated['account_id']) {
-                abort(403);
+                abort(403, 'Anda tidak memiliki izin untuk memindahkan data ke akun lain.');
             }
         }
+
+        // ── Deduplication: ignore current record ─────────────────
         if ($duplicate = Consultation::findDuplicateLead($validated, $consultation->id)) {
             return back()
                 ->withErrors(['client_name' => 'Lead dengan data yang sama sudah terdaftar pada akun ini.'])
@@ -255,12 +279,24 @@ class ConsultationController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
+    /**
+     * Delete consultation.
+     *
+     * Security:
+     * - Authorization policy check
+     * - Soft delete (via SoftDeletes trait on model)
+     * - Cache invalidation
+     */
     public function destroy(Consultation $consultation)
     {
         $this->authorize('delete', $consultation);
 
         $affectedAccountId = (int) $consultation->account_id;
-        $consultation->delete();
+
+        DB::transaction(function () use ($consultation) {
+            $consultation->delete(); // Soft delete via SoftDeletes trait
+        });
+
         $this->flushDashboardCache([$affectedAccountId]);
 
         return redirect()->route('consultations.index')

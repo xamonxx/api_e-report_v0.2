@@ -690,6 +690,7 @@ window.loginPage = function loginPage(config) {
     return {
         showBugModal: false,
         bugMessage: '',
+        bugError: '',
         waNumber: config.waNumber,
         activeSlide: 0,
         autoSlideMs: Number(config.autoSlideMs ?? 4500),
@@ -717,9 +718,11 @@ window.loginPage = function loginPage(config) {
         },
         submitBugReport() {
             if (this.bugMessage.trim() === '') {
-                window.alert('Isi pesan keluhan terlebih dahulu!');
+                this.bugError = 'Isi pesan keluhan terlebih dahulu!';
                 return;
             }
+
+            this.bugError = '';
 
             const text = encodeURIComponent(
                 `Halo Tim Database, saya ingin melaporkan bug/error di aplikasi E-REPORT:\n\n${this.bugMessage}`

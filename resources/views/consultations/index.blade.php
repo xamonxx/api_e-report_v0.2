@@ -8,6 +8,7 @@
         showCreateModal: {{ old('client_name') ? 'true' : 'false' }}
     })"
     x-init="init()"
+    @open-create-modal.window="showCreateModal = true"
     id="consultations-page"
     class="flex flex-col xl:flex-row xl:items-end justify-between gap-6 mb-6">
     <div>
@@ -70,6 +71,13 @@
         </div>
     </template>
 
+    @php
+        $pendingConfirmationLabel = \App\Support\PendingConfirmation::LABEL;
+        $pendingConfirmationProductId = $categories->firstWhere('name', $pendingConfirmationLabel)?->id;
+        $otherNeedsLabel = \App\Models\NeedsCategory::OTHER_OPTION_LABEL;
+        $otherNeedsProductId = $categories->firstWhere('name', $otherNeedsLabel)?->id;
+    @endphp
+
     {{-- Create Modal --}}
     <template x-teleport="body">
         <div x-show="showCreateModal" x-cloak class="consultation-modal-backdrop fixed inset-0 z-[60] flex flex-col items-center justify-end sm:justify-center sm:p-4"
@@ -112,7 +120,7 @@
                     </div>
                     @endif
 
-                    <form method="POST" id="form-create-lead" action="{{ route('consultations.store') }}" class="space-y-6">
+                    <form method="POST" id="form-create-lead" action="{{ route('consultations.store') }}" class="space-y-6 sm:space-y-8">
                         @csrf
 
                         {{-- Auto ID --}}
@@ -142,8 +150,20 @@
                         </div>
 
                         {{-- Province + City (with auto-fill) --}}
-                        <div x-data="modalCityAutoFill(@js(old('city', '')), @js(old('province', '')), @js(old('district', '')))" class="space-y-5">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div x-data="modalCityAutoFill(@js(old('city', '')), @js(old('province', '')), @js(old('district', '')))" class="space-y-5 sm:space-y-6">
+                            <div class="flex items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                                <div>
+                                    <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">Quick Action Wilayah</div>
+                                    <p class="mt-1 text-xs text-on-surface-variant">Isi provinsi, kota, dan kecamatan sekaligus dengan status belum terkonfirmasi.</p>
+                                </div>
+                                <button type="button"
+                                        @click="setPendingConfirmation(@js($pendingConfirmationLabel))"
+                                        class="inline-flex shrink-0 items-center justify-center rounded-xl border border-amber-600/20 bg-white px-4 py-2.5 text-xs font-bold text-amber-700 shadow-sm transition hover:bg-amber-50">
+                                    Belum Ada Konfirmasi
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
                                 <div class="space-y-2">
                                     <label for="modal_province" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">
                                         Provinsi Domisili
@@ -233,7 +253,7 @@
                             </div>
 
                             {{-- Kecamatan + Alamat Lengkap --}}
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
                                 <div class="space-y-2 relative">
                                     <label for="modal_district" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Kecamatan <span class="text-outline-variant font-medium normal-case">(opsional)</span></label>
                                     <input type="text" id="modal_district" name="district" value="{{ old('district') }}" x-model="district" maxlength="100"
@@ -263,7 +283,7 @@
                         {{-- Account Selection (Super Admin Only) --}}
                         @if(auth()->user()->isSuperAdmin())
                         <div class="space-y-2">
-                            <label for="modal_account_id" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Akun <span class="text-error">*</span></label>
+                            <label for="modal_account_id" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Akun Interior <span class="text-error">*</span></label>
                             <div x-data="searchableSelect(@js($accounts->map(fn($account) => ['value' => (string) $account->id, 'label' => $account->name])->values()), @js(old('account_id', '')), 'updatePreviewId')"
                                  @click.outside="close()"
                                  @keydown.escape.prevent.stop="close()"
@@ -325,23 +345,69 @@
                             $selectedProductIds = collect(old('needs_category_ids', old('needs_category_id') ? [old('needs_category_id')] : []))
                                 ->map(fn ($value) => (string) $value)
                                 ->all();
+                            $oldProductDetails = old('product_details');
                         @endphp
 
                         {{-- Product + Status --}}
-                        <div class="space-y-5"
+                        <div class="space-y-5 sm:space-y-6"
                              x-data="{
                                 productOptions: @js($categories->map(fn($category) => ['id' => (string) $category->id, 'name' => $category->name])->values()),
                                 selectedProductIds: @js($selectedProductIds),
+                                pendingConfirmationProductId: @js($pendingConfirmationProductId ? (string) $pendingConfirmationProductId : null),
+                                otherNeedsProductId: @js($otherNeedsProductId ? (string) $otherNeedsProductId : null),
+                                normalizeSelectedProducts(value) {
+                                    const ids = [...new Set((Array.isArray(value) ? value : [value]).map((item) => String(item ?? '')).filter(Boolean))];
+                                    const lastSelectedId = ids[ids.length - 1] ?? null;
+
+                                    const isPendingLast = this.pendingConfirmationProductId && lastSelectedId === this.pendingConfirmationProductId;
+                                    const isOtherLast = this.otherNeedsProductId && lastSelectedId === this.otherNeedsProductId;
+
+                                    if (isPendingLast) return [this.pendingConfirmationProductId];
+                                    if (isOtherLast) return [this.otherNeedsProductId];
+
+                                    return ids.filter(id => id !== this.pendingConfirmationProductId && id !== this.otherNeedsProductId);
+                                },
+                                setPendingConfirmationProduct() {
+                                    if (!this.pendingConfirmationProductId) {
+                                        return;
+                                    }
+
+                                    this.selectedProductIds = [this.pendingConfirmationProductId];
+                                },
+                                shouldShowOtherDetails() {
+                                    return !!this.otherNeedsProductId && this.selectedProductIds.includes(this.otherNeedsProductId);
+                                },
                                 selectedProducts() {
                                     return this.selectedProductIds
                                         .map((id) => this.productOptions.find((option) => option.id === String(id)))
                                         .filter(Boolean);
                                 }
-                             }">
+                             }"
+                             x-init="
+                                if (!selectedProductIds.length && pendingConfirmationProductId) {
+                                    selectedProductIds = [pendingConfirmationProductId];
+                                }
+                                selectedProductIds = normalizeSelectedProducts(selectedProductIds);
+                                $watch('selectedProductIds', (value) => {
+                                    const normalized = normalizeSelectedProducts(value);
+                                    if (JSON.stringify(normalized) !== JSON.stringify(value)) {
+                                        selectedProductIds = normalized;
+                                    }
+                                });
+                             ">
                             <div class="space-y-3">
                                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-1">
                                     <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Nama Produk <span class="text-error">*</span></label>
-                                    <span class="text-[11px] text-outline-variant">Boleh pilih lebih dari satu produk.</span>
+                                    <div class="flex items-center gap-3 flex-wrap">
+                                        @if($pendingConfirmationProductId)
+                                        <button type="button"
+                                                @click="setPendingConfirmationProduct()"
+                                                class="inline-flex items-center justify-center rounded-xl border border-amber-600/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-500/15">
+                                            Pilih Belum Ada Konfirmasi
+                                        </button>
+                                        @endif
+                                        <span class="text-[11px] text-outline-variant">Boleh pilih lebih dari satu produk.</span>
+                                    </div>
                                 </div>
                                 <div class="rounded-lg border border-primary/15 bg-primary/5 px-3 py-2.5">
                                     <div class="flex items-center justify-between gap-3">
@@ -354,17 +420,24 @@
                                         </template>
                                     </div>
                                     <p class="mt-2 text-[11px] leading-relaxed text-outline-variant" x-show="!selectedProducts().length" x-cloak>
-                                        Pilih satu atau beberapa produk. Semua pilihan akan tersimpan untuk satu client.
+                                        Pilih satu atau beberapa produk. Semua pilihan akan tersimpan untuk satu klien.
                                     </p>
                                 </div>
 
                                 <div class="product-picker-panel">
                                     <div class="product-picker-grid">
                                     @foreach($categories as $category)
+                                    @php
+                                        $isPending = $category->name === \App\Support\PendingConfirmation::LABEL;
+                                        $isOther = $category->name === \App\Models\NeedsCategory::OTHER_OPTION_LABEL;
+                                        $labelColor = '';
+                                        if ($isPending) $labelColor = 'text-amber-600 dark:text-amber-400 font-bold';
+                                        elseif ($isOther) $labelColor = 'text-sky-600 dark:text-sky-400 font-bold';
+                                    @endphp
                                     <label class="product-picker-item">
                                         <input type="checkbox" name="needs_category_ids[]" value="{{ $category->id }}" class="peer sr-only" x-model="selectedProductIds"
                                                {{ in_array((string) $category->id, $selectedProductIds, true) ? 'checked' : '' }}>
-                                        <span class="product-picker-item__label">
+                                        <span class="product-picker-item__label {{ $labelColor }}">
                                             {{ $category->name }}
                                         </span>
                                         <span class="product-picker-item__check">
@@ -376,14 +449,21 @@
                                 </div>
                             </div>
 
-                            <div class="space-y-2">
-                                <label for="modal_product_details" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">CATATAN / KETERANGAN (optional)</label>
+                            <div x-show="shouldShowOtherDetails()"
+                                 x-cloak
+                                 x-transition:enter="transition ease-out duration-200"
+                                 x-transition:enter-start="opacity-0 translate-y-2"
+                                 x-transition:enter-end="opacity-100 translate-y-0"
+                                 class="space-y-2">
+                                <label for="modal_product_details" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Detail Keterangan <span class="text-error">*</span></label>
                                 <textarea id="modal_product_details" name="product_details" rows="3" maxlength="1500"
+                                          x-bind:required="shouldShowOtherDetails()"
+                                          x-bind:disabled="!shouldShowOtherDetails()"
                                           class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 resize-none shadow-inner placeholder:text-outline-variant leading-relaxed font-medium"
-                                          placeholder="Tulis rincian kebutuhan produk klien...">{{ old('product_details') }}</textarea>
+                                          placeholder="Jelaskan kebutuhan produk untuk pilihan Lain-lain...">{{ $oldProductDetails }}</textarea>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
                                 <div class="space-y-2">
                                     <label for="modal_status_category_id" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Status Prospek <span class="text-error">*</span></label>
                                     <div x-data="searchableSelect(@js($statuses->map(fn($status) => ['value' => (string) $status->id, 'label' => $status->name])->values()), @js(old('status_category_id', '')))"
@@ -437,17 +517,18 @@
                         </div>
 
                         {{-- Date + Notes --}}
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="space-y-2">
                                 <label for="modal_consultation_date" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Tanggal Konsultasi Pertama</label>
                                 <input type="date" id="modal_consultation_date" name="consultation_date" value="{{ old('consultation_date', now()->format('Y-m-d')) }}"
                                        class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner font-medium" />
                             </div>
+                            <div class="hidden md:block"></div>
                         </div>
 
                         <div class="space-y-2">
                             <label for="modal_notes" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Keterangan Follow-Up Awal</label>
-                            <textarea id="modal_notes" name="notes" rows="3" maxlength="1000"
+                            <textarea id="modal_notes" name="notes" rows="4" maxlength="1000"
                                       class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 resize-none shadow-inner placeholder:text-outline-variant leading-relaxed font-medium"
                                       placeholder="Hasil brief awal atau info tambahan klien...">{{ old('notes') }}</textarea>
                         </div>
@@ -459,7 +540,7 @@
                     <button type="button" @click="showCreateModal = false" class="px-6 py-2.5 rounded-xl font-bold text-sm text-on-surface-variant hover:bg-surface-container-low transition-colors w-full sm:w-auto">Batal</button>
                     <button type="submit" form="form-create-lead" class="bg-primary text-on-primary px-8 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary-dim transition-colors flex items-center justify-center gap-2 w-full sm:w-auto">
                         <x-icon name="save" class="w-4 h-4" />
-                        <span>Simpan Data</span>
+                        <span>Simpan Data Konsultasi</span>
                     </button>
                 </div>
             </div>
@@ -525,15 +606,33 @@
                         </div>
 
                         {{-- Province + City --}}
-                        <div x-data="modalLocationAutoFill()" x-init="$watch('city', value => editData.city = value); $watch('province', value => editData.province = value); $watch('district', value => editData.district = value); city = editData.city || ''; province = editData.province || ''; district = editData.district || ''; $watch('editData.city', value => { if (value !== city) city = value || ''; }); $watch('editData.province', value => { if (value !== province) province = value || ''; }); $watch('editData.district', value => { if (value !== district) district = value || ''; });" class="space-y-5">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div x-data="modalLocationAutoFill()" x-init="$watch('city', value => editData.city = value); $watch('province', value => editData.province = value); $watch('district', value => editData.district = value); city = editData.city || ''; province = editData.province || ''; district = editData.district || ''; $watch('editData.city', value => { if (value !== city) city = value || ''; }); $watch('editData.province', value => { if (value !== province) province = value || ''; }); $watch('editData.district', value => { if (value !== district) district = value || ''; });" class="space-y-5 sm:space-y-6">
+                            <div class="flex items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                                <div>
+                                    <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">Quick Action Wilayah</div>
+                                    <p class="mt-1 text-xs text-on-surface-variant">Gunakan tombol ini jika provinsi, kota, dan kecamatan memang belum ada konfirmasi.</p>
+                                </div>
+                                <button type="button"
+                                        @click="setPendingConfirmation(@js($pendingConfirmationLabel))"
+                                        class="inline-flex shrink-0 items-center justify-center rounded-xl border border-amber-600/20 bg-white px-4 py-2.5 text-xs font-bold text-amber-700 shadow-sm transition hover:bg-amber-50">
+                                    Belum Ada Konfirmasi
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
                                 <div class="space-y-2">
-                                    <label for="edit_province" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Provinsi Domisili</label>
+                                    <label for="edit_province" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">
+                                        Provinsi
+                                        <span x-show="loading" class="inline-flex items-center gap-1 text-primary ml-1">
+                                            <svg class="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                                            <span class="text-[9px]">Mencari...</span>
+                                        </span>
+                                    </label>
                                     <div x-data="searchableOptions(@js($provinces))"
                                          @click.outside="close()"
                                          @keydown.escape.prevent.stop="close()"
                                          class="relative">
-                                        <input type="hidden" name="province" :value="editData.province || ''">
+                                        <input type="hidden" name="province" :value="province">
                                         <button type="button"
                                                 id="edit_province"
                                                 @click="toggle()"
@@ -542,13 +641,13 @@
                                                 :aria-expanded="open.toString()"
                                                 aria-haspopup="listbox">
                                             <span class="block truncate"
-                                                  :class="editData.province ? 'font-medium text-on-surface' : 'font-medium text-outline-variant'"
-                                                  x-text="editData.province || 'Pilih Provinsi...'"></span>
+                                                  :class="province ? 'font-medium text-on-surface' : 'font-medium text-outline-variant'"
+                                                  x-text="province || 'Pilih Provinsi...'"></span>
                                         </button>
-                                        <button x-show="editData.province"
+                                        <button x-show="province"
                                                 x-cloak
                                                 type="button"
-                                                @click.stop="editData.province = ''; close()"
+                                                @click.stop="province = ''; close()"
                                                 class="absolute right-10 top-1/2 -translate-y-1/2 rounded-md p-1 text-outline-variant transition hover:bg-surface-container hover:text-on-surface"
                                                 aria-label="Kosongkan provinsi">
                                             <x-icon name="close" class="w-4 h-4" />
@@ -577,12 +676,12 @@
                                                 </template>
                                                 <template x-for="option in filteredOptions()" :key="option.value">
                                                     <button type="button"
-                                                            @mousedown.prevent="editData.province = option.value; close()"
+                                                            @mousedown.prevent="province = option.value; close()"
                                                             class="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-sm transition hover:bg-primary/5 hover:text-primary">
                                                         <span class="truncate font-semibold" x-text="option.label"></span>
                                                         <x-icon name="check"
                                                                 class="h-4 w-4 text-primary"
-                                                                x-show="editData.province === option.value"></x-icon>
+                                                                x-show="province === option.value"></x-icon>
                                                     </button>
                                                 </template>
                                             </div>
@@ -591,15 +690,15 @@
                                 </div>
                                 <div class="space-y-2 relative">
                                     <label for="edit_city" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Kota / Kabupaten</label>
-                                    <input type="text" id="edit_city" name="city" x-model="editData.city" maxlength="100"
-                                           @input="city = editData.city; onCityInput()" @blur="setTimeout(() => showCitySuggestions = false, 200)" @focus="city = editData.city; onCityInput()"
+                                    <input type="text" id="edit_city" name="city" x-model="city" maxlength="100"
+                                           @input="onCityInput()" @blur="setTimeout(() => showCitySuggestions = false, 200)" @focus="onCityInput()"
                                            class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 placeholder:text-outline-variant shadow-inner font-medium"
-                                           placeholder="Nama kota/kabupaten" />
+                                           placeholder="Ketik nama kota..." autocomplete="off" />
                                     <div x-show="showCitySuggestions && citySuggestions.length > 0" x-cloak
                                          x-transition:enter="transition ease-out duration-100" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0"
                                          class="absolute top-full left-0 right-0 mt-1 bg-surface-container-lowest border border-surface-container-low rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-surface-container-low/50">
                                         <template x-for="s in citySuggestions" :key="s.city">
-                                            <button type="button" @mousedown.prevent="selectCity(s); editData.city = city; editData.province = province;" class="w-full text-left px-4 py-2.5 text-sm hover:bg-primary/5 hover:text-primary transition-colors flex items-center justify-between gap-2 cursor-pointer">
+                                            <button type="button" @mousedown.prevent="selectCity(s)" class="w-full text-left px-4 py-2.5 text-sm hover:bg-primary/5 hover:text-primary transition-colors flex items-center justify-between gap-2 cursor-pointer">
                                                 <span class="font-bold truncate" x-text="s.city"></span>
                                                 <span class="text-[10px] text-outline-variant shrink-0 bg-surface-container-low px-2 py-0.5 rounded-md" x-text="s.province"></span>
                                             </button>
@@ -608,18 +707,18 @@
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
                                 <div class="space-y-2 relative">
                                     <label for="edit_district" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Kecamatan <span class="text-outline-variant font-medium normal-case">(opsional)</span></label>
-                                    <input type="text" id="edit_district" name="district" x-model="editData.district" maxlength="100"
-                                           @input="district = editData.district; city = editData.city || ''; onDistrictInput()" @blur="setTimeout(() => showDistrictSuggestions = false, 200)" @focus="district = editData.district; city = editData.city || ''; onDistrictInput()"
+                                    <input type="text" id="edit_district" name="district" x-model="district" maxlength="100"
+                                           @input="onDistrictInput()" @blur="setTimeout(() => showDistrictSuggestions = false, 200)" @focus="onDistrictInput()"
                                            class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 placeholder:text-outline-variant shadow-inner font-medium"
                                            placeholder="Nama kecamatan" />
                                     <div x-show="showDistrictSuggestions && districtSuggestions.length > 0" x-cloak
                                          x-transition:enter="transition ease-out duration-100" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0"
                                          class="absolute top-full left-0 right-0 mt-1 bg-surface-container-lowest border border-surface-container-low rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-surface-container-low/50">
                                         <template x-for="item in districtSuggestions" :key="`${item.district}-${item.city}`">
-                                            <button type="button" @mousedown.prevent="selectDistrict(item); editData.district = district; editData.city = city; editData.province = province;" class="w-full text-left px-4 py-2.5 text-sm hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer">
+                                            <button type="button" @mousedown.prevent="selectDistrict(item)" class="w-full text-left px-4 py-2.5 text-sm hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer">
                                                 <div class="font-bold truncate" x-text="item.district"></div>
                                                 <div class="mt-0.5 text-[10px] text-outline-variant" x-text="`${item.city} • ${item.province}`"></div>
                                             </button>
@@ -693,20 +792,63 @@
                         @endif
 
                         {{-- Product + Status --}}
-                        <div class="space-y-5"
+                        <div class="space-y-5 sm:space-y-6"
                              x-data="{
                                 productOptions: @js($categories->map(fn($category) => ['id' => (string) $category->id, 'name' => $category->name])->values()),
-                                selectedProducts() {
+                                pendingConfirmationProductId: @js($pendingConfirmationProductId ? (string) $pendingConfirmationProductId : null),
+                                otherNeedsProductId: @js($otherNeedsProductId ? (string) $otherNeedsProductId : null),
+                                normalizeSelectedProducts(value) {
+                                    const ids = [...new Set((Array.isArray(value) ? value : [value]).map((item) => String(item ?? '')).filter(Boolean))];
+                                    const lastSelectedId = ids[ids.length - 1] ?? null;
+
+                                    const isPendingLast = this.pendingConfirmationProductId && lastSelectedId === this.pendingConfirmationProductId;
+                                    const isOtherLast = this.otherNeedsProductId && lastSelectedId === this.otherNeedsProductId;
+
+                                    if (isPendingLast) return [this.pendingConfirmationProductId];
+                                    if (isOtherLast) return [this.otherNeedsProductId];
+
+                                    return ids.filter(id => id !== this.pendingConfirmationProductId && id !== this.otherNeedsProductId);
+                                },
+                                setPendingConfirmationProduct() {
+                                    if (!this.pendingConfirmationProductId) {
+                                        return;
+                                    }
+
+                                    editData.needs_category_ids = [this.pendingConfirmationProductId];
+                                },
+                                shouldShowOtherDetails() {
                                     const ids = Array.isArray(editData.needs_category_ids) ? editData.needs_category_ids.map((value) => String(value)) : [];
+                                    return !!this.otherNeedsProductId && ids.includes(this.otherNeedsProductId);
+                                },
+                                selectedProducts() {
+                                    const ids = Array.isArray(editData.needs_category_ids) ? this.normalizeSelectedProducts(editData.needs_category_ids) : [];
                                     return ids
                                         .map((id) => this.productOptions.find((option) => option.id === String(id)))
                                         .filter(Boolean);
                                 }
-                             }">
+                             }"
+                             x-init="
+                                $watch('editData.needs_category_ids', (value) => {
+                                    const rawIds = (Array.isArray(value) ? value : [value]).map((item) => String(item ?? '')).filter(Boolean);
+                                    const normalized = normalizeSelectedProducts(value);
+                                    if (JSON.stringify(normalized) !== JSON.stringify(rawIds)) {
+                                        editData.needs_category_ids = normalized;
+                                    }
+                                });
+                             ">
                             <div class="space-y-3">
                                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-1">
                                     <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Nama Produk <span class="text-error">*</span></label>
-                                    <span class="text-[11px] text-outline-variant">Lead bisa memiliki lebih dari satu produk.</span>
+                                    <div class="flex items-center gap-3 flex-wrap">
+                                        @if($pendingConfirmationProductId)
+                                        <button type="button"
+                                                @click="setPendingConfirmationProduct()"
+                                                class="inline-flex items-center justify-center rounded-xl border border-amber-600/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-500/15">
+                                            Pilih Belum Ada Konfirmasi
+                                        </button>
+                                        @endif
+                                        <span class="text-[11px] text-outline-variant">Satu konsumen bisa memilih lebih dari satu produk.</span>
+                                    </div>
                                 </div>
                                 <div class="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3">
                                     <div class="flex items-center justify-between gap-3">
@@ -719,16 +861,23 @@
                                         </template>
                                     </div>
                                     <p class="mt-2 text-xs text-outline-variant" x-show="!selectedProducts().length" x-cloak>
-                                        Pilih satu atau beberapa produk. Semua pilihan akan tersimpan untuk satu client.
+                                        Pilih satu atau beberapa produk. Semua pilihan akan tersimpan untuk satu klien.
                                     </p>
                                 </div>
 
                                 <div class="product-picker-panel">
                                     <div class="product-picker-grid">
                                     @foreach($categories as $category)
+                                    @php
+                                        $isPending = $category->name === \App\Support\PendingConfirmation::LABEL;
+                                        $isOther = $category->name === \App\Models\NeedsCategory::OTHER_OPTION_LABEL;
+                                        $labelColor = '';
+                                        if ($isPending) $labelColor = 'text-amber-600 dark:text-amber-400 font-bold';
+                                        elseif ($isOther) $labelColor = 'text-sky-600 dark:text-sky-400 font-bold';
+                                    @endphp
                                     <label class="product-picker-item">
                                         <input type="checkbox" name="needs_category_ids[]" value="{{ $category->id }}" class="peer sr-only" x-model="editData.needs_category_ids">
-                                        <span class="product-picker-item__label">
+                                        <span class="product-picker-item__label {{ $labelColor }}">
                                             {{ $category->name }}
                                         </span>
                                         <span class="product-picker-item__check">
@@ -740,14 +889,21 @@
                                 </div>
                             </div>
 
-                            <div class="space-y-2">
-                                <label for="edit_product_details" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">CATATAN / KETERANGAN (optional)</label>
+                            <div x-show="shouldShowOtherDetails()"
+                                 x-cloak
+                                 x-transition:enter="transition ease-out duration-200"
+                                 x-transition:enter-start="opacity-0 translate-y-2"
+                                 x-transition:enter-end="opacity-100 translate-y-0"
+                                 class="space-y-2">
+                                <label for="edit_product_details" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Detail Keterangan <span class="text-error">*</span></label>
                                 <textarea id="edit_product_details" name="product_details" rows="3" x-model="editData.product_details" maxlength="1500"
+                                          x-bind:required="shouldShowOtherDetails()"
+                                          x-bind:disabled="!shouldShowOtherDetails()"
                                           class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 resize-none shadow-inner placeholder:text-outline-variant leading-relaxed font-medium"
-                                          placeholder="Tulis rincian kebutuhan produk klien..."></textarea>
+                                          placeholder="Jelaskan kebutuhan produk untuk pilihan Lain-lain..."></textarea>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
                                 <div class="space-y-2">
                                     <label for="edit_status_category_id" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Status Prospek <span class="text-error">*</span></label>
                                     <div x-data="searchableSelect(@js($statuses->map(fn($status) => ['value' => (string) $status->id, 'label' => $status->name])->values()))"
@@ -803,16 +959,17 @@
                         </div>
 
                         {{-- Date + Notes --}}
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="space-y-2">
-                                <label for="edit_consultation_date" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Tanggal Konsultasi Pertama</label>
+                                <label for="edit_consultation_date" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Tanggal Konsultasi</label>
                                 <input type="date" id="edit_consultation_date" name="consultation_date" x-model="editData.consultation_date"
                                        class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner font-medium" />
                             </div>
+                            <div class="hidden md:block"></div>
                         </div>
                         <div class="space-y-2">
-                            <label for="edit_notes" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Keterangan Follow-Up</label>
-                            <textarea id="edit_notes" name="notes" rows="3" x-model="editData.notes" maxlength="1000"
+                            <label for="edit_notes" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Keterangan Tambahan</label>
+                            <textarea id="edit_notes" name="notes" rows="4" x-model="editData.notes" maxlength="1000"
                                       class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 resize-none shadow-inner placeholder:text-outline-variant leading-relaxed font-medium"
                                       placeholder="Tambahkan info follow-up..."></textarea>
                         </div>
@@ -1141,7 +1298,7 @@
                         <div class="flex flex-col items-center">
                             <x-icon name="person_off" class="w-16 h-16 text-outline-variant/30 mb-4" />
                             <p class="text-on-surface-variant font-bold">Tidak ada data konsultasi ditemukan.</p>
-                            <button @click="showCreateModal = true" class="text-primary font-bold text-sm hover:underline mt-4 flex items-center gap-1 cursor-pointer">
+                            <button type="button" @click="$dispatch('open-create-modal')" class="text-primary font-bold text-sm hover:underline mt-4 flex items-center gap-1 cursor-pointer">
                                 <x-icon name="add" class="w-4 h-4" />
                                 <span>Buat Lead Baru</span>
                             </button>
@@ -1162,3 +1319,6 @@
 </div>
 
 @endsection
+
+
+

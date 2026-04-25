@@ -3,14 +3,22 @@
 namespace App\Models;
 
 use App\Enums\UserRole;
+use App\Traits\TracksAuditUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, SoftDeletes, TracksAuditUser;
 
+    /**
+     * Whitelist: Only these fields can be mass-assigned.
+     * SECURITY: 'role' is intentionally included because it's always set
+     * explicitly from validated + enum-checked data in controllers,
+     * never from raw user input.
+     */
     protected $fillable = [
         'name',
         'email',
@@ -18,6 +26,8 @@ class User extends Authenticatable
         'role',
         'account_id',
         'primary_color',
+        'last_login_at',
+        'last_login_ip',
     ];
 
     protected $hidden = [
@@ -29,6 +39,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'last_login_at' => 'datetime',
             'role' => UserRole::class,
         ];
     }
@@ -51,6 +62,11 @@ class User extends Authenticatable
     public function consultationNotes()
     {
         return $this->hasMany(ConsultationNote::class);
+    }
+
+    public function loginAttempts()
+    {
+        return $this->hasMany(LoginAttempt::class, 'email', 'email');
     }
 
     public function isSuperAdmin(): bool

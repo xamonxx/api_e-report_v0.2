@@ -5,10 +5,11 @@ namespace App\Models;
 use App\Support\PendingConfirmation;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class NeedsCategory extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     public const OTHER_OPTION_LABEL = 'Lain-lain';
 

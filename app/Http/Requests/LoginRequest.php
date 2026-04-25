@@ -23,9 +23,20 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
+            'email'    => ['required', 'email', 'max:255'],
+            'password' => ['required', 'string', 'max:255'],
             'remember' => ['nullable', 'boolean'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'email.required' => 'Email wajib diisi.',
+            'email.email'    => 'Format email tidak valid.',
+            'email.max'      => 'Email terlalu panjang.',
+            'password.required' => 'Password wajib diisi.',
+            'password.max'   => 'Password terlalu panjang.',
         ];
     }
 }

@@ -24,6 +24,8 @@ Route::middleware('guest')->group(function () {
 
 // ─── Authenticated Routes ────────────────────────────────
 Route::middleware('auth')->group(function () {
+    // Fallback for accidental GET requests so the app does not throw a 405 on logout.
+    Route::get('/logout', [AuthController::class, 'logout']);
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
     // API Notifications (Polling) — throttled to prevent abuse

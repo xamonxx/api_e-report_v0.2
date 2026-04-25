@@ -7,12 +7,19 @@
     <div class="fixed inset-0 z-0 lg:hidden bg-cover bg-center bg-no-repeat" style="background-image: url('{{ asset('images/bg-login.png') }}');"></div>
     <div class="login-mobile-overlay fixed inset-0 z-0 lg:hidden"></div>
 
-    <div class="login-stage relative z-10 mx-auto flex h-full w-full max-w-[1320px] items-center px-3 sm:px-5 lg:px-6">
+    <div class="login-stage relative z-10 mx-auto flex flex-col h-full w-full max-w-[1320px] items-center justify-center px-3 sm:px-5 lg:px-6 py-6 lg:py-10">
+        {{-- Custom Top-Left Logo --}}
+        <div class="fixed -top-6 sm:-top-7 lg:-top-10 left-4 sm:left-6 flex items-start animate-fade-in z-[60]">
+            <img src="{{ asset('images/putra_corporation_exact.svg') }}" 
+                 alt="Putra Corporation Logo" 
+                 class="h-[105px] sm:h-[125px] md:h-[140px] xl:h-[160px] w-auto object-contain hover:scale-105 transition-transform duration-300 [filter:drop-shadow(0px_2px_6px_rgba(0,0,0,0.9))_drop-shadow(0px_0px_20px_rgba(0,0,0,0.85))] lg:[filter:none]" />
+        </div>
+
         <div x-data="loginPage({ waNumber: '6285168112098', autoSlideMs: 4600 })"
              x-init="startSlider()"
-             class="grid w-full items-stretch gap-4 lg:gap-6 xl:grid-cols-2">
+             class="grid w-full items-stretch gap-4 lg:gap-6 xl:grid-cols-12">
             {{-- Left Side: Rounded Background Banner (Desktop Only) --}}
-            <div class="login-hero-panel hidden xl:flex relative min-h-[640px] rounded-[2rem] overflow-hidden shadow-2xl"
+            <div class="login-hero-panel hidden xl:flex relative min-h-[640px] rounded-[2rem] overflow-hidden shadow-2xl xl:col-span-7"
                  @mouseenter="pauseSlider()"
                  @mouseleave="startSlider()">
                 <div class="absolute inset-0 bg-cover bg-center bg-no-repeat" style="background-image: url('{{ asset('images/bg-login.png') }}'); background-size: cover; background-position: center;"></div>
@@ -246,7 +253,7 @@
             </div>
 
             {{-- Right Side: Login Form --}}
-            <div class="flex w-full items-center justify-center xl:justify-center">
+            <div class="flex w-full items-center justify-center xl:justify-center xl:col-span-5">
                 <div class="login-panel w-full max-w-[440px] animate-fade-in rounded-[2rem] p-5 sm:p-6 md:p-7 xl:p-8">
                     
                     {{-- Mobile Logo (Only visible < xl) --}}
@@ -322,7 +329,7 @@
 
                     {{-- Bug Report Modal --}}
                     <template x-teleport="body">
-                        <div x-show="showBugModal" x-cloak class="login-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl"
+                        <div x-show="showBugModal" x-cloak class="login-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4"
                              x-transition.opacity.duration.400ms>
                             <div @click.away="showBugModal = false" class="login-modal w-full max-w-md rounded-[2rem] shadow-2xl animate-fade-in overflow-hidden mx-2">
                                 <div class="bg-gradient-to-r from-error/10 to-transparent px-6 sm:px-8 py-5 sm:py-6 flex items-center justify-between border-b border-error/10">
@@ -342,8 +349,18 @@
                                     
                                     <div class="space-y-5 sm:space-y-6">
                                         <textarea x-model="bugMessage" rows="5" 
+                                                  @input="bugError = ''"
                                                   class="login-input w-full rounded-xl px-4 sm:px-5 py-3 sm:py-4 text-xs sm:text-[14px] resize-none outline-none transition-all"
+                                                  :class="bugError ? 'ring-2 ring-error/50' : ''"
                                                   placeholder="Contoh: Saya tidak bisa login, muncul pesan galat..."></textarea>
+                                        <div x-show="bugError" x-cloak
+                                             x-transition:enter="transition ease-out duration-200"
+                                             x-transition:enter-start="opacity-0 -translate-y-1"
+                                             x-transition:enter-end="opacity-100 translate-y-0"
+                                             class="flex items-center gap-2 bg-error/10 text-error px-4 py-2.5 rounded-xl text-xs font-semibold -mt-2">
+                                            <x-icon name="error" class="w-4 h-4 shrink-0" />
+                                            <span x-text="bugError"></span>
+                                        </div>
                                                   
                                         <button type="button" 
                                                 @click="submitBugReport()"

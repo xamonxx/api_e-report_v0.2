@@ -46,15 +46,25 @@ class AccountController extends Controller
         return view('accounts.create');
     }
 
+    /**
+     * Store new account.
+     *
+     * Security:
+     * - Uses AccountRequest (FormRequest) for validation
+     * - DB transaction for atomicity
+     * - Logo safely stored via Storage facade
+     */
     public function store(AccountRequest $request)
     {
         $validated = $request->validated();
 
-        if ($request->hasFile('logo')) {
-            $validated['logo_path'] = $request->file('logo')->store('accounts', 'public');
-        }
+        DB::transaction(function () use ($request, &$validated) {
+            if ($request->hasFile('logo')) {
+                $validated['logo_path'] = $request->file('logo')->store('accounts', 'public');
+            }
 
-        Account::create($validated);
+            Account::create($validated);
+        });
 
         return redirect()->route('accounts.index')
             ->with('success', 'Akun interior baru berhasil ditambahkan!');
@@ -71,30 +81,61 @@ class AccountController extends Controller
         return view('accounts.edit', compact('account', 'admins'));
     }
 
+    /**
+     * Update existing account.
+     *
+     * Security:
+     * - DB transaction for atomicity
+     * - Old logo properly deleted to prevent storage leak
+     * - Uses whitelist via validated() only
+     */
     public function update(AccountRequest $request, Account $account)
     {
         $validated = $request->validated();
 
-        if ($request->hasFile('logo')) {
-            if ($account->logo_path) {
-                Storage::disk('public')->delete($account->logo_path);
+        DB::transaction(function () use ($request, &$validated, $account) {
+            if ($request->hasFile('logo')) {
+                // Delete old logo to prevent orphan files
+                if ($account->logo_path) {
+                    Storage::disk('public')->delete($account->logo_path);
+                }
+                $validated['logo_path'] = $request->file('logo')->store('accounts', 'public');
             }
-            $validated['logo_path'] = $request->file('logo')->store('accounts', 'public');
-        }
 
-        $account->update($validated);
+            $account->update($validated);
+        });
 
         return redirect()->route('accounts.index')
             ->with('success', 'Data akun berhasil diperbarui!');
     }
 
+    /**
+     * Delete account with relational safety.
+     *
+     * Security:
+     * - Validates no active consultations exist before hard delete (if no soft delete)
+     * - Detaches admin users safely
+     * - DB transaction for atomicity
+     * - Logo cleanup
+     */
     public function destroy(Account $account)
     {
+        // ── Check for active consultations ───────────────────────
+        $activeConsultations = $account->consultations()->count();
+        if ($activeConsultations > 0) {
+            return back()->with('error',
+                "Tidak dapat menghapus akun yang masih memiliki {$activeConsultations} data lead. " .
+                'Hapus atau pindahkan seluruh lead terlebih dahulu.'
+            );
+        }
+
         DB::transaction(function () use ($account) {
+            // Detach admin users from this account
             User::where('role', UserRole::Admin)
                 ->where('account_id', $account->id)
                 ->update(['account_id' => null]);
 
+            // Delete logo file
             if ($account->logo_path) {
                 Storage::disk('public')->delete($account->logo_path);
             }
@@ -103,6 +144,6 @@ class AccountController extends Controller
         });
 
         return redirect()->route('accounts.index')
-            ->with('success', 'Akun berhasil dihapus. Seluruh lead terkait ikut terhapus melalui cascade database.');
+            ->with('success', 'Akun berhasil dihapus.');
     }
 }
