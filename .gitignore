@@ -1,16 +1,48 @@
+# Dependencies
 /vendor/
-node_modules/
-npm-debug.log
-yarn-error.log
+/node_modules/
 
-# Laravel 5 & Lumen specific
+# Environment & Secrets
+.env
+.env.backup
+.env.production
+
+# Laravel specific
 public/storage
 public/hot
 storage/*.key
-.env
-.env.backup
-.phpunit.result.cache
 Homestead.json
 Homestead.yaml
 
+# Logs
 *.log
+storage/logs/*.log
+
+# Cache & Compiled
+.phpunit.cache/
+.phpunit.result.cache
+bootstrap/cache/*.php
+
+# Testing
+/tests/
+/testsprite_tests/
+phpunit.xml
+
+# Development tools
+/tools/
+
+# IDE & OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Debug & temp
+npm-debug.log
+yarn-error.log
+
+# SQLite dev database
+database/database.sqlite

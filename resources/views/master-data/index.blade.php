@@ -11,16 +11,23 @@
 </div>
 
 {{-- Tab Navigation --}}
+@php
+    $userFormContext = session('user_form_context');
+    $createUserErrors = $errors->getBag('createUser');
+    $editUserErrors = $errors->getBag('editUser');
+    $isCreateUserContext = $userFormContext === 'create';
+    $isEditUserContext = $userFormContext === 'edit';
+@endphp
 <div x-data="masterDataPage({
-        initialTab: @js(old('edit_user_id') ? 'users' : $tab),
-        showEditUserModal: {{ old('edit_user_id') ? 'true' : 'false' }},
-        createUserRole: @js(old('role', 'admin')),
+        initialTab: @js(($isCreateUserContext || $isEditUserContext) ? 'users' : $tab),
+        showEditUserModal: {{ $isEditUserContext ? 'true' : 'false' }},
+        createUserRole: @js($isCreateUserContext ? old('role', 'admin') : 'admin'),
         editUser: {
-            id: @js(old('edit_user_id', '')),
-            name: @js(old('name', '')),
-            email: @js(old('email', '')),
-            role: @js(old('role', 'admin')),
-            account_id: @js((string) old('account_id', '')),
+            id: @js($isEditUserContext ? old('edit_user_id', '') : ''),
+            name: @js($isEditUserContext ? old('name', '') : ''),
+            email: @js($isEditUserContext ? old('email', '') : ''),
+            role: @js($isEditUserContext ? old('role', 'admin') : 'admin'),
+            account_id: @js($isEditUserContext ? (string) old('account_id', '') : ''),
         }
     })" x-init="init()">
     <div class="grid grid-cols-3 sm:flex overflow-x-auto scrollbar-none bg-surface-container-lowest p-1.5 rounded-xl shadow-sm w-full sm:w-fit mb-8 gap-1 scroll-px-2 no-print">
@@ -246,23 +253,41 @@
         </h3>
         <form method="POST" action="{{ route('master-data.users.store') }}" class="space-y-5">
             @csrf
+            <input type="hidden" name="tab" value="users">
+            <input type="hidden" name="search_user" value="{{ request('search_user') }}">
+            <input type="hidden" name="users_page" value="{{ request('users_page', $users->currentPage()) }}">
+            @if($createUserErrors->any())
+            <div class="rounded-2xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error" role="alert">
+                <p class="font-bold">User belum berhasil ditambahkan.</p>
+                <p class="mt-1 text-xs font-medium text-on-surface-variant">{{ $createUserErrors->first() }}</p>
+            </div>
+            @endif
             <div class="space-y-2">
                 <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Nama Lengkap</label>
-                <input type="text" name="name" required value="{{ old('name') }}"
+                <input type="text" name="name" required value="{{ $isCreateUserContext ? old('name') : '' }}"
                        class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner font-bold"
                        placeholder="Nama Administrator" />
+                @if($createUserErrors->has('name'))
+                <p class="px-1 text-xs font-medium text-error">{{ $createUserErrors->first('name') }}</p>
+                @endif
             </div>
             <div class="space-y-2">
                 <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Alamat Email</label>
-                <input type="email" name="email" required value="{{ old('email') }}"
+                <input type="email" name="email" required value="{{ $isCreateUserContext ? old('email') : '' }}"
                        class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner font-bold"
                        placeholder="admin@akun.com" />
+                @if($createUserErrors->has('email'))
+                <p class="px-1 text-xs font-medium text-error">{{ $createUserErrors->first('email') }}</p>
+                @endif
             </div>
             <div class="space-y-2">
                 <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Set Password</label>
                 <input type="password" name="password" required
                        class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner font-bold"
-                       placeholder="Minimal 6 karakter" />
+                       placeholder="Minimal 8 karakter" />
+                @if($createUserErrors->has('password'))
+                <p class="px-1 text-xs font-medium text-error">{{ $createUserErrors->first('password') }}</p>
+                @endif
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="space-y-2">
@@ -295,7 +320,7 @@
                      x-show="createUserRole !== 'super_admin'"
                      x-transition.opacity.duration.150ms>
                     <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Pilih Akun</label>
-                    <div x-data="searchableSelect(@js(collect([['value' => '', 'label' => '-- Akun --']])->concat($accounts->map(fn($account) => ['value' => (string) $account->id, 'label' => $account->name])->values())), @js((string) old('account_id', '')))"
+                    <div x-data="searchableSelect(@js(collect([['value' => '', 'label' => '-- Akun --']])->concat($accounts->map(fn($account) => ['value' => (string) $account->id, 'label' => $account->name])->values())), @js($isCreateUserContext ? (string) old('account_id', '') : ''))"
                          @click.outside="close()"
                          @keydown.escape.prevent.stop="close()"
                          class="relative z-10">
@@ -338,6 +363,9 @@
                             </div>
                         </div>
                     </div>
+                    @if($createUserErrors->has('account_id'))
+                    <p class="px-1 text-xs font-medium text-error">{{ $createUserErrors->first('account_id') }}</p>
+                    @endif
                 </div>
             </div>
             <button type="submit"
@@ -433,6 +461,9 @@
                                 <form method="POST" action="{{ route('master-data.users.destroy', $u) }}"
                                       onsubmit="return confirm('Hapus user {{ $u->name }}?')">
                                     @csrf @method('DELETE')
+                                    <input type="hidden" name="tab" value="users">
+                                    <input type="hidden" name="search_user" value="{{ request('search_user') }}">
+                                    <input type="hidden" name="users_page" value="{{ request('users_page', $users->currentPage()) }}">
                                     <button type="submit"
                                             class="w-9 h-9 rounded-xl hover:bg-error/10 flex items-center justify-center text-on-surface-variant/40 hover:text-error transition-all active:scale-90"
                                             title="Hapus">
@@ -498,6 +529,13 @@
                 <input type="hidden" name="users_page" value="{{ request('users_page', $users->currentPage()) }}">
                 <input type="hidden" name="edit_user_id" :value="editUser.id">
 
+                @if($editUserErrors->any())
+                <div class="mb-5 rounded-2xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error" role="alert">
+                    <p class="font-bold">Perubahan user belum tersimpan.</p>
+                    <p class="mt-1 text-xs font-medium text-on-surface-variant">{{ $editUserErrors->first() }}</p>
+                </div>
+                @endif
+
                 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-x-5 sm:gap-y-5">
                 <div class="space-y-2">
                     <label class="block px-1 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Nama Lengkap</label>
@@ -507,6 +545,9 @@
                            required
                            class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm font-bold shadow-inner focus:ring-2 focus:ring-primary/20"
                            placeholder="Nama Administrator">
+                    @if($editUserErrors->has('name'))
+                    <p class="px-1 text-xs font-medium text-error">{{ $editUserErrors->first('name') }}</p>
+                    @endif
                 </div>
 
                 <div class="space-y-2"
@@ -557,6 +598,9 @@
                             </div>
                         </div>
                     </div>
+                    @if($editUserErrors->has('account_id'))
+                    <p class="px-1 text-xs font-medium text-error">{{ $editUserErrors->first('account_id') }}</p>
+                    @endif
                 </div>
 
                 <div class="space-y-2">
@@ -567,6 +611,9 @@
                            required
                            class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm font-bold shadow-inner focus:ring-2 focus:ring-primary/20"
                            placeholder="admin@akun.com">
+                    @if($editUserErrors->has('email'))
+                    <p class="px-1 text-xs font-medium text-error">{{ $editUserErrors->first('email') }}</p>
+                    @endif
                 </div>
 
                     <div class="space-y-2">

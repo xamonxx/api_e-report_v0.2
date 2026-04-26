@@ -593,9 +593,27 @@ window.masterDataPage = function masterDataPage(config) {
                 });
             }
 
+            this.syncActiveTabToUrl();
+            this.$watch('activeTab', (value) => {
+                this.syncActiveTabToUrl(value);
+            });
+
             if (this.showEditUserModal) {
                 document.body.classList.add('overflow-hidden');
             }
+        },
+        syncActiveTabToUrl(tab = this.activeTab) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', tab);
+
+            if (tab !== 'users') {
+                url.searchParams.delete('search_user');
+                url.searchParams.delete('users_page');
+            }
+
+            const query = url.searchParams.toString();
+            const nextUrl = `${url.pathname}${query ? `?${query}` : ''}`;
+            window.history.replaceState({}, '', nextUrl);
         },
         openEditUser(payload) {
             this.editUser = {
@@ -654,14 +672,15 @@ window.promptResetPassword = function promptResetPassword(userId, userName) {
             cancelButton: 'bg-outline-variant/30 rounded-xl px-6 py-2.5 text-sm font-bold',
         },
         preConfirm: (newPassword) => {
-            if (!newPassword || newPassword.length < 6) {
-                Swal.showValidationMessage('Password minimal 6 karakter');
+            if (!newPassword || newPassword.length < 8) {
+                Swal.showValidationMessage('Password minimal 8 karakter');
                 return false;
             }
 
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = `/master-data/users/${userId}/reset-password`;
+            const params = new URLSearchParams(window.location.search);
 
             const csrf = document.createElement('input');
             csrf.type = 'hidden';
@@ -678,7 +697,22 @@ window.promptResetPassword = function promptResetPassword(userId, userName) {
             passInput.name = 'password';
             passInput.value = newPassword;
 
+            const appendStateInput = (name, value) => {
+                if (!value && value !== '0') {
+                    return;
+                }
+
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = name;
+                input.value = value;
+                form.appendChild(input);
+            };
+
             form.append(csrf, method, passInput);
+            appendStateInput('tab', 'users');
+            appendStateInput('search_user', params.get('search_user') ?? '');
+            appendStateInput('users_page', params.get('users_page') ?? '');
             document.body.appendChild(form);
             form.submit();
             return true;
@@ -689,8 +723,12 @@ window.promptResetPassword = function promptResetPassword(userId, userName) {
 window.loginPage = function loginPage(config) {
     return {
         showBugModal: false,
+        showForgotPasswordModal: false,
         bugMessage: '',
         bugError: '',
+        forgotPasswordAdminName: '',
+        forgotPasswordAccountName: '',
+        forgotPasswordError: '',
         waNumber: config.waNumber,
         activeSlide: 0,
         autoSlideMs: Number(config.autoSlideMs ?? 4500),
@@ -730,6 +768,28 @@ window.loginPage = function loginPage(config) {
             window.open(`https://api.whatsapp.com/send?phone=${this.waNumber}&text=${text}`, '_blank');
             this.showBugModal = false;
             this.bugMessage = '';
+        },
+        submitForgotPasswordRequest() {
+            if (this.forgotPasswordAdminName.trim() === '') {
+                this.forgotPasswordError = 'Nama admin wajib diisi!';
+                return;
+            }
+
+            if (this.forgotPasswordAccountName.trim() === '') {
+                this.forgotPasswordError = 'Nama akun yang dipegang wajib diisi!';
+                return;
+            }
+
+            this.forgotPasswordError = '';
+
+            const text = encodeURIComponent(
+                `Halo Tim Database, saya ingin meminta bantuan reset password E-REPORT.\n\nNama Admin: ${this.forgotPasswordAdminName}\nNama Akun yang Dipegang: ${this.forgotPasswordAccountName}`
+            );
+
+            window.open(`https://api.whatsapp.com/send?phone=${this.waNumber}&text=${text}`, '_blank');
+            this.showForgotPasswordModal = false;
+            this.forgotPasswordAdminName = '';
+            this.forgotPasswordAccountName = '';
         },
     };
 };

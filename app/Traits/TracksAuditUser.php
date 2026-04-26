@@ -15,10 +15,12 @@ trait TracksAuditUser
     public static function bootTracksAuditUser(): void
     {
         static::creating(function ($model) {
-            if (!$model->isDirty('created_by') && auth()->check()) {
-                if ($model->isFillable('created_by') || in_array('created_by', $model->getGuarded() === ['*'] ? [] : $model->getFillable())) {
-                    $model->created_by = auth()->id();
-                }
+            if (
+                auth()->check()
+                && !$model->isDirty('created_by')
+                && $model->getConnection()->getSchemaBuilder()->hasColumn($model->getTable(), 'created_by')
+            ) {
+                $model->created_by = auth()->id();
             }
         });
 

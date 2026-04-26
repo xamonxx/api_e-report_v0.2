@@ -3,17 +3,64 @@
 namespace App\Http\Controllers;
 
 use App\Enums\UserRole;
+use App\Models\Account;
+use App\Models\AuditLog;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Models\User;
-use App\Models\Account;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Enum;
+use Throwable;
 
 class MasterDataController extends Controller
 {
+    private function usersTabRouteParams(Request $request, array $overrides = []): array
+    {
+        $params = array_merge([
+            'tab' => 'users',
+            'search_user' => $request->input('search_user'),
+            'users_page' => $request->input('users_page'),
+        ], $overrides);
+
+        return array_filter(
+            $params,
+            fn ($value, $key) => $key === 'tab' || $value === 0 || $value === '0' || filled($value),
+            ARRAY_FILTER_USE_BOTH
+        );
+    }
+
+    private function redirectToUsersTab(Request $request, array $overrides = []): RedirectResponse
+    {
+        return redirect()->route('master-data.index', $this->usersTabRouteParams($request, $overrides));
+    }
+
+    private function buildUserAuditSnapshot(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $user->role instanceof UserRole ? $user->role->value : $user->role,
+            'account_id' => $user->account_id,
+            'account_name' => $user->account?->name,
+            'created_by' => $user->created_by,
+            'updated_by' => $user->updated_by,
+            'deleted_by' => $user->deleted_by,
+            'created_at' => $user->created_at?->toDateTimeString(),
+            'updated_at' => $user->updated_at?->toDateTimeString(),
+            'deleted_at' => $user->deleted_at?->toDateTimeString(),
+        ];
+    }
+
+    private function roleLabel(UserRole $role): string
+    {
+        return $role === UserRole::SuperAdmin ? 'Super Admin' : 'Admin';
+    }
+
     public function index(Request $request)
     {
         $tab = $request->get('tab', 'categories');
@@ -25,24 +72,24 @@ class MasterDataController extends Controller
         $userQuery = User::with('account')->orderBy('name');
         if ($request->filled('search_user')) {
             $search = $request->search_user;
-            $userQuery->where(function($q) use ($search) {
+            $userQuery->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhereHas('account', function($aq) use ($search) {
-                      $aq->where('name', 'like', "%{$search}%");
-                  });
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhereHas('account', function ($aq) use ($search) {
+                        $aq->where('name', 'like', "%{$search}%");
+                    });
             });
         }
+
         $users = $userQuery->paginate(10, ['*'], 'users_page')->appends([
             'tab' => 'users',
-            'search_user' => $request->search_user
+            'search_user' => $request->search_user,
         ]);
+
         $accounts = Account::orderBy('name')->get();
 
         return view('master-data.index', compact('tab', 'categories', 'statuses', 'users', 'accounts'));
     }
-
-    // ── Needs Categories ─────────────────────────────────
 
     public function storeCategory(Request $request)
     {
@@ -56,6 +103,7 @@ class MasterDataController extends Controller
         ]);
 
         NeedsCategory::create(['name' => trim($validated['name'])]);
+
         return back()->with('success', 'Kategori kebutuhan berhasil ditambahkan!');
     }
 
@@ -71,22 +119,20 @@ class MasterDataController extends Controller
         ]);
 
         $category->update(['name' => trim($validated['name'])]);
+
         return back()->with('success', 'Kategori berhasil diperbarui!');
     }
 
     public function destroyCategory(NeedsCategory $category)
     {
-        // ── Foreign Key Safety: check relasi sebelum hapus ───────
         if ($category->consultations()->withTrashed()->exists()) {
             return back()->with('error', 'Tidak dapat menghapus kategori yang masih digunakan (meskipun berada di trash).');
         }
 
-        // Use soft delete if available, hard delete otherwise
         $category->delete();
+
         return back()->with('success', 'Kategori berhasil dihapus!');
     }
-
-    // ── Status Categories ────────────────────────────────
 
     public function storeStatus(Request $request)
     {
@@ -136,29 +182,18 @@ class MasterDataController extends Controller
 
     public function destroyStatus(StatusCategory $status)
     {
-        // ── Foreign Key Safety: check relasi sebelum hapus ───────
         if ($status->consultations()->withTrashed()->exists()) {
             return back()->with('error', 'Tidak dapat menghapus status yang masih digunakan (meskipun berada di trash).');
         }
 
         $status->delete();
+
         return back()->with('success', 'Status berhasil dihapus!');
     }
 
-    // ── User Management ──────────────────────────────────
-
-    /**
-     * Store new user.
-     *
-     * Security:
-     * - Whitelist only allowed fields (prevent mass assignment of role escalation)
-     * - Password hashing via bcrypt (Laravel default)
-     * - Super Admin role properly restricts account_id
-     * - DB transaction for atomicity
-     */
     public function storeUser(Request $request)
     {
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255|regex:/^[^\<\>]+$/',
             'email' => 'required|email|max:255|unique:users,email',
             'password' => 'required|string|min:8',
@@ -175,34 +210,56 @@ class MasterDataController extends Controller
             'account_id.required_if' => 'Akun wajib dipilih untuk pengguna dengan role Admin.',
         ]);
 
+        if ($validator->fails()) {
+            return $this->redirectToUsersTab($request)
+                ->withErrors($validator, 'createUser')
+                ->withInput($request->except('password'))
+                ->with('error', $validator->errors()->first())
+                ->with('user_form_context', 'create');
+        }
+
+        $validated = $validator->validated();
         $role = UserRole::from($validated['role']);
 
-        DB::transaction(function () use ($validated, $role) {
-            User::create([
-                'name' => trim($validated['name']),
-                'email' => mb_strtolower(trim($validated['email'])),
-                'password' => Hash::make($validated['password']),
-                'role' => $role,
-                'account_id' => $role === UserRole::SuperAdmin ? null : $validated['account_id'],
-            ]);
-        });
+        try {
+            $user = DB::transaction(function () use ($validated, $role) {
+                $createdUser = User::create([
+                    'name' => trim($validated['name']),
+                    'email' => mb_strtolower(trim($validated['email'])),
+                    'password' => Hash::make($validated['password']),
+                    'role' => $role,
+                    'account_id' => $role === UserRole::SuperAdmin ? null : $validated['account_id'],
+                ]);
 
-        return back()->with('success', 'User baru berhasil ditambahkan!');
+                $createdUser->loadMissing('account');
+
+                AuditLog::logCreated(
+                    $createdUser,
+                    sprintf(
+                        'Menambahkan user %s dengan role %s.',
+                        $createdUser->name,
+                        $this->roleLabel($role)
+                    )
+                );
+
+                return $createdUser;
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->redirectToUsersTab($request)
+                ->withInput($request->except('password'))
+                ->with('error', 'User baru gagal ditambahkan. Silakan coba lagi.')
+                ->with('user_form_context', 'create');
+        }
+
+        return $this->redirectToUsersTab($request)
+            ->with('success', "User {$user->name} berhasil ditambahkan!");
     }
 
-    /**
-     * Update existing user.
-     *
-     * Security:
-     * - Validates ownership via edit_user_id cross-check
-     * - Unique email validation ignores current record ID (prevents false positive)
-     * - Protects against removing last Super Admin
-     * - Only updates explicitly provided fields (no NULL overwrites)
-     * - DB transaction for atomicity
-     */
     public function updateUser(Request $request, User $user)
     {
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'edit_user_id' => 'required|integer',
             'name' => 'required|string|max:255|regex:/^[^\<\>]+$/',
             'email' => 'required|email|max:255|unique:users,email,' . $user->id,
@@ -217,92 +274,140 @@ class MasterDataController extends Controller
             'account_id.required_if' => 'Akun wajib dipilih untuk pengguna dengan role Admin.',
         ]);
 
-        // ── IDOR Protection: cross-check form data vs URL param ──
-        if ((int) $validated['edit_user_id'] !== $user->id) {
-            return back()
+        if ($validator->fails()) {
+            return $this->redirectToUsersTab($request)
+                ->withErrors($validator, 'editUser')
                 ->withInput()
-                ->with('error', 'Data user yang akan diperbarui tidak valid.');
+                ->with('error', $validator->errors()->first())
+                ->with('user_form_context', 'edit');
+        }
+
+        $validated = $validator->validated();
+
+        if ((int) $validated['edit_user_id'] !== $user->id) {
+            return $this->redirectToUsersTab($request)
+                ->withInput()
+                ->with('error', 'Data user yang akan diperbarui tidak valid.')
+                ->with('user_form_context', 'edit');
         }
 
         $role = UserRole::from($validated['role']);
 
-        // ── Protect Last Super Admin ─────────────────────────────
         if (
             $user->role === UserRole::SuperAdmin
             && $role !== UserRole::SuperAdmin
             && User::where('role', UserRole::SuperAdmin)->count() <= 1
         ) {
-            return back()
+            return $this->redirectToUsersTab($request)
                 ->withInput()
-                ->with('error', 'Tidak dapat mengubah Super Admin terakhir menjadi Admin biasa.');
+                ->with('error', 'Tidak dapat mengubah Super Admin terakhir menjadi Admin biasa.')
+                ->with('user_form_context', 'edit');
         }
 
-        DB::transaction(function () use ($user, $validated, $role) {
-            $user->update([
-                'name' => trim($validated['name']),
-                'email' => mb_strtolower(trim($validated['email'])),
-                'role' => $role,
-                'account_id' => $role === UserRole::SuperAdmin ? null : $validated['account_id'],
-            ]);
-        });
+        try {
+            DB::transaction(function () use ($user, $validated, $role) {
+                $user->loadMissing('account');
+                $oldValues = $this->buildUserAuditSnapshot($user);
 
-        return redirect()
-            ->route('master-data.index', [
-                'tab' => 'users',
-                'search_user' => $request->search_user,
-                'users_page' => $request->users_page,
-            ])
+                $user->update([
+                    'name' => trim($validated['name']),
+                    'email' => mb_strtolower(trim($validated['email'])),
+                    'role' => $role,
+                    'account_id' => $role === UserRole::SuperAdmin ? null : $validated['account_id'],
+                ]);
+
+                $user->refresh()->loadMissing('account');
+
+                AuditLog::logUpdated(
+                    $user,
+                    $oldValues,
+                    sprintf(
+                        'Memperbarui user %s menjadi role %s.',
+                        $user->name,
+                        $this->roleLabel($role)
+                    )
+                );
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->redirectToUsersTab($request)
+                ->withInput()
+                ->with('error', "Data user {$user->name} gagal diperbarui. Silakan coba lagi.")
+                ->with('user_form_context', 'edit');
+        }
+
+        return $this->redirectToUsersTab($request)
             ->with('success', "Data user {$user->name} berhasil diperbarui!");
     }
 
-    /**
-     * Delete user with safety checks.
-     *
-     * Security:
-     * - Cannot delete yourself
-     * - Cannot delete last Super Admin
-     * - Uses soft delete (if trait is applied)
-     * - Validates related data
-     */
-    public function destroyUser(User $user)
+    public function destroyUser(Request $request, User $user)
     {
-        // ── Cannot delete yourself ───────────────────────────────
         if ($user->id === auth()->id()) {
-            return back()->with('error', 'Tidak dapat menghapus akun Anda sendiri.');
+            return $this->redirectToUsersTab($request)
+                ->with('error', 'Tidak dapat menghapus akun Anda sendiri.');
         }
 
-        // ── Protect Last Super Admin ─────────────────────────────
         if ($user->role === UserRole::SuperAdmin && User::where('role', UserRole::SuperAdmin)->count() <= 1) {
-            return back()->with('error', 'Tidak dapat menghapus Super Admin terakhir pada sistem.');
+            return $this->redirectToUsersTab($request)
+                ->with('error', 'Tidak dapat menghapus Super Admin terakhir pada sistem.');
         }
 
-        DB::transaction(function () use ($user) {
-            $user->delete();
-        });
+        try {
+            DB::transaction(function () use ($user) {
+                $user->loadMissing('account');
+                $user->delete();
 
-        return back()->with('success', 'User berhasil dihapus!');
+                AuditLog::logDeleted(
+                    $user,
+                    sprintf('Menghapus user %s dari sistem.', $user->name)
+                );
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->redirectToUsersTab($request)
+                ->with('error', "User {$user->name} gagal dihapus. Silakan coba lagi.");
+        }
+
+        return $this->redirectToUsersTab($request)
+            ->with('success', 'User berhasil dihapus!');
     }
 
-    /**
-     * Reset user password.
-     *
-     * Security:
-     * - Minimum password 8 characters
-     * - Bcrypt hashing
-     */
     public function resetUserPassword(Request $request, User $user)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'password' => 'required|string|min:8',
         ], [
             'password.required' => 'Password baru wajib diisi.',
             'password.min' => 'Password minimal 8 karakter.',
         ]);
 
-        $user->update([
-            'password' => Hash::make($request->password),
-        ]);
+        if ($validator->fails()) {
+            return $this->redirectToUsersTab($request)
+                ->with('error', $validator->errors()->first());
+        }
 
-        return back()->with('success', "Password untuk {$user->name} berhasil direset!");
+        try {
+            DB::transaction(function () use ($request, $user) {
+                $user->update([
+                    'password' => Hash::make($request->password),
+                ]);
+
+                AuditLog::logUpdated(
+                    $user->fresh(),
+                    ['password' => '[REDACTED]'],
+                    sprintf('Mereset password user %s.', $user->name)
+                );
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->redirectToUsersTab($request)
+                ->with('error', "Password untuk {$user->name} gagal direset. Silakan coba lagi.");
+        }
+
+        return $this->redirectToUsersTab($request)
+            ->with('success', "Password untuk {$user->name} berhasil direset!");
     }
 }

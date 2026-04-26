@@ -1,1 +1,0 @@
-{"version":2,"defects":{"Tests\\Feature\\ConsultationAuthorizationTest::test_admin_cannot_open_consultation_from_other_account":8,"Tests\\Feature\\ConsultationAuthorizationTest::test_admin_preview_id_endpoint_ignores_other_account_id":8},"times":[]}
