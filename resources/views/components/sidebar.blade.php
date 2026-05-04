@@ -6,7 +6,7 @@
 
 <aside role="navigation" aria-label="Sidebar navigasi" class="glass-sidebar mobile-sidebar-panel h-[100dvh] lg:h-screen flex flex-col py-6 w-full shrink-0 bg-surface-container-lowest lg:bg-surface-container-lowest/96 backdrop-blur-md border-r border-surface-container lg:border-r-0 overflow-x-hidden">
     {{-- Close Button for Mobile --}}
-    <button @click="sidebarOpen = false" aria-label="Tutup sidebar" title="Tutup sidebar" class="lg:hidden absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-on-surface-variant">
+    <button type="button" @click="sidebarOpen = false" aria-label="Tutup sidebar" title="Tutup sidebar" class="lg:hidden absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-on-surface-variant">
         <x-icon name="close" class="w-5 h-5" />
     </button>
 
@@ -24,7 +24,7 @@
     </div>
 
     {{-- Navigation --}}
-    <nav class="flex-1 px-3 sm:px-4 space-y-1 overflow-y-auto custom-scrollbar">
+    <nav aria-label="Navigasi utama" class="flex-1 px-3 sm:px-4 space-y-1 overflow-y-auto custom-scrollbar">
         <a href="{{ route('dashboard') }}" @click="if(window.innerWidth < 1024) sidebarOpen = false" aria-label="Beranda" title="Beranda"
            class="flex items-center py-3 rounded-xl border transition-all duration-200 font-headline text-sm tracking-tight
                   {{ $currentRoute === 'dashboard' ? 'text-primary font-semibold border-primary/20 bg-primary/10 shadow-[inset_0_1px_0_rgb(255_255_255/0.03)]' : 'border-transparent text-on-surface-variant hover:border-surface-container-high hover:bg-surface-container-high/70 hover:text-on-surface' }}

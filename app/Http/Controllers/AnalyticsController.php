@@ -15,7 +15,7 @@ class AnalyticsController extends Controller
         $report = $reportService->buildForUser($user, $request->validated());
 
         $accounts = $user->isSuperAdmin()
-            ? Account::orderBy('name')->get()
+            ? Account::query()->orderBy('name')->get(['id', 'name'])
             : collect();
 
         $months = collect(range(1, 12))->map(fn ($month) => [

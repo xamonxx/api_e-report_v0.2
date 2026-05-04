@@ -4,7 +4,9 @@
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="description" content="@yield('meta_description', 'Dashboard E-REPORT untuk memantau lead, laporan, dan aktivitas tim secara terintegrasi.')">
     <title>@yield('title', 'Dashboard') | E-REPORT</title>
+    <link rel="canonical" href="{{ url()->current() }}">
     <link rel="icon" type="image/svg+xml" href="{{ asset('images/logo_e-report_transparan.svg') }}">
     <link rel="shortcut icon" href="{{ asset('images/logo_e-report_transparan.svg') }}">
     <script>
@@ -25,6 +27,7 @@
             }
         })();
     </script>
+    @stack('head')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 @php $isSidebarOpen = request()->cookie('sidebar_open', 'false') === 'true'; @endphp
@@ -40,6 +43,7 @@
       @keydown.escape.window="sidebarOpen = false"
       @keydown.tab.window="trapSidebarFocus($event)"
       @resize.window="handleResize()">
+    <a href="#main-content" class="skip-link">Lewati ke konten utama</a>
 
     <div x-show="sidebarOpen" x-cloak
          x-transition:enter="transition ease-out duration-300"
@@ -49,10 +53,11 @@
          x-transition:leave-start="opacity-100"
          x-transition:leave-end="opacity-0"
          @click="sidebarOpen = false"
+         aria-hidden="true"
          class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden">
     </div>
 
-    <div class="flex min-h-screen lg:h-screen relative overflow-hidden">
+    <div class="app-shell flex min-h-screen lg:h-screen relative lg:overflow-hidden">
         <div id="sidebar-drawer"
              :aria-hidden="(isMobile && !sidebarOpen).toString()"
              class="mobile-sidebar-drawer fixed inset-y-0 left-0 z-50 lg:static transition-all duration-300 ease-in-out shrink-0 overflow-hidden {{ $isSidebarOpen ? 'max-lg:-translate-x-full lg:translate-x-0 lg:w-64' : '-translate-x-full lg:translate-x-0 lg:w-[5.5rem]' }}"
@@ -60,7 +65,7 @@
             @include('components.sidebar')
         </div>
 
-        <main class="flex-1 flex flex-col min-w-0 bg-surface-container-low w-full overflow-y-auto overflow-x-hidden">
+        <main id="main-content" class="app-main-scroll flex-1 flex flex-col min-w-0 bg-surface-container-low w-full overflow-x-hidden lg:overflow-y-auto">
             @include('components.header')
 
             @if(session('success'))

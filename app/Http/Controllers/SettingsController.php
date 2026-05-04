@@ -29,7 +29,12 @@ class SettingsController extends Controller
         if ($wantsPasswordUpdate) {
             $validatedPassword = $request->validate([
                 'current_password' => 'required|string',
-                'password' => 'required|string|min:8|confirmed',
+                'password' => 'required|string|min:8',
+                'password_confirmation' => 'required|string|same:password',
+            ], [
+                'password.min' => 'Password baru minimal 8 karakter.',
+                'password_confirmation.required' => 'Konfirmasi password wajib diisi.',
+                'password_confirmation.same' => 'Konfirmasi password tidak cocok.',
             ]);
 
             if (!Hash::check($validatedPassword['current_password'], $user->password)) {

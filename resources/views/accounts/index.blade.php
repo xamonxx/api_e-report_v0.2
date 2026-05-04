@@ -65,7 +65,7 @@
                      x-transition:enter="transition ease-out duration-150"
                      x-transition:enter-start="opacity-0 -translate-y-1"
                      x-transition:enter-end="opacity-100 translate-y-0"
-                     class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                         class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                     <div class="border-b border-surface-container-low p-3">
                         <input x-ref="searchInput" type="text" x-model="search"
                                class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -193,22 +193,24 @@
 @push('scripts')
 <script>
     function confirmDeleteAccount(formId, accountName) {
-        Swal.fire({
-            title: 'Hapus akun pusat ini?',
-            text: 'Tindakan ini akan menghapus akun "' + accountName + '" beserta seluruh data konsultasi, tim, dan histori yang terhubung secara permanen!',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#9f403d',
-            cancelButtonColor: '#737c7f',
-            confirmButtonText: 'Ya, hapus!',
-            cancelButtonText: 'Batal',
-            customClass: {
-                popup: 'rounded-2xl shadow-2xl',
-                title: 'text-xl font-headline font-bold text-on-surface',
-                confirmButton: 'bg-error hover:bg-error-dim rounded-xl px-8 py-3 font-bold',
-                cancelButton: 'bg-outline hover:bg-outline-variant rounded-xl px-8 py-3 font-bold'
-            }
-        }).then((result) => {
+        window.withSwal(async (Swal) => {
+            const result = await Swal.fire({
+                title: 'Hapus akun pusat ini?',
+                text: 'Tindakan ini akan menghapus akun "' + accountName + '" beserta seluruh data konsultasi, tim, dan histori yang terhubung secara permanen!',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#9f403d',
+                cancelButtonColor: '#737c7f',
+                confirmButtonText: 'Ya, hapus!',
+                cancelButtonText: 'Batal',
+                customClass: {
+                    popup: 'rounded-2xl shadow-2xl',
+                    title: 'text-xl font-headline font-bold text-on-surface',
+                    confirmButton: 'bg-error hover:bg-error-dim rounded-xl px-8 py-3 font-bold',
+                    cancelButton: 'bg-outline hover:bg-outline-variant rounded-xl px-8 py-3 font-bold'
+                }
+            });
+
             if (result.isConfirmed) {
                 document.getElementById(formId).submit();
             }

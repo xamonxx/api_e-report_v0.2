@@ -282,11 +282,52 @@
             </div>
             <div class="space-y-2">
                 <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Set Password</label>
-                <input type="password" name="password" required
-                       class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner font-bold"
-                       placeholder="Minimal 8 karakter" />
+                <div class="relative">
+                    <input :type="showCreateUserPasswords ? 'text' : 'password'" name="password" required
+                           x-model="createUserPassword"
+                           :aria-invalid="hasCreateUserPasswordMismatch() ? 'true' : 'false'"
+                           class="w-full bg-surface-container-low border-0 rounded-xl pl-4 pr-12 py-3 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner font-bold transition"
+                           :class="hasCreateUserPasswordMismatch() ? 'ring-2 ring-error/40' : ''"
+                           placeholder="Minimal 8 karakter" />
+                    <button type="button"
+                            @click="toggleCreateUserPasswordsVisibility()"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-on-surface-variant transition hover:bg-surface-container hover:text-on-surface"
+                            :aria-label="showCreateUserPasswords ? 'Sembunyikan password' : 'Tampilkan password'"
+                            :title="showCreateUserPasswords ? 'Sembunyikan password' : 'Tampilkan password'">
+                        <x-icon x-show="!showCreateUserPasswords" x-cloak name="visibility" class="w-5 h-5" />
+                        <x-icon x-show="showCreateUserPasswords" x-cloak name="visibility_off" class="w-5 h-5" />
+                    </button>
+                </div>
                 @if($createUserErrors->has('password'))
                 <p class="px-1 text-xs font-medium text-error">{{ $createUserErrors->first('password') }}</p>
+                @endif
+            </div>
+            <div class="space-y-2">
+                <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Konfirmasi Password</label>
+                <div class="relative">
+                    <input :type="showCreateUserPasswords ? 'text' : 'password'" name="password_confirmation" required
+                           x-model="createUserPasswordConfirmation"
+                           @input="createUserPasswordConfirmationTouched = true"
+                           @blur="createUserPasswordConfirmationTouched = true"
+                           :aria-invalid="hasCreateUserPasswordMismatch() ? 'true' : 'false'"
+                           class="w-full bg-surface-container-low border-0 rounded-xl pl-4 pr-12 py-3 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner font-bold transition"
+                           :class="hasCreateUserPasswordMismatch() ? 'ring-2 ring-error/40' : ''"
+                           placeholder="Ulangi password yang sama" />
+                    <button type="button"
+                            @click="toggleCreateUserPasswordsVisibility()"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-on-surface-variant transition hover:bg-surface-container hover:text-on-surface"
+                            :aria-label="showCreateUserPasswords ? 'Sembunyikan password' : 'Tampilkan password'"
+                            :title="showCreateUserPasswords ? 'Sembunyikan password' : 'Tampilkan password'">
+                        <x-icon x-show="!showCreateUserPasswords" x-cloak name="visibility" class="w-5 h-5" />
+                        <x-icon x-show="showCreateUserPasswords" x-cloak name="visibility_off" class="w-5 h-5" />
+                    </button>
+                </div>
+                <p x-cloak
+                   x-show="hasCreateUserPasswordMismatch()"
+                   x-text="getCreateUserPasswordConfirmationError()"
+                   class="px-1 text-xs font-medium text-error"></p>
+                @if($createUserErrors->has('password_confirmation'))
+                <p class="px-1 text-xs font-medium text-error">{{ $createUserErrors->first('password_confirmation') }}</p>
                 @endif
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

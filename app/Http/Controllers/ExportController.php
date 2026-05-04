@@ -79,7 +79,11 @@ class ExportController extends Controller
         AnalyticsReportService $reportService,
         AnalyticsExcelExporter $excelExporter
     ): Response {
-        $report = $reportService->buildForUser($request->user(), $request->validated());
+        $report = $reportService->buildForUser(
+            $request->user(),
+            $request->validated(),
+            ['includeRawRows' => true]
+        );
         $filename = $this->analyticsFilename('xls', $report);
 
         return response(
@@ -97,7 +101,11 @@ class ExportController extends Controller
         AnalyticsReportRequest $request,
         AnalyticsReportService $reportService
     ): Response {
-        $report = $reportService->buildForUser($request->user(), $request->validated());
+        $report = $reportService->buildForUser(
+            $request->user(),
+            $request->validated(),
+            ['includeRawRows' => true]
+        );
         $filename = $this->analyticsFilename('pdf', $report);
 
         $pdf = Pdf::loadView('reports.pdf.analytics', [

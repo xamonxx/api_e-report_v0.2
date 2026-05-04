@@ -1,13 +1,36 @@
 import Alpine from 'alpinejs';
-import flatpickr from 'flatpickr';
-import { Indonesian } from 'flatpickr/dist/l10n/id.js';
-import Swal from 'sweetalert2';
-import 'flatpickr/dist/flatpickr.css';
 
 window.Alpine = Alpine;
-window.Swal = Swal;
 
 const THEME_STORAGE_KEY = 'e-report-theme';
+let flatpickrLoader;
+let swalLoader;
+
+const loadFlatpickr = () => {
+    if (!flatpickrLoader) {
+        flatpickrLoader = Promise.all([
+            import('flatpickr'),
+            import('flatpickr/dist/l10n/id.js'),
+            import('flatpickr/dist/flatpickr.css'),
+        ]).then(([flatpickrModule, localeModule]) => ({
+            flatpickr: flatpickrModule.default,
+            Indonesian: localeModule.Indonesian,
+        }));
+    }
+
+    return flatpickrLoader;
+};
+
+const loadSwal = async () => {
+    if (!swalLoader) {
+        swalLoader = import('sweetalert2').then((module) => module.default);
+    }
+
+    const Swal = await swalLoader;
+    window.Swal = Swal;
+
+    return Swal;
+};
 
 const getSystemTheme = () =>
     window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -87,8 +110,87 @@ window.toggleThemeMode = function toggleThemeMode() {
     return nextMode;
 };
 
-window.initDatePickers = function initDatePickers(scope = document) {
-    scope.querySelectorAll('[data-datepicker]').forEach((input) => {
+window.withSwal = async function withSwal(callback) {
+    const Swal = await loadSwal();
+    return callback(Swal);
+};
+
+const phoneDigitsOnly = (value = '') => String(value ?? '').replace(/\D+/g, '');
+
+window.extractIndonesiaPhoneCore = function extractIndonesiaPhoneCore(value = '') {
+    let digits = phoneDigitsOnly(value);
+
+    if (digits.startsWith('620')) {
+        digits = digits.slice(3);
+    } else if (digits.startsWith('62')) {
+        digits = digits.slice(2);
+    } else if (digits.startsWith('0')) {
+        digits = digits.slice(1);
+    }
+
+    return digits.replace(/^0+/, '');
+};
+
+window.formatIndonesiaPhoneCore = function formatIndonesiaPhoneCore(value = '') {
+    const core = window.extractIndonesiaPhoneCore(value);
+
+    if (!core) {
+        return '';
+    }
+
+    const segments = [core.slice(0, 3)];
+    let remaining = core.slice(3);
+
+    while (remaining.length > 4) {
+        segments.push(remaining.slice(0, 4));
+        remaining = remaining.slice(4);
+    }
+
+    if (remaining) {
+        segments.push(remaining);
+    }
+
+    return segments.filter(Boolean).join('-');
+};
+
+window.formatIndonesiaPhoneInput = function formatIndonesiaPhoneInput(value = '') {
+    const formattedCore = window.formatIndonesiaPhoneCore(value);
+    return formattedCore ? `+62 ${formattedCore}` : '';
+};
+
+window.phoneInputState = function phoneInputState(initialValue = '') {
+    return {
+        core: '',
+        focused: false,
+        init() {
+            this.syncFromExternal(initialValue);
+        },
+        onInput(value) {
+            this.core = window.formatIndonesiaPhoneCore(value);
+        },
+        syncFromExternal(value = '') {
+            const normalized = window.formatIndonesiaPhoneCore(value);
+
+            if (normalized !== this.core) {
+                this.core = normalized;
+            }
+        },
+        submittedValue() {
+            return window.formatIndonesiaPhoneInput(this.core);
+        },
+    };
+};
+
+window.initDatePickers = async function initDatePickers(scope = document) {
+    const inputs = Array.from(scope.querySelectorAll('[data-datepicker]'));
+
+    if (inputs.length === 0) {
+        return;
+    }
+
+    const { flatpickr, Indonesian } = await loadFlatpickr();
+
+    inputs.forEach((input) => {
         if (input._flatpickr) {
             return;
         }
@@ -222,18 +324,119 @@ window.appShell = function appShell(defaultSidebarOpen) {
     };
 };
 
-window.notificationBadge = function notificationBadge(initialCount, apiUrl, csrfToken) {
+window.notificationCenter = function notificationCenter(initialCount, countApiUrl, summaryApiUrl, csrfToken) {
     return {
         badgeCount: initialCount,
+        open: false,
         pollTimeout: null,
         pollFailures: 0,
         isPolling: false,
+        detailsLoading: false,
+        detailsLoaded: false,
+        detailsError: '',
+        detailsLastLoadedAt: 0,
+        unreadNotes: [],
+        activeReminders: [],
+        async fetchCountSnapshot() {
+            const response = await fetch(countApiUrl, {
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+            });
+
+            if (!response.ok) {
+                throw response;
+            }
+
+            return response.json();
+        },
+        async loadDetails(force = false) {
+            const isFresh = Date.now() - this.detailsLastLoadedAt < 30000;
+
+            if ((this.detailsLoading || (this.detailsLoaded && isFresh)) && !force) {
+                return;
+            }
+
+            this.detailsLoading = true;
+            this.detailsError = '';
+
+            try {
+                const response = await fetch(summaryApiUrl, {
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                });
+
+                if (!response.ok) {
+                    throw response;
+                }
+
+                const data = await response.json();
+                this.badgeCount = data.total || 0;
+                this.unreadNotes = Array.isArray(data.notes) ? data.notes : [];
+                this.activeReminders = Array.isArray(data.reminders) ? data.reminders : [];
+                this.detailsLoaded = true;
+                this.detailsLastLoadedAt = Date.now();
+            } catch (_error) {
+                this.detailsError = 'Notifikasi belum bisa dimuat.';
+            } finally {
+                this.detailsLoading = false;
+            }
+        },
+        async togglePanel() {
+            this.open = !this.open;
+
+            if (this.open) {
+                await this.loadDetails();
+            }
+        },
+        async markReminderRead(reminder) {
+            if (!reminder?.mark_read_url) {
+                return;
+            }
+
+            try {
+                const response = await fetch(reminder.mark_read_url, {
+                    method: 'PATCH',
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                });
+
+                if (!response.ok) {
+                    throw response;
+                }
+
+                await Promise.all([
+                    this.loadDetails(true),
+                    this.fetchCountSnapshot().then((data) => {
+                        this.badgeCount = data.total || 0;
+                    }),
+                ]);
+            } catch (_error) {
+                this.detailsError = 'Gagal menandai pengingat.';
+            }
+        },
         startPolling() {
             if (this.isPolling) {
                 return;
             }
 
             this.isPolling = true;
+            const scheduleInitialPoll = () => {
+                if (typeof window.requestIdleCallback === 'function') {
+                    window.requestIdleCallback(() => this.poll(), { timeout: 5000 });
+                    return;
+                }
+
+                window.setTimeout(() => this.poll(), 5000);
+            };
 
             const scheduleNext = (delay = 15000) => {
                 this.pollTimeout = window.setTimeout(() => {
@@ -247,17 +450,16 @@ window.notificationBadge = function notificationBadge(initialCount, apiUrl, csrf
                     return;
                 }
 
-                fetch(apiUrl, {
-                    credentials: 'same-origin',
-                    headers: {
-                        Accept: 'application/json',
-                        'X-CSRF-TOKEN': csrfToken,
-                    },
-                })
-                    .then((response) => (response.ok ? response.json() : Promise.reject(response)))
+                this.fetchCountSnapshot()
                     .then((data) => {
+                        const previousTotal = this.badgeCount;
                         this.badgeCount = data.total || 0;
                         this.pollFailures = 0;
+
+                        if (this.open && this.detailsLoaded && previousTotal !== this.badgeCount) {
+                            this.loadDetails(true);
+                        }
+
                         scheduleNext(15000);
                     })
                     .catch(() => {
@@ -273,10 +475,12 @@ window.notificationBadge = function notificationBadge(initialCount, apiUrl, csrf
                 }
             });
 
-            this.poll();
+            scheduleInitialPoll();
         },
     };
 };
+
+window.notificationBadge = window.notificationCenter;
 
 window.consultationsPage = function consultationsPage(config) {
     const parseJsonArray = (rawValue) => {
@@ -291,8 +495,36 @@ window.consultationsPage = function consultationsPage(config) {
     return {
         showImportModal: config.showImportModal,
         showCreateModal: config.showCreateModal,
+        createUrl: config.createUrl,
         showEditModal: false,
-        editData: {},
+        editData: {
+            id: '',
+            consultation_id: '',
+            client_name: '',
+            phone: '',
+            province: '',
+            city: '',
+            district: '',
+            address: '',
+            account_id: '',
+            needs_category_id: '',
+            needs_category_ids: [],
+            product_details: '',
+            status_category_id: '',
+            consultation_date: '',
+            notes: ''
+        },
+        isMobileCreateFlow() {
+            return window.matchMedia('(max-width: 639.98px)').matches;
+        },
+        openCreateLead() {
+            if (this.isMobileCreateFlow()) {
+                window.location.assign(this.createUrl);
+                return;
+            }
+
+            this.showCreateModal = true;
+        },
         init() {
             document.querySelectorAll('.btn-edit').forEach((button) => {
                 button.addEventListener('click', () => {
@@ -548,22 +780,24 @@ window.buildConsultationUpdateUrl = function buildConsultationUpdateUrl(id) {
 };
 
 window.confirmDelete = function confirmDelete(formId, clientName) {
-    Swal.fire({
-        title: 'Hapus data konsultasi?',
-        text: `Data lead atas nama '${clientName}' akan terhapus secara permanen dari sistem!`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#9f403d',
-        cancelButtonColor: '#737c7f',
-        confirmButtonText: 'Ya, hapus!',
-        cancelButtonText: 'Batal',
-        customClass: {
-            popup: 'rounded-2xl shadow-2xl',
-            title: 'text-xl font-headline font-bold text-on-surface',
-            confirmButton: 'bg-error hover:bg-error-dim rounded-xl px-8 py-3 font-bold',
-            cancelButton: 'bg-outline hover:bg-outline-variant rounded-xl px-8 py-3 font-bold',
-        },
-    }).then((result) => {
+    window.withSwal(async (Swal) => {
+        const result = await Swal.fire({
+            title: 'Hapus data konsultasi?',
+            text: `Data lead atas nama '${clientName}' akan terhapus secara permanen dari sistem!`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#9f403d',
+            cancelButtonColor: '#737c7f',
+            confirmButtonText: 'Ya, hapus!',
+            cancelButtonText: 'Batal',
+            customClass: {
+                popup: 'rounded-2xl shadow-2xl',
+                title: 'text-xl font-headline font-bold text-on-surface',
+                confirmButton: 'bg-error hover:bg-error-dim rounded-xl px-8 py-3 font-bold',
+                cancelButton: 'bg-outline hover:bg-outline-variant rounded-xl px-8 py-3 font-bold',
+            },
+        });
+
         if (result.isConfirmed) {
             document.getElementById(formId)?.submit();
         }
@@ -575,12 +809,37 @@ window.masterDataPage = function masterDataPage(config) {
         activeTab: config.initialTab,
         showEditUserModal: config.showEditUserModal,
         createUserRole: config.createUserRole ?? 'admin',
+        createUserPassword: '',
+        createUserPasswordConfirmation: '',
+        createUserPasswordConfirmationTouched: false,
+        showCreateUserPasswords: false,
         editUser: {
             id: config.editUser.id ?? '',
             name: config.editUser.name ?? '',
             email: config.editUser.email ?? '',
             role: config.editUser.role ?? 'admin',
             account_id: config.editUser.account_id ?? '',
+        },
+        hasCreateUserPasswordMismatch() {
+            if (!this.createUserPasswordConfirmationTouched) {
+                return false;
+            }
+
+            if (this.createUserPassword === '' || this.createUserPasswordConfirmation === '') {
+                return false;
+            }
+
+            return this.createUserPassword !== this.createUserPasswordConfirmation;
+        },
+        getCreateUserPasswordConfirmationError() {
+            if (!this.hasCreateUserPasswordMismatch()) {
+                return '';
+            }
+
+            return 'Konfirmasi password tidak cocok.';
+        },
+        toggleCreateUserPasswordsVisibility() {
+            this.showCreateUserPasswords = !this.showCreateUserPasswords;
         },
         init() {
             const picker = document.getElementById('statusColorPicker');
@@ -653,145 +912,73 @@ window.toggleStatusEdit = function toggleStatusEdit(id) {
 };
 
 window.promptResetPassword = function promptResetPassword(userId, userName) {
-    Swal.fire({
-        title: 'Reset Password',
-        text: `Masukkan password baru untuk ${userName}`,
-        input: 'password',
-        inputAttributes: {
-            autocapitalize: 'off',
-            autocorrect: 'off',
-        },
-        showCancelButton: true,
-        confirmButtonText: 'Simpan Password',
-        cancelButtonText: 'Batal',
-        showLoaderOnConfirm: true,
-        customClass: {
-            popup: 'rounded-2xl shadow-xl',
-            input: 'bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20',
-            confirmButton: 'bg-primary rounded-xl px-6 py-2.5 text-sm font-bold',
-            cancelButton: 'bg-outline-variant/30 rounded-xl px-6 py-2.5 text-sm font-bold',
-        },
-        preConfirm: (newPassword) => {
-            if (!newPassword || newPassword.length < 8) {
-                Swal.showValidationMessage('Password minimal 8 karakter');
-                return false;
-            }
-
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = `/master-data/users/${userId}/reset-password`;
-            const params = new URLSearchParams(window.location.search);
-
-            const csrf = document.createElement('input');
-            csrf.type = 'hidden';
-            csrf.name = '_token';
-            csrf.value = document.querySelector('meta[name="csrf-token"]').content;
-
-            const method = document.createElement('input');
-            method.type = 'hidden';
-            method.name = '_method';
-            method.value = 'PUT';
-
-            const passInput = document.createElement('input');
-            passInput.type = 'hidden';
-            passInput.name = 'password';
-            passInput.value = newPassword;
-
-            const appendStateInput = (name, value) => {
-                if (!value && value !== '0') {
-                    return;
+    window.withSwal((Swal) =>
+        Swal.fire({
+            title: 'Reset Password',
+            text: `Masukkan password baru untuk ${userName}`,
+            input: 'password',
+            inputAttributes: {
+                autocapitalize: 'off',
+                autocorrect: 'off',
+            },
+            showCancelButton: true,
+            confirmButtonText: 'Simpan Password',
+            cancelButtonText: 'Batal',
+            showLoaderOnConfirm: true,
+            customClass: {
+                popup: 'rounded-2xl shadow-xl',
+                input: 'bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20',
+                confirmButton: 'bg-primary rounded-xl px-6 py-2.5 text-sm font-bold',
+                cancelButton: 'bg-outline-variant/30 rounded-xl px-6 py-2.5 text-sm font-bold',
+            },
+            preConfirm: (newPassword) => {
+                if (!newPassword || newPassword.length < 8) {
+                    Swal.showValidationMessage('Password minimal 8 karakter');
+                    return false;
                 }
 
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = name;
-                input.value = value;
-                form.appendChild(input);
-            };
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = `/master-data/users/${userId}/reset-password`;
+                const params = new URLSearchParams(window.location.search);
 
-            form.append(csrf, method, passInput);
-            appendStateInput('tab', 'users');
-            appendStateInput('search_user', params.get('search_user') ?? '');
-            appendStateInput('users_page', params.get('users_page') ?? '');
-            document.body.appendChild(form);
-            form.submit();
-            return true;
-        },
-    });
-};
+                const csrf = document.createElement('input');
+                csrf.type = 'hidden';
+                csrf.name = '_token';
+                csrf.value = document.querySelector('meta[name="csrf-token"]').content;
 
-window.loginPage = function loginPage(config) {
-    return {
-        showBugModal: false,
-        showForgotPasswordModal: false,
-        bugMessage: '',
-        bugError: '',
-        forgotPasswordAdminName: '',
-        forgotPasswordAccountName: '',
-        forgotPasswordError: '',
-        waNumber: config.waNumber,
-        activeSlide: 0,
-        autoSlideMs: Number(config.autoSlideMs ?? 4500),
-        sliderTimer: null,
-        startSlider() {
-            this.pauseSlider();
-            this.sliderTimer = window.setInterval(() => {
-                this.nextSlide();
-            }, this.autoSlideMs);
-        },
-        pauseSlider() {
-            if (!this.sliderTimer) {
-                return;
-            }
+                const method = document.createElement('input');
+                method.type = 'hidden';
+                method.name = '_method';
+                method.value = 'PUT';
 
-            window.clearInterval(this.sliderTimer);
-            this.sliderTimer = null;
-        },
-        nextSlide() {
-            this.activeSlide = (this.activeSlide + 1) % 3;
-        },
-        setSlide(index) {
-            this.activeSlide = Number(index) || 0;
-            this.startSlider();
-        },
-        submitBugReport() {
-            if (this.bugMessage.trim() === '') {
-                this.bugError = 'Isi pesan keluhan terlebih dahulu!';
-                return;
-            }
+                const passInput = document.createElement('input');
+                passInput.type = 'hidden';
+                passInput.name = 'password';
+                passInput.value = newPassword;
 
-            this.bugError = '';
+                const appendStateInput = (name, value) => {
+                    if (!value && value !== '0') {
+                        return;
+                    }
 
-            const text = encodeURIComponent(
-                `Halo Tim Database, saya ingin melaporkan bug/error di aplikasi E-REPORT:\n\n${this.bugMessage}`
-            );
-            window.open(`https://api.whatsapp.com/send?phone=${this.waNumber}&text=${text}`, '_blank');
-            this.showBugModal = false;
-            this.bugMessage = '';
-        },
-        submitForgotPasswordRequest() {
-            if (this.forgotPasswordAdminName.trim() === '') {
-                this.forgotPasswordError = 'Nama admin wajib diisi!';
-                return;
-            }
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = name;
+                    input.value = value;
+                    form.appendChild(input);
+                };
 
-            if (this.forgotPasswordAccountName.trim() === '') {
-                this.forgotPasswordError = 'Nama akun yang dipegang wajib diisi!';
-                return;
-            }
-
-            this.forgotPasswordError = '';
-
-            const text = encodeURIComponent(
-                `Halo Tim Database, saya ingin meminta bantuan reset password E-REPORT.\n\nNama Admin: ${this.forgotPasswordAdminName}\nNama Akun yang Dipegang: ${this.forgotPasswordAccountName}`
-            );
-
-            window.open(`https://api.whatsapp.com/send?phone=${this.waNumber}&text=${text}`, '_blank');
-            this.showForgotPasswordModal = false;
-            this.forgotPasswordAdminName = '';
-            this.forgotPasswordAccountName = '';
-        },
-    };
+                form.append(csrf, method, passInput);
+                appendStateInput('tab', 'users');
+                appendStateInput('search_user', params.get('search_user') ?? '');
+                appendStateInput('users_page', params.get('users_page') ?? '');
+                document.body.appendChild(form);
+                form.submit();
+                return true;
+            },
+        })
+    );
 };
 
 window.settingsPage = function settingsPage(initialColor) {
@@ -822,6 +1009,32 @@ window.settingsPage = function settingsPage(initialColor) {
     return {
         themeColor: normalizeHex(initialColor),
         presets: ['#D97706', '#C2410C', '#0F766E', '#2563EB', '#BE185D', '#4F46E5'],
+        settingsCurrentPassword: '',
+        settingsNewPassword: '',
+        settingsPasswordConfirmation: '',
+        settingsPasswordConfirmationTouched: false,
+        showSettingsPasswords: false,
+        hasSettingsPasswordMismatch() {
+            if (!this.settingsPasswordConfirmationTouched) {
+                return false;
+            }
+
+            if (this.settingsNewPassword === '' || this.settingsPasswordConfirmation === '') {
+                return false;
+            }
+
+            return this.settingsNewPassword !== this.settingsPasswordConfirmation;
+        },
+        getSettingsPasswordConfirmationError() {
+            if (!this.hasSettingsPasswordMismatch()) {
+                return '';
+            }
+
+            return 'Konfirmasi password tidak cocok.';
+        },
+        toggleSettingsPasswordsVisibility() {
+            this.showSettingsPasswords = !this.showSettingsPasswords;
+        },
         applyPreset(color) {
             this.themeColor = normalizeHex(color);
         },
@@ -848,4 +1061,4 @@ window.settingsPage = function settingsPage(initialColor) {
 };
 
 Alpine.start();
-window.initDatePickers();
+window.initDatePickers().catch(() => {});

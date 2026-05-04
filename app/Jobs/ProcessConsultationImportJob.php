@@ -15,6 +15,7 @@ class ProcessConsultationImportJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public string $queue = 'imports';
     public int $tries = 3;
     public int $timeout = 300;
     public int $maxExceptions = 1;

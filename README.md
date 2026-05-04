@@ -18,3 +18,6 @@ Sistem Manajemen Konsultasi (E-Konsul) — CRM untuk mengelola prospek klien, se
 - Master Data Management
 - Import/Export CSV
 - Report Attendance
+
+## Deployment
+Panduan production ada di [DEPLOYMENT.md](/C:/laragon/www/E-report/DEPLOYMENT.md).

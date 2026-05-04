@@ -87,6 +87,14 @@
             </div>
             @endif
 
+            {{-- Note dari Admin --}}
+            @if($consultation->notes)
+            <div class="space-y-1">
+                <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Note Dari Admin</p>
+                <p class="text-on-surface-variant text-sm bg-surface px-3 py-2 rounded-lg border border-surface-container shadow-inner leading-relaxed whitespace-pre-wrap">{{ $consultation->notes }}</p>
+            </div>
+            @endif
+
             @if(auth()->user()->isSuperAdmin())
             <div class="space-y-1">
                 <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Akun Terhubung</p>
@@ -248,21 +256,23 @@
 @push('scripts')
 <script>
     function confirmDeleteNote(formId) {
-        Swal.fire({
-            title: 'Hapus riwayat follow-up?',
-            text: 'Tindakan ini tidak dapat dibatalkan.',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#9f403d',
-            cancelButtonColor: '#737c7f',
-            confirmButtonText: 'Ya, hapus!',
-            cancelButtonText: 'Batal',
-            customClass: {
-                popup: 'rounded-2xl',
-                confirmButton: 'rounded-xl px-6',
-                cancelButton: 'rounded-xl px-6'
-            }
-        }).then((result) => {
+        window.withSwal(async (Swal) => {
+            const result = await Swal.fire({
+                title: 'Hapus riwayat follow-up?',
+                text: 'Tindakan ini tidak dapat dibatalkan.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#9f403d',
+                cancelButtonColor: '#737c7f',
+                confirmButtonText: 'Ya, hapus!',
+                cancelButtonText: 'Batal',
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl px-6',
+                    cancelButton: 'rounded-xl px-6'
+                }
+            });
+
             if (result.isConfirmed) {
                 document.getElementById(formId).submit();
             }
@@ -270,21 +280,23 @@
     }
 
     function confirmDeleteReminder(formId) {
-        Swal.fire({
-            title: 'Hapus pengingat?',
-            text: 'Pengingat ini akan dihentikan secara permanen.',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#9f403d',
-            cancelButtonColor: '#737c7f',
-            confirmButtonText: 'Ya, hapus!',
-            cancelButtonText: 'Batal',
-            customClass: {
-                popup: 'rounded-2xl',
-                confirmButton: 'rounded-xl px-6',
-                cancelButton: 'rounded-xl px-6'
-            }
-        }).then((result) => {
+        window.withSwal(async (Swal) => {
+            const result = await Swal.fire({
+                title: 'Hapus pengingat?',
+                text: 'Pengingat ini akan dihentikan secara permanen.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#9f403d',
+                cancelButtonColor: '#737c7f',
+                confirmButtonText: 'Ya, hapus!',
+                cancelButtonText: 'Batal',
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl px-6',
+                    cancelButton: 'rounded-xl px-6'
+                }
+            });
+
             if (result.isConfirmed) {
                 document.getElementById(formId).submit();
             }

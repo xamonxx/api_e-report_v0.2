@@ -44,7 +44,7 @@
                      x-transition:enter="transition ease-out duration-150"
                      x-transition:enter-start="opacity-0 -translate-y-1"
                      x-transition:enter-end="opacity-100 translate-y-0"
-                     class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                         class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                     <div class="border-b border-surface-container-low p-3">
                         <input x-ref="searchInput" type="text" x-model="search"
                                class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -91,7 +91,7 @@
                      x-transition:enter="transition ease-out duration-150"
                      x-transition:enter-start="opacity-0 -translate-y-1"
                      x-transition:enter-end="opacity-100 translate-y-0"
-                     class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                         class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                     <div class="border-b border-surface-container-low p-3">
                         <input x-ref="searchInput" type="text" x-model="search"
                                class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -148,7 +148,7 @@
                      x-transition:enter="transition ease-out duration-150"
                      x-transition:enter-start="opacity-0 -translate-y-1"
                      x-transition:enter-end="opacity-100 translate-y-0"
-                     class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                         class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                     <div class="border-b border-surface-container-low p-3">
                         <input x-ref="searchInput" type="text" x-model="search"
                                class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -194,7 +194,7 @@
                      x-transition:enter="transition ease-out duration-150"
                      x-transition:enter-start="opacity-0 -translate-y-1"
                      x-transition:enter-end="opacity-100 translate-y-0"
-                     class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                         class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                     <div class="border-b border-surface-container-low p-3">
                         <input x-ref="searchInput" type="text" x-model="search"
                                class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -289,7 +289,7 @@
     <div class="bg-surface-container-lowest p-6 rounded-xl shadow-sm border border-transparent hover:border-primary/10 transition-all group hover-lift animate-fade-in">
         <div class="flex justify-between items-start mb-4">
             <div class="p-2 bg-secondary-container/30 rounded-lg group-hover:bg-secondary group-hover:text-on-primary transition-colors">
-                <x-icon name="monitoring" class="w-5 h-5" />
+                <x-icon name="leaderboard" class="w-5 h-5" />
             </div>
         </div>
         <h3 class="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-1">Growth</h3>
@@ -305,7 +305,7 @@
             'title' => '% Belum Konfirmasi',
             'description' => 'Lead yang provinsinya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
             'count_label' => 'Provinsi Belum Confirm',
-            'icon' => 'public',
+            'icon' => 'flag',
             'border_class' => 'border-amber-500/15',
             'eyebrow_class' => 'text-amber-700',
             'icon_wrap_class' => 'bg-amber-500/10',
@@ -319,7 +319,7 @@
             'title' => '% Belum Konfirmasi',
             'description' => 'Lead yang kota/kabupatennya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
             'count_label' => 'Kota Belum Confirm',
-            'icon' => 'location_city',
+            'icon' => 'domain',
             'border_class' => 'border-sky-500/15',
             'eyebrow_class' => 'text-sky-700',
             'icon_wrap_class' => 'bg-sky-500/10',
@@ -333,7 +333,7 @@
             'title' => '% Belum Konfirmasi',
             'description' => 'Lead yang kecamatannya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
             'count_label' => 'Kecamatan Belum Confirm',
-            'icon' => 'pin_drop',
+            'icon' => 'location_on',
             'border_class' => 'border-violet-500/15',
             'eyebrow_class' => 'text-violet-700',
             'icon_wrap_class' => 'bg-violet-500/10',
@@ -395,9 +395,18 @@
         <h2 class="text-xl font-bold font-headline text-on-surface">Insight Otomatis</h2>
         <p class="text-xs text-on-surface-variant">Ringkasan cepat dari pola utama pada periode {{ $periodLabel }}</p>
     </div>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 pb-8">
         @foreach($insights as $insight)
-        <div class="rounded-xl bg-surface-container-low/40 px-4 py-3 text-sm font-medium text-on-surface">{{ $insight }}</div>
+        <div class="flex items-start gap-3 rounded-xl bg-surface-container-low/40 px-4 py-3 text-sm font-medium text-on-surface">
+            @if(isset($insight['icon']))
+                <div class="mt-0.5 shrink-0 text-primary">
+                    <x-icon name="{{ $insight['icon'] }}" class="w-5 h-5" />
+                </div>
+            @endif
+            <div class="leading-relaxed [&>mark]:bg-primary/10 [&>mark]:text-primary [&>mark]:rounded [&>mark]:px-1 [&>mark]:font-bold">
+                {!! isset($insight['html']) ? $insight['html'] : $insight !!}
+            </div>
+        </div>
         @endforeach
     </div>
 </div>
@@ -406,7 +415,8 @@
 {{-- Charts Row --}}
 <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
     {{-- Grafik Batang: Distribusi Status --}}
-    <div class="lg:col-span-3 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low">
+    <div class="analytics-chart-card lg:col-span-3 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low"
+         style="--chart-card-delay: 40ms;">
         <div class="mb-6">
             <h2 class="text-xl font-bold font-headline text-on-surface">Distribusi Status</h2>
             <p class="text-xs text-on-surface-variant">Jumlah konsultasi per kategori status</p>
@@ -425,8 +435,8 @@
                     <span class="text-xs font-bold text-on-surface-variant">{{ $item['count'] }}</span>
                 </div>
                 <div class="w-full h-3 bg-surface-container-high rounded-full overflow-hidden">
-                    <div class="h-full rounded-full transition-all duration-700 ease-out group-hover:opacity-80"
-                         style="width: {{ $barWidth }}%; background-color: {{ $item['color'] }}"></div>
+                    <div class="analytics-meter-fill h-full rounded-full transition-all duration-700 ease-out group-hover:opacity-80"
+                         style="width: {{ $barWidth }}%; background-color: {{ $item['color'] }}; --chart-delay: {{ 120 + ($loop->index * 85) }}ms;"></div>
                 </div>
             </div>
             @endforeach
@@ -434,7 +444,8 @@
     </div>
 
     {{-- Grafik Donat --}}
-    <div class="lg:col-span-2 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm flex flex-col items-center animate-fade-in border border-surface-container-low">
+    <div class="analytics-chart-card lg:col-span-2 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm flex flex-col items-center animate-fade-in border border-surface-container-low"
+         style="--chart-card-delay: 140ms;">
         <div class="w-full mb-8">
             <h2 class="text-xl font-bold font-headline text-on-surface">Komposisi Status</h2>
             <p class="text-xs text-on-surface-variant">Proporsi setiap status terhadap total</p>
@@ -445,8 +456,8 @@
             $cumulative = 0;
         @endphp
 
-        <div class="relative w-48 h-48 mb-8">
-            <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+        <div class="relative w-48 h-48 mb-8" style="--chart-delay: 180ms;">
+            <svg class="analytics-donut-chart w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                 @if($total > 0)
                     @foreach($statusDistribution as $item)
                         @php
@@ -466,7 +477,7 @@
                             stroke-dasharray="100 0" stroke-dashoffset="0"></circle>
                 @endif
             </svg>
-            <div class="absolute inset-0 flex flex-col items-center justify-center">
+            <div class="analytics-donut-center absolute inset-0 flex flex-col items-center justify-center">
                 <span class="text-2xl font-extrabold text-on-surface">{{ number_format($total) }}</span>
                 <span class="text-[9px] text-on-surface-variant font-bold uppercase">Total Konsultasi</span>
             </div>
@@ -474,7 +485,8 @@
 
         <div class="w-full space-y-3">
             @foreach($statusDistribution as $item)
-            <div class="flex items-center justify-between">
+            <div class="analytics-legend-item flex items-center justify-between"
+                 style="--chart-delay: {{ 300 + ($loop->index * 70) }}ms;">
                 <div class="flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: {{ $item['color'] }}"></span>
                     <span class="text-xs font-medium text-on-surface">{{ $item['name'] }}</span>
@@ -490,7 +502,8 @@
 </div>
 
 {{-- Needs Category Chart Row --}}
-<div class="mt-8 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low">
+<div class="analytics-chart-card mt-8 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low"
+     style="--chart-card-delay: 220ms;">
     <div class="mb-6">
         <h2 class="text-xl font-bold font-headline text-on-surface">Kategori Kebutuhan</h2>
         <p class="text-xs text-on-surface-variant">Distribusi konsultasi berdasarkan kategori minat pelayanan</p>
@@ -515,8 +528,8 @@
                     <span class="text-xs font-extrabold text-on-surface-variant">{{ $item['count'] }}</span>
                 </div>
                 <div class="w-full h-2.5 bg-surface-container-high rounded-full overflow-hidden shadow-inner">
-                    <div class="h-full rounded-full transition-all duration-700 ease-out bg-primary group-hover:brightness-110"
-                         style="width: {{ $barWidth }}%;"></div>
+                    <div class="analytics-meter-fill h-full rounded-full transition-all duration-700 ease-out bg-primary group-hover:brightness-110"
+                         style="width: {{ $barWidth }}%; --chart-delay: {{ 140 + ($loop->index * 70) }}ms;"></div>
                 </div>
             </div>
             @endforeach
@@ -527,7 +540,8 @@
 {{-- Super Admin Region Analytics --}}
 @if(auth()->user()->isSuperAdmin())
 <div class="grid grid-cols-1 xl:grid-cols-2 gap-8 mt-8">
-    <div class="bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low">
+    <div class="analytics-chart-card bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low"
+         style="--chart-card-delay: 40ms;">
         <div class="mb-6">
             <h2 class="text-xl font-bold font-headline text-on-surface">Grafik Distribusi Provinsi</h2>
             <p class="text-xs text-on-surface-variant">Perbandingan provinsi dengan jumlah konsultasi terbanyak</p>
@@ -555,8 +569,8 @@
                             <div class="text-sm font-extrabold text-on-surface">{{ $item['count'] }}</div>
                             <div class="text-[10px] text-on-surface-variant">{{ $item['percentage'] }}%</div>
                         </div>
-                        <div class="w-8 sm:w-full max-w-16 sm:max-w-20 rounded-t-2xl bg-primary shadow-[0_12px_30px_rgba(37,99,235,0.22)] transition-all duration-700 hover:-translate-y-1"
-                             style="height: {{ $height }}%;"></div>
+                        <div class="analytics-column-bar w-8 sm:w-full max-w-16 sm:max-w-20 rounded-t-2xl bg-primary shadow-[0_12px_30px_rgba(37,99,235,0.22)] transition-all duration-700 hover:-translate-y-1"
+                             style="height: {{ $height }}%; --chart-delay: {{ 140 + ($loop->index * 90) }}ms;"></div>
                         <div class="w-full text-center">
                             <div class="text-[11px] font-bold text-on-surface break-words leading-tight sm:line-clamp-2">{{ $item['name'] }}</div>
                         </div>
@@ -568,7 +582,8 @@
 
             <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 @foreach($provinceDistribution as $index => $item)
-                <div class="flex items-center justify-between gap-3 rounded-xl bg-surface-container-low/40 px-4 py-3">
+                <div class="analytics-legend-item flex items-center justify-between gap-3 rounded-xl bg-surface-container-low/40 px-4 py-3"
+                     style="--chart-delay: {{ 380 + ($loop->index * 60) }}ms;">
                     <div class="flex items-center gap-3 min-w-0">
                         <div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[11px] font-extrabold shrink-0">{{ $index + 1 }}</div>
                         <span class="text-sm font-semibold text-on-surface truncate">{{ $item['name'] }}</span>
@@ -583,7 +598,8 @@
         @endif
     </div>
 
-    <div class="bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low">
+    <div class="analytics-chart-card bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low"
+         style="--chart-card-delay: 140ms;">
         <div class="mb-6">
             <h2 class="text-xl font-bold font-headline text-on-surface">Grafik Kota / Kabupaten</h2>
             <p class="text-xs text-on-surface-variant">Perbandingan kota atau kabupaten dengan volume konsultasi tertinggi</p>
@@ -611,8 +627,8 @@
                             <div class="text-sm font-extrabold text-on-surface">{{ $item['count'] }}</div>
                             <div class="text-[10px] text-on-surface-variant">{{ $item['percentage'] }}%</div>
                         </div>
-                        <div class="w-8 sm:w-full max-w-16 sm:max-w-20 rounded-t-2xl bg-tertiary shadow-[0_12px_30px_rgba(17,126,88,0.24)] transition-all duration-700 hover:-translate-y-1"
-                             style="height: {{ $height }}%;"></div>
+                        <div class="analytics-column-bar w-8 sm:w-full max-w-16 sm:max-w-20 rounded-t-2xl bg-tertiary shadow-[0_12px_30px_rgba(17,126,88,0.24)] transition-all duration-700 hover:-translate-y-1"
+                             style="height: {{ $height }}%; --chart-delay: {{ 140 + ($loop->index * 90) }}ms;"></div>
                         <div class="w-full text-center">
                             <div class="text-[11px] font-bold text-on-surface break-words leading-tight sm:line-clamp-2">{{ $item['name'] }}</div>
                         </div>
@@ -624,7 +640,8 @@
 
             <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 @foreach($cityDistribution as $index => $item)
-                <div class="flex items-center justify-between gap-3 rounded-xl bg-surface-container-low/40 px-4 py-3">
+                <div class="analytics-legend-item flex items-center justify-between gap-3 rounded-xl bg-surface-container-low/40 px-4 py-3"
+                     style="--chart-delay: {{ 380 + ($loop->index * 60) }}ms;">
                     <div class="flex items-center gap-3 min-w-0">
                         <div class="w-7 h-7 rounded-full bg-tertiary/10 text-tertiary flex items-center justify-center text-[11px] font-extrabold shrink-0">{{ $index + 1 }}</div>
                         <span class="text-sm font-semibold text-on-surface truncate">{{ $item['name'] }}</span>
@@ -641,10 +658,11 @@
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-5 gap-8 mt-8">
-    <div class="lg:col-span-3 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low">
+    <div class="analytics-chart-card lg:col-span-3 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm animate-fade-in border border-surface-container-low"
+         style="--chart-card-delay: 60ms;">
         <div class="mb-6">
             <h2 class="text-xl font-bold font-headline text-on-surface">Grafik Segmen Jawa Barat</h2>
-            <p class="text-xs text-on-surface-variant">Perbandingan tiap segmen wilayah Bandung Raya, Jabar Timur, Pantura, Kulon, dan Jabodetabek</p>
+            <p class="text-xs text-on-surface-variant">Perbandingan tiap segmen wilayah Bandung Raya, Pantura, Jabar Pantura, Kulon, dan Jabodetabek</p>
         </div>
 
         @php
@@ -672,8 +690,8 @@
                                 {{ $totalWestJava > 0 ? round(($item['count'] / $totalWestJava) * 100, 1) : 0 }}%
                             </div>
                         </div>
-                        <div class="w-8 sm:w-full max-w-16 sm:max-w-20 rounded-t-2xl transition-all duration-700 hover:-translate-y-1"
-                             style="height: {{ $height }}%; background-color: {{ $item['color'] }}; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);"></div>
+                        <div class="analytics-column-bar w-8 sm:w-full max-w-16 sm:max-w-20 rounded-t-2xl transition-all duration-700 hover:-translate-y-1"
+                             style="height: {{ $height }}%; background-color: {{ $item['color'] }}; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12); --chart-delay: {{ 140 + ($loop->index * 90) }}ms;"></div>
                         <div class="w-full text-center">
                             <div class="text-[11px] font-bold text-on-surface break-words leading-tight sm:line-clamp-2">{{ $item['name'] }}</div>
                         </div>
@@ -685,7 +703,8 @@
 
             <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 @foreach($westJavaSegmentDistribution as $item)
-                <div class="flex items-center justify-between gap-3 rounded-xl bg-surface-container-low/40 px-4 py-3">
+                <div class="analytics-legend-item flex items-center justify-between gap-3 rounded-xl bg-surface-container-low/40 px-4 py-3"
+                     style="--chart-delay: {{ 380 + ($loop->index * 60) }}ms;">
                     <div class="flex items-center gap-3 min-w-0">
                         <span class="w-3 h-3 rounded-full shrink-0" style="background-color: {{ $item['color'] }}"></span>
                         <span class="text-sm font-semibold text-on-surface truncate">{{ $item['name'] }}</span>
@@ -700,7 +719,8 @@
         @endif
     </div>
 
-    <div class="lg:col-span-2 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm flex flex-col items-center animate-fade-in border border-surface-container-low">
+    <div class="analytics-chart-card lg:col-span-2 bg-surface-container-lowest p-6 sm:p-8 rounded-2xl shadow-sm flex flex-col items-center animate-fade-in border border-surface-container-low"
+         style="--chart-card-delay: 160ms;">
         <div class="w-full mb-8">
             <h2 class="text-xl font-bold font-headline text-on-surface">Proporsi Jawa Barat</h2>
             <p class="text-xs text-on-surface-variant">Proporsi per segmen wilayah Jawa Barat</p>
@@ -710,8 +730,8 @@
             $westJavaCumulative = 0;
         @endphp
 
-        <div class="relative w-48 h-48 mb-8">
-            <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+        <div class="relative w-48 h-48 mb-8" style="--chart-delay: 180ms;">
+            <svg class="analytics-donut-chart w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                 @if($totalWestJava > 0)
                     @foreach($westJavaSegmentDistribution as $item)
                         @php
@@ -731,7 +751,7 @@
                             stroke-dasharray="100 0" stroke-dashoffset="0"></circle>
                 @endif
             </svg>
-            <div class="absolute inset-0 flex flex-col items-center justify-center">
+            <div class="analytics-donut-center absolute inset-0 flex flex-col items-center justify-center">
                 <span class="text-2xl font-extrabold text-on-surface">{{ number_format($totalWestJava) }}</span>
                 <span class="text-[9px] text-on-surface-variant font-bold uppercase">Total Jabar</span>
             </div>
@@ -739,7 +759,8 @@
 
         <div class="w-full space-y-3">
             @foreach($westJavaSegmentDistribution as $item)
-            <div class="flex items-center justify-between gap-3">
+            <div class="analytics-legend-item flex items-center justify-between gap-3"
+                 style="--chart-delay: {{ 300 + ($loop->index * 70) }}ms;">
                 <div class="flex items-center gap-2 min-w-0">
                     <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: {{ $item['color'] }}"></span>
                     <span class="text-xs font-medium text-on-surface truncate">{{ $item['name'] }}</span>

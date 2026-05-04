@@ -13,10 +13,15 @@ class LoginRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $remember = $this->has('remember')
+            ? filter_var($this->input('remember'), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE)
+            : null;
+
         $this->merge([
             'email' => filled($this->input('email'))
                 ? mb_strtolower(trim((string) $this->input('email')))
                 : null,
+            'remember' => $remember,
         ]);
     }
 

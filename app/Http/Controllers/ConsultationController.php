@@ -9,6 +9,7 @@ use App\Models\ConsultationImport;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Services\ConsultationImportService;
+use App\Services\NotificationSummaryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,8 @@ use Illuminate\Support\Arr;
 class ConsultationController extends Controller
 {
     public function __construct(
-        private readonly ConsultationImportService $consultationImportService
+        private readonly ConsultationImportService $consultationImportService,
+        private readonly NotificationSummaryService $notificationSummaryService,
     ) {
     }
 
@@ -46,11 +48,21 @@ class ConsultationController extends Controller
             $query->whereDate('consultation_date', '<=', $request->end_date);
         }
         if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $search = trim((string) $request->search);
+            $phoneSearchSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')";
+            $phoneSearchTokens = collect([
+                Consultation::normalizeLeadPhone($search),
+                ltrim(preg_replace('/^(?:62|0)/', '', Consultation::normalizeLeadPhone($search)) ?? '', '0'),
+            ])->filter()->unique()->values();
+
+            $query->where(function($q) use ($search, $phoneSearchSql, $phoneSearchTokens) {
                 $q->where('client_name', 'like', "%{$search}%")
                   ->orWhere('phone', 'like', "%{$search}%")
                   ->orWhere('consultation_id', 'like', "%{$search}%");
+
+                foreach ($phoneSearchTokens as $token) {
+                    $q->orWhereRaw("{$phoneSearchSql} like ?", ["%{$token}%"]);
+                }
             });
         }
 
@@ -161,7 +173,7 @@ class ConsultationController extends Controller
             ->update(['is_read' => true]);
 
         if ($updated) {
-            Cache::forget("api_notif_{$user->id}");
+            $this->notificationSummaryService->forgetForUser($user->id);
         }
 
         return view('consultations.show', compact('consultation'));

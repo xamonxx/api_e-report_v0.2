@@ -286,7 +286,7 @@
                 </div>
                 <div class="flex-1 min-w-0">
                     <p class="text-sm font-bold truncate pr-2">{{ $c->client_name }}</p>
-                    <p class="text-[10px] text-on-surface-variant truncate">{{ $c->account?->name }} • {{ $c->productCategories()->pluck('name')->implode(', ') }}</p>
+                    <p class="text-[10px] text-on-surface-variant truncate">{{ $c->account?->name }} • {{ $c->product_names_label }}</p>
                 </div>
                 <span class="text-[10px] text-outline-variant whitespace-nowrap group-hover:text-primary-dim transition-colors">{{ $c->created_at->diffForHumans() }}</span>
             </div>

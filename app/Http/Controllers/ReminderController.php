@@ -5,10 +5,15 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ReminderRequest;
 use App\Models\Consultation;
 use App\Models\Reminder;
-use Illuminate\Support\Facades\Cache;
+use App\Services\NotificationSummaryService;
 
 class ReminderController extends Controller
 {
+    public function __construct(
+        private readonly NotificationSummaryService $notificationSummaryService
+    ) {
+    }
+
     public function store(ReminderRequest $request, Consultation $consultation)
     {
         $this->authorize('addReminder', $consultation);
@@ -22,7 +27,7 @@ class ReminderController extends Controller
             'remind_at' => $validated['remind_at'],
         ]);
 
-        Cache::forget("api_notif_{$user->id}");
+        $this->notificationSummaryService->forgetForUser($user->id);
 
         return back()->with('success', 'Pengingat berhasil dibuat.');
     }
@@ -32,7 +37,7 @@ class ReminderController extends Controller
         $this->authorize('markAsRead', $reminder);
 
         $reminder->update(['is_read' => true]);
-        Cache::forget('api_notif_' . auth()->id());
+        $this->notificationSummaryService->forgetForUser((int) auth()->id());
 
         return back()->with('success', 'Pengingat ditandai selesai.');
     }
@@ -47,7 +52,7 @@ class ReminderController extends Controller
         $this->authorize('delete', $reminder);
 
         $reminder->delete();
-        Cache::forget('api_notif_' . auth()->id());
+        $this->notificationSummaryService->forgetForUser((int) auth()->id());
 
         return back()->with('success', 'Pengingat berhasil dihapus.');
     }

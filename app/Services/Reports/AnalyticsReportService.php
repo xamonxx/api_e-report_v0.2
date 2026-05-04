@@ -21,10 +21,11 @@ class AnalyticsReportService
     ) {
     }
 
-    public function buildForUser(User $user, array $filters): array
+    public function buildForUser(User $user, array $filters, array $options = []): array
     {
         $period = $this->periodResolver->resolve($filters);
         $selectedAccount = $user->isSuperAdmin() ? ($filters['account'] ?? null) : $user->account_id;
+        $includeRawRows = (bool) ($options['includeRawRows'] ?? false);
 
         $query = $this->baseQuery($user, $selectedAccount, $period['start'], $period['end']);
 
@@ -42,7 +43,7 @@ class AnalyticsReportService
         $conversionRate = $totalLeads > 0 ? round(($totalSurveys / $totalLeads) * 100, 1) : 0;
         $dealRate = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
         $growthPercent = $this->buildGrowthPercent($user, $selectedAccount, $period);
-        $rawRows = $this->buildRawRows($query);
+        $rawRows = $includeRawRows ? $this->buildRawRows($query) : collect();
         $trendSeries = $this->buildTrendSeries($query, $period);
         $dataQuality = $this->buildDataQuality($query, $period, $totalLeads);
         $pendingConfirmationStats = $this->buildPendingConfirmationStats($query, $totalLeads);
@@ -363,30 +364,52 @@ class AnalyticsReportService
             $cursor = $isYearly ? $cursor->addMonth() : $cursor->addDay();
         }
 
-        $rows = (clone $query)->get(['consultation_date', 'status_category_id']);
+        $bucketExpression = $isYearly
+            ? "DATE_FORMAT(consultation_date, '%Y-%m')"
+            : 'DATE(consultation_date)';
+
+        $aggregateQuery = (clone $query)
+            ->whereNotNull('consultation_date')
+            ->selectRaw("{$bucketExpression} as bucket_key")
+            ->selectRaw('COUNT(*) as total');
+
+        if ($surveyStatusId) {
+            $aggregateQuery->selectRaw(
+                'SUM(CASE WHEN status_category_id = ? THEN 1 ELSE 0 END) as surveys',
+                [(int) $surveyStatusId]
+            );
+        } else {
+            $aggregateQuery->selectRaw('0 as surveys');
+        }
+
+        if ($dealStatusId) {
+            $aggregateQuery->selectRaw(
+                'SUM(CASE WHEN status_category_id = ? THEN 1 ELSE 0 END) as deals',
+                [(int) $dealStatusId]
+            );
+        } else {
+            $aggregateQuery->selectRaw('0 as deals');
+        }
+
+        $rows = $aggregateQuery
+            ->groupBy('bucket_key')
+            ->get();
 
         foreach ($rows as $row) {
-            if (! $row->consultation_date) {
+            if (! $row->bucket_key) {
                 continue;
             }
 
-            $date = Carbon::parse($row->consultation_date);
-            $key = $isYearly ? $date->format('Y-m') : $date->toDateString();
+            $key = (string) $row->bucket_key;
             $bucket = $buckets->get($key);
 
             if (! $bucket) {
                 continue;
             }
 
-            $bucket['total']++;
-
-            if ($surveyStatusId && (int) $row->status_category_id === $surveyStatusId) {
-                $bucket['surveys']++;
-            }
-
-            if ($dealStatusId && (int) $row->status_category_id === $dealStatusId) {
-                $bucket['deals']++;
-            }
+            $bucket['total'] = (int) $row->total;
+            $bucket['surveys'] = (int) $row->surveys;
+            $bucket['deals'] = (int) $row->deals;
 
             $buckets->put($key, $bucket);
         }
@@ -586,80 +609,126 @@ class AnalyticsReportService
         $insights = collect();
 
         if ($topStatus = $statusDistribution->sortByDesc('count')->first()) {
-            $insights->push(sprintf(
-                'Status terbesar adalah %s dengan %s konsultasi.',
-                $topStatus['name'],
-                number_format($topStatus['count'])
-            ));
+            if ($topStatus['count'] > 0) {
+                $insights->push([
+                    'icon' => 'analytics',
+                    'html' => sprintf(
+                        'Status terbesar adalah <mark>%s</mark> dengan <mark>%s</mark> konsultasi.',
+                        $topStatus['name'],
+                        number_format($topStatus['count'])
+                    ),
+                ]);
+            }
         }
 
         if ($topNeed = $needsDistribution->first()) {
-            $insights->push(sprintf(
-                'Kebutuhan teratas adalah %s dengan %s lead.',
-                $topNeed['name'],
-                number_format($topNeed['count'])
-            ));
+            if ($topNeed['count'] > 0) {
+                $insights->push([
+                    'icon' => 'assignment',
+                    'html' => sprintf(
+                        'Kebutuhan teratas adalah <mark>%s</mark> dengan <mark>%s</mark> lead.',
+                        $topNeed['name'],
+                        number_format($topNeed['count'])
+                    ),
+                ]);
+            }
         }
 
         if ($topProvince = $provinceDistribution->first()) {
-            $insights->push(sprintf(
-                'Wilayah dominan datang dari %s dengan kontribusi %s%%.',
-                $topProvince['name'],
-                $topProvince['percentage']
-            ));
+            if ($topProvince['count'] > 0) {
+                $insights->push([
+                    'icon' => 'flag',
+                    'html' => sprintf(
+                        'Wilayah dominan datang dari <mark>%s</mark> dengan kontribusi <mark>%s%%</mark>.',
+                        $topProvince['name'],
+                        $topProvince['percentage']
+                    ),
+                ]);
+            }
         }
 
         if ($topAccount = $accountRanking->first()) {
-            $insights->push(sprintf(
-                'Akun terbaik saat ini adalah %s dengan skor performa %s.',
-                $topAccount['name'],
-                $topAccount['score']
-            ));
+            if ($topAccount['score'] > 0) {
+                $insights->push([
+                    'icon' => 'groups',
+                    'html' => sprintf(
+                        'Akun terbaik saat ini adalah <mark>%s</mark> dengan skor performa <mark>%s</mark>.',
+                        $topAccount['name'],
+                        $topAccount['score']
+                    ),
+                ]);
+            }
         }
 
         if ($topAdmin = $adminRanking->first()) {
-            $insights->push(sprintf(
-                'Admin paling produktif adalah %s dengan %s lead.',
-                $topAdmin['name'],
-                number_format($topAdmin['total'])
-            ));
+            if ($topAdmin['total'] > 0) {
+                $insights->push([
+                    'icon' => 'person',
+                    'html' => sprintf(
+                        'Admin paling produktif adalah <mark>%s</mark> dengan <mark>%s</mark> lead.',
+                        $topAdmin['name'],
+                        number_format($topAdmin['total'])
+                    ),
+                ]);
+            }
         }
 
         if ($peak = $trendSeries->sortByDesc('total')->first()) {
-            $insights->push(sprintf(
-                'Puncak volume terjadi pada %s dengan %s konsultasi.',
-                $peak['full_label'],
-                number_format($peak['total'])
-            ));
+            if ($peak['total'] > 0) {
+                $insights->push([
+                    'icon' => 'trending_up',
+                    'html' => sprintf(
+                        'Puncak volume terjadi pada <mark>%s</mark> dengan <mark>%s</mark> konsultasi.',
+                        $peak['full_label'],
+                        number_format($peak['total'])
+                    ),
+                ]);
+            }
         }
 
         $direction = $growthPercent >= 0 ? 'naik' : 'turun';
-        $insights->push(sprintf(
-            'Jumlah konsultasi %s %s%% dibanding periode pembanding.',
-            $direction,
-            abs($growthPercent)
-        ));
-
-        $insights->push(sprintf(
-            'Konversi funnel dari lead ke survey berada di %s%%, sedangkan deal dari survey berada di %s%%.',
-            $funnel['survey_rate'],
-            $funnel['deal_from_survey_rate']
-        ));
-
-        $insights->push(sprintf(
-            'Kelengkapan data lokasi mencapai %s%% dan kelengkapan catatan mencapai %s%%.',
-            $dataQuality['location_completion_rate'],
-            $dataQuality['notes_completion_rate']
-        ));
-
-        if (($dataQuality['duplicate_phone_rows'] ?? 0) > 0) {
-            $insights->push(sprintf(
-                'Terdapat %s baris dengan nomor telepon duplikat yang perlu direview.',
-                number_format($dataQuality['duplicate_phone_rows'])
-            ));
+        if (abs($growthPercent) > 0) {
+            $insights->push([
+                'icon' => 'trending_up',
+                'html' => sprintf(
+                    'Jumlah konsultasi %s <mark>%s%%</mark> dibanding periode pembanding.',
+                    $direction,
+                    abs($growthPercent)
+                ),
+            ]);
         }
 
-        return $insights->filter()->values();
+        if ($funnel['survey_rate'] > 0 || $funnel['deal_from_survey_rate'] > 0) {
+            $insights->push([
+                'icon' => 'filter_alt',
+                'html' => sprintf(
+                    'Konversi funnel dari lead ke survey berada di <mark>%s%%</mark>, sedangkan deal dari survey berada di <mark>%s%%</mark>.',
+                    $funnel['survey_rate'],
+                    $funnel['deal_from_survey_rate']
+                ),
+            ]);
+        }
+
+        $insights->push([
+            'icon' => 'task_alt',
+            'html' => sprintf(
+                'Kelengkapan data lokasi mencapai <mark>%s%%</mark> dan kelengkapan catatan mencapai <mark>%s%%</mark>.',
+                $dataQuality['location_completion_rate'],
+                $dataQuality['notes_completion_rate']
+            ),
+        ]);
+
+        if (($dataQuality['duplicate_phone_rows'] ?? 0) > 0) {
+            $insights->push([
+                'icon' => 'warning',
+                'html' => sprintf(
+                    'Terdapat <mark>%s</mark> baris dengan nomor telepon duplikat yang perlu direview.',
+                    number_format($dataQuality['duplicate_phone_rows'])
+                ),
+            ]);
+        }
+
+        return $insights->values();
     }
 
     private function resolveAccountName(User $user, ?int $selectedAccount): string
@@ -790,7 +859,7 @@ class AnalyticsReportService
                 'aliases' => ['bandung barat', 'kbb', 'cimahi', 'kab bandung', 'kabupaten bandung', 'bandung'],
                 'color' => '#2563eb',
             ],
-            'Jabar Timur' => [
+            'Pantura' => [
                 'aliases' => ['pangandaran', 'ciamis', 'banjar', 'tasikmalaya', 'tasik', 'garut'],
                 'color' => '#16a34a',
             ],

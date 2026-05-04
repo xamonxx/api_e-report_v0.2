@@ -31,6 +31,7 @@ Route::middleware('auth')->group(function () {
     // API Notifications (Polling) — throttled to prevent abuse
     Route::middleware('throttle:30,1')->group(function () {
         Route::get('/api/notifications', [NotificationController::class, 'unreadCount'])->name('api.notifications');
+        Route::get('/api/notifications/summary', [NotificationController::class, 'summary'])->name('api.notifications.summary');
         Route::patch('/api/notifications/notes/{note}/read', [NotificationController::class, 'markNoteRead'])->name('api.notifications.notes.read');
         Route::patch('/api/notifications/reminders/{reminder}/read', [NotificationController::class, 'markReminderRead'])->name('api.notifications.reminders.read');
         Route::get('/api/consultation-id-preview', [ConsultationController::class, 'previewId'])->name('api.consultation-id-preview');

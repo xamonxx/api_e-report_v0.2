@@ -345,7 +345,12 @@
                         <span class="badge">Insight Engine</span>
                         <ul class="insights">
                             @foreach($insights as $insight)
-                                <li>{{ $insight }}</li>
+                                @php
+                                    $insightText = is_array($insight)
+                                        ? (string) ($insight['html'] ?? $insight['text'] ?? '')
+                                        : (string) $insight;
+                                @endphp
+                                <li>{{ trim(strip_tags($insightText)) }}</li>
                             @endforeach
                         </ul>
                     </div>

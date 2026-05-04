@@ -197,6 +197,7 @@ class MasterDataController extends Controller
             'name' => 'required|string|max:255|regex:/^[^\<\>]+$/',
             'email' => 'required|email|max:255|unique:users,email',
             'password' => 'required|string|min:8',
+            'password_confirmation' => 'required|string|same:password',
             'role' => ['required', new Enum(UserRole::class)],
             'account_id' => 'required_if:role,' . UserRole::Admin->value . '|nullable|exists:accounts,id',
         ], [
@@ -207,13 +208,15 @@ class MasterDataController extends Controller
             'email.unique' => 'Email sudah digunakan.',
             'password.required' => 'Password wajib diisi.',
             'password.min' => 'Password minimal 8 karakter.',
+            'password_confirmation.required' => 'Konfirmasi password wajib diisi.',
+            'password_confirmation.same' => 'Konfirmasi password tidak cocok.',
             'account_id.required_if' => 'Akun wajib dipilih untuk pengguna dengan role Admin.',
         ]);
 
         if ($validator->fails()) {
             return $this->redirectToUsersTab($request)
                 ->withErrors($validator, 'createUser')
-                ->withInput($request->except('password'))
+                ->withInput($request->except(['password', 'password_confirmation']))
                 ->with('error', $validator->errors()->first())
                 ->with('user_form_context', 'create');
         }
@@ -248,7 +251,7 @@ class MasterDataController extends Controller
             report($exception);
 
             return $this->redirectToUsersTab($request)
-                ->withInput($request->except('password'))
+                ->withInput($request->except(['password', 'password_confirmation']))
                 ->with('error', 'User baru gagal ditambahkan. Silakan coba lagi.')
                 ->with('user_form_context', 'create');
         }

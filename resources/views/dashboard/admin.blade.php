@@ -326,7 +326,7 @@
             <div class="flex gap-4 relative">
                 <div class="w-[23px] h-[23px] rounded-full bg-white border-4 z-10 shrink-0 shadow-sm" style="border-color: {{ $activity->statusCategory?->color ?? '#737c7f' }}"></div>
                 <div class="min-w-0">
-                    <p class="text-sm font-bold text-on-surface truncate pr-4">{{ $activity->client_name }}: {{ $activity->productCategories()->pluck('name')->implode(', ') }}</p>
+                    <p class="text-sm font-bold text-on-surface truncate pr-4">{{ $activity->client_name }}: {{ $activity->product_names_label }}</p>
                     <p class="text-[11px] text-on-surface-variant flex items-center gap-1.5 flex-wrap mt-0.5 font-medium">
                         <span class="px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-bold" style="background-color: {{ $activity->statusCategory?->color ?? '#737c7f' }}20; color: {{ $activity->statusCategory?->color ?? '#737c7f' }}">{{ $activity->statusCategory?->name }}</span>
                         <span class="w-1 h-1 rounded-full bg-outline-variant/50"></span>

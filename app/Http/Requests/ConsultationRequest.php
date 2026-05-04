@@ -63,6 +63,7 @@ class ConsultationRequest extends FormRequest
         $city = $trimmed($this->input('city')) ?? PendingConfirmation::LABEL;
         $district = $trimmed($this->input('district')) ?? PendingConfirmation::LABEL;
         $productDetails = $trimmed($this->input('product_details'));
+        $phone = $this->formatIndonesiaPhone($trimmed($this->input('phone')));
 
         if (! $otherNeedsCategoryId || ! in_array($otherNeedsCategoryId, $productIds, true)) {
             $productDetails = null;
@@ -70,6 +71,7 @@ class ConsultationRequest extends FormRequest
 
         $this->merge([
             'client_name' => $trimmed($this->input('client_name')),
+            'phone' => $phone,
             'province' => $province,
             'city' => $city,
             'district' => $district,
@@ -114,8 +116,8 @@ class ConsultationRequest extends FormRequest
                     if (strlen($digits) < 9) {
                         $fail('Nomor telepon minimal harus berisi 9 digit angka.');
                     }
-                    if (strlen($digits) > 13) {
-                        $fail('Nomor telepon tidak boleh lebih dari 13 digit angka.');
+                    if (strlen($digits) > 14) {
+                        $fail('Nomor telepon tidak boleh lebih dari 14 digit angka.');
                     }
                     $duplicate = Consultation::findDuplicatePhone($accountId, $value, $consultationId);
 
@@ -242,5 +244,46 @@ class ConsultationRequest extends FormRequest
             'product_details' => $this->input('product_details'),
             'needs_category_ids' => $this->input('needs_category_ids', []),
         ];
+    }
+
+    private function formatIndonesiaPhone(?string $value): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', $value) ?? '';
+
+        if ($digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($digits, '620')) {
+            $digits = substr($digits, 3);
+        } elseif (str_starts_with($digits, '62')) {
+            $digits = substr($digits, 2);
+        } elseif (str_starts_with($digits, '0')) {
+            $digits = substr($digits, 1);
+        }
+
+        $digits = ltrim($digits, '0');
+
+        if ($digits === '') {
+            return null;
+        }
+
+        $segments = [substr($digits, 0, 3)];
+        $remaining = substr($digits, 3);
+
+        while (strlen($remaining) > 4) {
+            $segments[] = substr($remaining, 0, 4);
+            $remaining = substr($remaining, 4);
+        }
+
+        if ($remaining !== '') {
+            $segments[] = $remaining;
+        }
+
+        return '+62 ' . implode('-', array_filter($segments));
     }
 }

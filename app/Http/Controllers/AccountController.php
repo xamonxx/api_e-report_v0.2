@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\UserRole;
 use App\Http\Requests\AccountRequest;
 use App\Models\Account;
+use App\Models\StatusCategory;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,8 +16,15 @@ class AccountController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Account::withCount('consultations')
-            ->with('admins');
+        $query = Account::query()
+            ->withCount('consultations')
+            ->with(['admins:id,name,account_id']);
+
+        if ($dealStatusId = $this->resolveDealStatusId()) {
+            $query->withCount([
+                'consultations as deals_count' => fn ($builder) => $builder->where('status_category_id', $dealStatusId),
+            ]);
+        }
 
         if ($request->filled('search')) {
             $query->where('name', 'like', '%' . $request->search . '%');
@@ -39,6 +47,27 @@ class AccountController extends Controller
             ->pluck('description');
 
         return view('accounts.index', compact('accounts', 'categories'));
+    }
+
+    private function resolveDealStatusId(): ?int
+    {
+        static $dealStatusId;
+        static $resolved = false;
+
+        if ($resolved) {
+            return $dealStatusId;
+        }
+
+        $dealStatusId = StatusCategory::query()
+            ->whereIn('name', array_filter([
+                config('statuses.deal'),
+                'Selesai/Deal',
+                'Selesai Deal',
+            ]))
+            ->value('id');
+        $resolved = true;
+
+        return $dealStatusId;
     }
 
     public function create()

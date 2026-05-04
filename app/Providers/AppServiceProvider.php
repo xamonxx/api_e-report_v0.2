@@ -100,7 +100,7 @@ class AppServiceProvider extends ServiceProvider
 
         View::composer('layouts.app', function ($view) {
             if (auth()->check()) {
-                $summary = app(NotificationSummaryService::class)->getForUser(auth()->user());
+                $summary = app(NotificationSummaryService::class)->getCountsForUser(auth()->user());
                 $view->with($summary);
 
                 return;
@@ -108,8 +108,6 @@ class AppServiceProvider extends ServiceProvider
 
             $view->with([
                 'unreadNotesCount' => 0,
-                'activeReminders' => collect(),
-                'unreadNotes' => collect(),
                 'upcomingRemindersCount' => 0,
                 'initialTotalAlerts' => 0,
             ]);

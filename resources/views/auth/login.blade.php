@@ -3,21 +3,22 @@
 @section('content')
 {{-- Main wrapper. On mobile, the background image covers the screen. On desktop, it's a solid dark color. --}}
 <div class="login-shell relative font-sans">
-    <div class="login-golden-horizon fixed inset-0 z-0"></div>
+    <div aria-hidden="true" class="login-golden-horizon fixed inset-0 z-0"></div>
     {{-- Dark Dotted Grid Background --}}
-    <div class="login-dotted-grid fixed inset-0 z-0"></div>
+    <div aria-hidden="true" class="login-dotted-grid fixed inset-0 z-0"></div>
 
-    {{-- Mobile Background Image (Only visible < lg) --}}
-    <div class="login-mobile-background fixed inset-0 z-0 lg:hidden"></div>
-    <div class="login-mobile-background fixed inset-0 z-0 lg:hidden bg-cover bg-center bg-no-repeat opacity-20 blur-[2px]" style="background-image: url('{{ asset('images/bg-login.png') }}');"></div>
-    <div class="login-mobile-overlay fixed inset-0 z-0 lg:hidden"></div>
+    <div aria-hidden="true" class="login-mobile-overlay fixed inset-0 z-0 lg:hidden"></div>
 
     <div class="login-stage relative z-10 mx-auto flex flex-col h-full min-h-screen w-full max-w-[1360px] items-center justify-center px-4 sm:px-6 lg:px-8 py-10 lg:py-12 2xl:py-16">
         
         {{-- Mobile & Tablet Header (< xl) --}}
         <div class="w-full flex items-center justify-between mb-8 xl:hidden animate-fade-in">
-            <img src="{{ asset('images/putra_corporation_exact.svg') }}" 
+            <img src="{{ asset('images/putra_corporation_exact_512.png') }}" 
                  alt="Putra Corporation Logo" 
+                 width="512"
+                 height="288"
+                 decoding="async"
+                 fetchpriority="high"
                  class="login-brand-logo h-[90px] sm:h-[112px] md:h-[132px] w-auto object-contain" />
                  
             <button type="button"
@@ -39,24 +40,27 @@
                 <div class="login-hero-panel relative flex-1 w-full min-h-[640px] rounded-[2rem] overflow-hidden shadow-2xl border border-outline-variant/10 flex flex-col"
                      @mouseenter="pauseSlider()"
                      @mouseleave="startSlider()">
-                    <div class="absolute inset-0 bg-surface"></div>
+                    <div aria-hidden="true" class="absolute inset-0 bg-surface"></div>
                     {{-- Background pattern with reduced opacity (6%) for subtlety --}}
-                    <div class="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.06] transition-all duration-1000" style="background-image: url('{{ asset('images/bg-login.png') }}'); background-size: cover; background-position: center;"></div>
+                    <div aria-hidden="true" class="absolute inset-0 opacity-[0.16] transition-all duration-1000 bg-[radial-gradient(circle_at_24%_22%,rgba(251,191,36,0.16),transparent_26%),radial-gradient(circle_at_78%_20%,rgba(255,255,255,0.10),transparent_20%),radial-gradient(circle_at_50%_78%,rgba(255,160,0,0.12),transparent_24%)]"></div>
                     {{-- Inner subtle gradient for text readability and elegance --}}
-                    <div class="login-banner-overlay absolute inset-0"></div>
+                    <div aria-hidden="true" class="login-banner-overlay absolute inset-0"></div>
                     {{-- Soft radial glow (gold accent) --}}
-                    <div class="login-hero-glow absolute -left-16 top-1/3"></div>
-                    <div class="login-hero-glow login-hero-glow--secondary absolute -right-10 bottom-20"></div>
+                    <div aria-hidden="true" class="login-hero-glow absolute -left-16 top-1/3"></div>
+                    <div aria-hidden="true" class="login-hero-glow login-hero-glow--secondary absolute -right-10 bottom-20"></div>
                     {{-- Subtle geometric rings --}}
-                    <div class="login-hero-rings absolute inset-x-0 top-14 flex justify-center pointer-events-none">
+                    <div aria-hidden="true" class="login-hero-rings absolute inset-x-0 top-14 flex justify-center pointer-events-none">
                         <div class="login-hero-ring login-hero-ring--outer"></div>
                         <div class="login-hero-ring login-hero-ring--inner"></div>
                     </div>
                     
                     {{-- Unified Header (Logo + Toggle) INSIDE the slider panel --}}
                     <div class="relative z-50 flex items-center justify-between px-8 pt-3 w-full animate-fade-in">
-                        <img src="{{ asset('images/putra_corporation_exact.svg') }}" 
+                        <img src="{{ asset('images/putra_corporation_exact_512.png') }}" 
                              alt="Putra Corporation Logo" 
+                             width="512"
+                             height="288"
+                             decoding="async"
                              class="login-brand-logo h-[102px] 2xl:h-[122px] w-auto object-contain transition-transform hover:scale-[1.02] duration-300" />
                              
                         <button type="button"
@@ -324,20 +328,22 @@
 
             {{-- Right Side: Login Form --}}
             <div class="login-form-column flex w-full items-center justify-center xl:justify-end xl:col-span-5 relative z-20 pt-2 sm:pt-4 xl:pt-0 mt-1 sm:mt-4 xl:mt-0">
-                <div class="login-panel relative w-full max-w-[420px] xl:max-w-[430px] 2xl:max-w-[440px] animate-fade-in rounded-[1.75rem] p-5 sm:p-6 lg:px-7 lg:py-6 bg-surface-container/60 sm:bg-surface-container/40 border border-outline-variant/30 backdrop-blur-xl shadow-2xl">
+                <div class="login-panel relative w-full max-w-[420px] xl:max-w-[430px] 2xl:max-w-[440px] animate-fade-in rounded-[1.75rem] p-5 sm:p-6 lg:px-7 lg:py-6 bg-surface-container/60 sm:bg-surface-container/40 border border-outline-variant/30 backdrop-blur-xl shadow-2xl"
+                     role="region"
+                     aria-labelledby="login-heading">
                     
                     {{-- Mobile Logo (Only visible < xl if they want it) -> We removed it because we added it directly on top of screen --}}
 
                     {{-- Header --}}
                     <div class="mb-6 sm:mb-7 text-center xl:text-left">
-                        <h1 class="text-[1.95rem] sm:text-[2.1rem] lg:text-[2.2rem] font-extrabold leading-[1.05] mb-2 tracking-[-0.03em] text-on-surface">Selamat Datang</h1>
+                        <h1 id="login-heading" class="text-[1.95rem] sm:text-[2.1rem] lg:text-[2.2rem] font-extrabold leading-[1.05] mb-2 tracking-[-0.03em] text-on-surface">Selamat Datang</h1>
                         <p class="text-on-surface-variant text-[14px] sm:text-[15px] font-medium leading-relaxed max-w-[360px] mx-auto xl:mx-0">Kelola laporan, prospek, dan aktivitas tim dari satu tempat yang terintegrasi.</p>
                     </div>
 
                     @if($errors->any())
                     <div class="bg-error/10 border border-error/20 text-error px-4 py-3.5 rounded-xl text-sm font-medium flex items-start gap-3 mb-5 sm:mb-6 shadow-inner animate-fade-in">
                         <x-icon name="error" class="w-5 h-5 shrink-0" />
-                        <span>Kredensial tidak cocok. Silakan periksa kembali email & sandi Anda.</span>
+                        <span>{{ $errors->first('email') ?: $errors->first('password') ?: 'Kredensial tidak cocok. Silakan periksa kembali email & sandi Anda.' }}</span>
                     </div>
                     @endif
 
@@ -367,7 +373,7 @@
                                 <input :type="show ? 'text' : 'password'" id="password" name="password"
                                        class="w-full min-h-[56px] rounded-xl pl-[42px] pr-12 py-3.5 bg-surface-container-highest border border-outline-variant/40 text-[15px] text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-300 hover:border-outline-variant"
                                        placeholder="••••••••" autocomplete="current-password" required />
-                                <button type="button" @click="show = !show" class="absolute inset-y-0 right-0 pr-4 flex items-center text-on-surface-variant hover:text-on-surface transition-colors focus:outline-none" aria-label="Toggle password visibility">
+                                <button type="button" @click="show = !show" class="absolute inset-y-0 right-0 pr-4 flex items-center text-on-surface-variant hover:text-on-surface transition-colors focus:outline-none" :aria-label="show ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'">
                                     <x-icon name="visibility" class="w-5 h-5" x-show="!show" x-cloak />
                                     <x-icon name="visibility_off" class="w-5 h-5" x-show="show" x-cloak />
                                 </button>
@@ -376,9 +382,9 @@
 
                         {{-- Actions --}}
                         <div class="flex flex-col gap-3 pt-1 pb-1.5 sm:flex-row sm:items-center sm:justify-between">
-                            <label class="flex items-center gap-2.5 cursor-pointer group/chk">
+                            <label for="remember" class="flex items-center gap-2.5 cursor-pointer group/chk">
                                 <div class="relative flex items-center justify-center w-[18px] h-[18px] rounded-[5px] border border-outline-variant/60 bg-surface-container-highest group-hover/chk:border-primary transition-colors">
-                                    <input type="checkbox" name="remember" {{ old('remember') ? 'checked' : '' }} class="absolute w-full h-full opacity-0 cursor-pointer peer">
+                                    <input type="checkbox" id="remember" name="remember" value="1" {{ old('remember') ? 'checked' : '' }} class="absolute w-full h-full opacity-0 cursor-pointer peer">
                                     <x-icon name="check" class="w-3.5 h-3.5 text-primary opacity-0 peer-checked:opacity-100 transition-opacity" />
                                 </div>
                                 <span class="text-[14px] font-medium text-on-surface-variant group-hover/chk:text-on-surface transition-colors">Ingat saya</span>
@@ -421,24 +427,26 @@
                     <template x-teleport="body">
                         <div x-show="showBugModal" x-cloak class="login-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4"
                              x-transition.opacity.duration.400ms>
-                            <div @click.away="showBugModal = false" class="login-modal modal-surface-glow w-full max-w-md rounded-[2rem] shadow-2xl animate-fade-in overflow-hidden mx-2">
+                            <div @click.away="showBugModal = false" role="dialog" aria-modal="true" aria-labelledby="bug-report-title" aria-describedby="bug-report-description" class="login-modal modal-surface-glow w-full max-w-md rounded-[2rem] shadow-2xl animate-fade-in overflow-hidden mx-2">
                                 <div class="bg-gradient-to-r from-error/10 to-transparent px-6 sm:px-8 py-5 sm:py-6 flex items-center justify-between border-b border-error/10">
                                     <div class="flex items-center gap-3 text-error">
                                         <div class="w-8 h-8 rounded-full bg-error/10 flex items-center justify-center">
                                             <x-icon name="warning" class="w-4 h-4" />
                                         </div>
-                                        <h3 class="font-bold text-base sm:text-lg font-headline tracking-tight">Lapor Kendala</h3>
+                                        <h3 id="bug-report-title" class="font-bold text-base sm:text-lg font-headline tracking-tight">Lapor Kendala</h3>
                                     </div>
-                                    <button @click="showBugModal = false" class="text-on-surface-variant hover:text-on-surface bg-surface-container-low hover:bg-surface-container-high rounded-full p-2 transition-all">
+                                    <button type="button" @click="showBugModal = false" aria-label="Tutup dialog lapor kendala" class="text-on-surface-variant hover:text-on-surface bg-surface-container-low hover:bg-surface-container-high rounded-full p-2 transition-all">
                                         <x-icon name="close" class="w-4 h-4" />
                                     </button>
                                 </div>
                                 
                                 <div class="p-6 sm:p-8">
-                                    <p class="text-[14px] text-on-surface-variant mb-6 leading-relaxed">Punya laporan mengenai sistem yang error atau tidak berjalan semestinya? Jelaskan secara detail di bawah ini agar tim teknis kami bisa segera mengatasinya.</p>
+                                    <p id="bug-report-description" class="text-[14px] text-on-surface-variant mb-6 leading-relaxed">Punya laporan mengenai sistem yang error atau tidak berjalan semestinya? Jelaskan secara detail di bawah ini agar tim teknis kami bisa segera mengatasinya.</p>
                                     
                                     <div class="space-y-6">
+                                        <label for="bug-report-message" class="sr-only">Pesan laporan kendala</label>
                                         <textarea x-model="bugMessage" rows="5" 
+                                                  id="bug-report-message"
                                                   @input="bugError = ''"
                                                   class="w-full rounded-xl px-5 py-4 bg-surface-container-highest border border-outline-variant/40 text-[14px] text-on-surface resize-none outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline-variant"
                                                   :class="bugError ? 'border-error/80 focus:border-error focus:ring-error/20 ring-2 ring-error/20' : ''"
@@ -468,21 +476,21 @@
                     <template x-teleport="body">
                         <div x-show="showForgotPasswordModal" x-cloak class="login-modal-backdrop login-modal-backdrop--forgot fixed inset-0 z-[100] flex items-center justify-center p-4"
                              x-transition.opacity.duration.400ms>
-                            <div @click.away="showForgotPasswordModal = false" class="login-modal login-modal--forgot modal-surface-glow w-full max-w-md rounded-[2rem] shadow-2xl animate-fade-in overflow-hidden mx-2">
+                            <div @click.away="showForgotPasswordModal = false" role="dialog" aria-modal="true" aria-labelledby="forgot-password-title" aria-describedby="forgot-password-description" class="login-modal login-modal--forgot modal-surface-glow w-full max-w-md rounded-[2rem] shadow-2xl animate-fade-in overflow-hidden mx-2">
                                 <div class="login-modal--forgot__header bg-gradient-to-r from-primary/12 to-transparent px-6 sm:px-8 py-5 sm:py-6 flex items-center justify-between border-b border-primary/10">
                                     <div class="login-modal--forgot__title-wrap flex items-center gap-3 text-primary">
                                         <div class="login-modal--forgot__icon w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                                             <x-icon name="lock_reset" class="w-4 h-4" />
                                         </div>
-                                        <h3 class="login-modal--forgot__title font-bold text-base sm:text-lg font-headline tracking-tight">Permintaan Reset Password</h3>
+                                        <h3 id="forgot-password-title" class="login-modal--forgot__title font-bold text-base sm:text-lg font-headline tracking-tight">Permintaan Reset Password</h3>
                                     </div>
-                                    <button @click="showForgotPasswordModal = false" class="login-modal--forgot__close text-on-surface-variant hover:text-on-surface bg-surface-container-low hover:bg-surface-container-high rounded-full p-2 transition-all">
+                                    <button type="button" @click="showForgotPasswordModal = false" aria-label="Tutup dialog reset password" class="login-modal--forgot__close text-on-surface-variant hover:text-on-surface bg-surface-container-low hover:bg-surface-container-high rounded-full p-2 transition-all">
                                         <x-icon name="close" class="w-4 h-4" />
                                     </button>
                                 </div>
 
                                 <div class="login-modal--forgot__body p-6 sm:p-8">
-                                    <p class="login-modal--forgot__description text-[14px] text-on-surface-variant mb-6 leading-relaxed">Isi data admin dan akun yang Anda pegang. Permintaan akan langsung dikirim ke WhatsApp developer untuk bantuan reset password.</p>
+                                    <p id="forgot-password-description" class="login-modal--forgot__description text-[14px] text-on-surface-variant mb-6 leading-relaxed">Isi data admin dan akun yang Anda pegang. Permintaan akan langsung dikirim ke WhatsApp developer untuk bantuan reset password.</p>
 
                                     <div class="login-modal--forgot__form space-y-5">
                                         <div class="space-y-1.5">

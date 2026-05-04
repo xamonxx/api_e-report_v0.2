@@ -92,24 +92,68 @@
                     <div class="space-y-5">
                         <div>
                             <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Password Lama</label>
-                            <input type="password" name="current_password"
-                                   class="w-full bg-surface-container-high border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20"
-                                   placeholder="Masukkan password saat ini" />
+                            <div class="relative">
+                                <input :type="showSettingsPasswords ? 'text' : 'password'" name="current_password"
+                                       x-model="settingsCurrentPassword"
+                                       class="w-full bg-surface-container-high border-0 rounded-xl pl-4 pr-12 py-3 text-sm focus:ring-2 focus:ring-primary/20"
+                                       placeholder="Masukkan password saat ini" />
+                                <button type="button"
+                                        @click="toggleSettingsPasswordsVisibility()"
+                                        class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-on-surface-variant transition hover:bg-surface-container hover:text-on-surface"
+                                        :aria-label="showSettingsPasswords ? 'Sembunyikan password' : 'Tampilkan password'"
+                                        :title="showSettingsPasswords ? 'Sembunyikan password' : 'Tampilkan password'">
+                                    <x-icon x-show="!showSettingsPasswords" x-cloak name="visibility" class="w-5 h-5" />
+                                    <x-icon x-show="showSettingsPasswords" x-cloak name="visibility_off" class="w-5 h-5" />
+                                </button>
+                            </div>
                             @error('current_password') <p class="text-error text-xs mt-1">{{ $message }}</p> @enderror
                         </div>
                         <div class="settings-form-grid">
                             <div>
                                 <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Password Baru</label>
-                                <input type="password" name="password"
-                                       class="w-full bg-surface-container-high border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20"
-                                       placeholder="Min. 8 karakter" />
+                                <div class="relative">
+                                    <input :type="showSettingsPasswords ? 'text' : 'password'" name="password"
+                                           x-model="settingsNewPassword"
+                                           :aria-invalid="hasSettingsPasswordMismatch() ? 'true' : 'false'"
+                                           class="w-full bg-surface-container-high border-0 rounded-xl pl-4 pr-12 py-3 text-sm focus:ring-2 focus:ring-primary/20 transition"
+                                           :class="hasSettingsPasswordMismatch() ? 'ring-2 ring-error/40' : ''"
+                                           placeholder="Min. 8 karakter" />
+                                    <button type="button"
+                                            @click="toggleSettingsPasswordsVisibility()"
+                                            class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-on-surface-variant transition hover:bg-surface-container hover:text-on-surface"
+                                            :aria-label="showSettingsPasswords ? 'Sembunyikan password' : 'Tampilkan password'"
+                                            :title="showSettingsPasswords ? 'Sembunyikan password' : 'Tampilkan password'">
+                                        <x-icon x-show="!showSettingsPasswords" x-cloak name="visibility" class="w-5 h-5" />
+                                        <x-icon x-show="showSettingsPasswords" x-cloak name="visibility_off" class="w-5 h-5" />
+                                    </button>
+                                </div>
                                 @error('password') <p class="text-error text-xs mt-1">{{ $message }}</p> @enderror
                             </div>
                             <div>
                                 <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Konfirmasi Password</label>
-                                <input type="password" name="password_confirmation"
-                                       class="w-full bg-surface-container-high border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20"
-                                       placeholder="Ulangi password baru" />
+                                <div class="relative">
+                                    <input :type="showSettingsPasswords ? 'text' : 'password'" name="password_confirmation"
+                                           x-model="settingsPasswordConfirmation"
+                                           @input="settingsPasswordConfirmationTouched = true"
+                                           @blur="settingsPasswordConfirmationTouched = true"
+                                           :aria-invalid="hasSettingsPasswordMismatch() ? 'true' : 'false'"
+                                           class="w-full bg-surface-container-high border-0 rounded-xl pl-4 pr-12 py-3 text-sm focus:ring-2 focus:ring-primary/20 transition"
+                                           :class="hasSettingsPasswordMismatch() ? 'ring-2 ring-error/40' : ''"
+                                           placeholder="Ulangi password baru" />
+                                    <button type="button"
+                                            @click="toggleSettingsPasswordsVisibility()"
+                                            class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-on-surface-variant transition hover:bg-surface-container hover:text-on-surface"
+                                            :aria-label="showSettingsPasswords ? 'Sembunyikan password' : 'Tampilkan password'"
+                                            :title="showSettingsPasswords ? 'Sembunyikan password' : 'Tampilkan password'">
+                                        <x-icon x-show="!showSettingsPasswords" x-cloak name="visibility" class="w-5 h-5" />
+                                        <x-icon x-show="showSettingsPasswords" x-cloak name="visibility_off" class="w-5 h-5" />
+                                    </button>
+                                </div>
+                                <p x-cloak
+                                   x-show="hasSettingsPasswordMismatch()"
+                                   x-text="getSettingsPasswordConfirmationError()"
+                                   class="text-error text-xs mt-1"></p>
+                                @error('password_confirmation') <p class="text-error text-xs mt-1">{{ $message }}</p> @enderror
                             </div>
                         </div>
                     </div>

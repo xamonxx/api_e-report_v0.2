@@ -5,10 +5,11 @@
 {{-- Page Header --}}
 <div x-data="consultationsPage({
         showImportModal: {{ $errors->has('csv_file') ? 'true' : 'false' }},
-        showCreateModal: {{ old('client_name') ? 'true' : 'false' }}
+        showCreateModal: {{ old('client_name') ? 'true' : 'false' }},
+        createUrl: @js(route('consultations.create'))
     })"
     x-init="init()"
-    @open-create-modal.window="showCreateModal = true"
+    @open-create-modal.window="openCreateLead()"
     id="consultations-page"
     class="flex flex-col xl:flex-row xl:items-end justify-between gap-6 mb-6">
     <div>
@@ -26,7 +27,7 @@
             <x-icon name="download" class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Export</span>
         </a>
-        <button @click="showCreateModal = true"
+        <button @click="openCreateLead()"
            class="w-full sm:w-auto bg-primary text-on-primary px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary-dim transition-colors">
             <x-icon name="add_circle" class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Tambah Lead</span>
@@ -142,10 +143,24 @@
                             </div>
                             <div class="space-y-2">
                                 <label for="phone" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">No. Telepon/WA <span class="text-error">*</span></label>
-                                <input type="text" id="phone" name="phone" value="{{ old('phone') }}" maxlength="25"
-                                       oninput="this.value = this.value.replace(/[^0-9\s\-\+\(\)]/g, '')"
-                                       class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 placeholder:text-outline-variant shadow-inner font-bold"
-                                       placeholder="Contoh: 08123456789" required />
+                                <div x-data="phoneInputState(@js(old('phone')))" x-init="init()">
+                                    <div class="phone-input-shell" :class="{ 'phone-input-shell--focused': focused }">
+                                        <div class="phone-input-shell__prefix">
+                                            <x-icon name="call" class="w-4 h-4" />
+                                            <span>+62</span>
+                                        </div>
+                                        <div class="phone-input-shell__body">
+                                            <input type="hidden" name="phone" :value="submittedValue()">
+                                            <input type="tel" id="phone" x-model="core" maxlength="18" inputmode="numeric" autocomplete="tel-national"
+                                                   @input="onInput($event.target.value)"
+                                                   @focus="focused = true"
+                                                   @blur="focused = false; core = window.formatIndonesiaPhoneCore(core)"
+                                                   class="phone-input-shell__field"
+                                                   placeholder="831-3755-4972" required />
+                                        </div>
+                                    </div>
+                                    <p class="phone-input-shell__hint">Nomor otomatis dirapikan ke format +62 yang konsisten.</p>
+                                </div>
                             </div>
                         </div>
 
@@ -205,7 +220,7 @@
                                              x-transition:enter="transition ease-out duration-150"
                                              x-transition:enter-start="opacity-0 -translate-y-1"
                                              x-transition:enter-end="opacity-100 translate-y-0"
-                                             class="absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                                             class="app-select-panel absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                                             <div class="border-b border-surface-container-low p-3">
                                                 <input x-ref="searchInput"
                                                        type="text"
@@ -316,7 +331,7 @@
                                      x-transition:enter="transition ease-out duration-150"
                                      x-transition:enter-start="opacity-0 -translate-y-1"
                                      x-transition:enter-end="opacity-100 translate-y-0"
-                                     class="absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                                     class="app-select-panel absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                                     <div class="border-b border-surface-container-low p-3">
                                         <input x-ref="searchInput" type="text" x-model="search"
                                                class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -492,7 +507,7 @@
                                              x-transition:enter="transition ease-out duration-150"
                                              x-transition:enter-start="opacity-0 -translate-y-1"
                                              x-transition:enter-end="opacity-100 translate-y-0"
-                                             class="absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                                             class="app-select-panel absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                                             <div class="border-b border-surface-container-low p-3">
                                                 <input x-ref="searchInput" type="text" x-model="search"
                                                        class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -598,10 +613,25 @@
                             </div>
                             <div class="space-y-2">
                                 <label for="edit_phone" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">No. Telepon/WA <span class="text-error">*</span></label>
-                                <input type="text" id="edit_phone" name="phone" x-model="editData.phone" maxlength="25"
-                                       oninput="this.value = this.value.replace(/[^0-9\s\-\+\(\)]/g, '')"
-                                       class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 placeholder:text-outline-variant shadow-inner font-bold"
-                                       placeholder="Contoh: 08123456789" required />
+                                <div x-data="phoneInputState(editData.phone)"
+                                     x-init="init(); editData.phone = submittedValue(); $watch('editData.phone', value => syncFromExternal(value)); $watch('core', () => editData.phone = submittedValue())">
+                                    <div class="phone-input-shell" :class="{ 'phone-input-shell--focused': focused }">
+                                        <div class="phone-input-shell__prefix">
+                                            <x-icon name="call" class="w-4 h-4" />
+                                            <span>+62</span>
+                                        </div>
+                                        <div class="phone-input-shell__body">
+                                            <input type="hidden" name="phone" :value="submittedValue()">
+                                            <input type="tel" id="edit_phone" x-model="core" maxlength="18" inputmode="numeric" autocomplete="tel-national"
+                                                   @input="onInput($event.target.value)"
+                                                   @focus="focused = true"
+                                                   @blur="focused = false; core = window.formatIndonesiaPhoneCore(core)"
+                                                   class="phone-input-shell__field"
+                                                   placeholder="831-3755-4972" required />
+                                        </div>
+                                    </div>
+                                    <p class="phone-input-shell__hint">Field ini otomatis mengubah nomor lokal menjadi format WhatsApp nasional.</p>
+                                </div>
                             </div>
                         </div>
 
@@ -661,7 +691,7 @@
                                              x-transition:enter="transition ease-out duration-150"
                                              x-transition:enter-start="opacity-0 -translate-y-1"
                                              x-transition:enter-end="opacity-100 translate-y-0"
-                                             class="absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                                             class="app-select-panel absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                                             <div class="border-b border-surface-container-low p-3">
                                                 <input x-ref="searchInput"
                                                        type="text"
@@ -766,7 +796,7 @@
                                      x-transition:enter="transition ease-out duration-150"
                                      x-transition:enter-start="opacity-0 -translate-y-1"
                                      x-transition:enter-end="opacity-100 translate-y-0"
-                                     class="absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                                     class="app-select-panel absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                                     <div class="border-b border-surface-container-low p-3">
                                         <input x-ref="searchInput" type="text" x-model="search"
                                                class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -934,7 +964,7 @@
                                              x-transition:enter="transition ease-out duration-150"
                                              x-transition:enter-start="opacity-0 -translate-y-1"
                                              x-transition:enter-end="opacity-100 translate-y-0"
-                                             class="absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                                             class="app-select-panel absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                                             <div class="border-b border-surface-container-low p-3">
                                                 <input x-ref="searchInput" type="text" x-model="search"
                                                        class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -990,7 +1020,74 @@
 </div>
 
 {{-- Filters --}}
-<div class="bg-surface-container-lowest p-4 sm:p-6 rounded-xl shadow-sm mb-6 no-print border border-surface-container-low">
+@php
+    $hasActiveConsultationFilters = request()->hasAny(['search', 'status', 'account', 'start_date', 'end_date']);
+@endphp
+<div x-data="{
+        isDesktop: window.innerWidth >= 1280,
+        lastViewportMode: window.innerWidth >= 1280 ? 'desktop' : 'mobile',
+        manualMobilePreference: null,
+        filterOpen: {{ $hasActiveConsultationFilters ? 'true' : 'false' }},
+        init() {
+            const defaultMobileOpen = {{ $hasActiveConsultationFilters ? 'true' : 'false' }};
+            const syncViewport = () => {
+                const nextIsDesktop = window.innerWidth >= 1280;
+                const nextViewportMode = nextIsDesktop ? 'desktop' : 'mobile';
+
+                if (nextViewportMode === this.lastViewportMode) {
+                    this.isDesktop = nextIsDesktop;
+                    return;
+                }
+
+                this.isDesktop = nextIsDesktop;
+                this.lastViewportMode = nextViewportMode;
+
+                if (nextIsDesktop) {
+                    this.filterOpen = true;
+                    return;
+                }
+
+                this.filterOpen = this.manualMobilePreference ?? defaultMobileOpen;
+            };
+
+            syncViewport();
+            window.addEventListener('resize', syncViewport);
+        },
+        toggleFilter() {
+            if (this.isDesktop) {
+                return;
+            }
+
+            this.filterOpen = !this.filterOpen;
+            this.manualMobilePreference = this.filterOpen;
+        }
+    }"
+    class="bg-surface-container-lowest p-4 sm:p-6 rounded-xl shadow-sm mb-6 no-print border border-surface-container-low">
+    <div class="xl:hidden rounded-2xl border border-surface-container-low bg-surface-container-low/40 px-3.5 py-3 shadow-inner">
+        <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+                <div class="text-[10px] font-extrabold uppercase tracking-[0.22em] text-on-surface-variant opacity-75">Filter Lead</div>
+                <p class="mt-1 text-xs leading-5 text-on-surface-variant">Buka saat perlu menyaring data. Panel akan tetap terbuka sampai Anda klik tutup.</p>
+            </div>
+            <button type="button"
+                    @click="toggleFilter()"
+                    class="shrink-0 inline-flex min-w-[5.5rem] items-center justify-center gap-1.5 rounded-xl border border-outline-variant/20 bg-surface px-3.5 py-2.5 text-xs font-bold text-on-surface shadow-sm transition hover:border-primary/25 hover:text-primary">
+                <span x-text="filterOpen ? 'Tutup' : 'Buka'"></span>
+                <x-icon name="expand_more"
+                        class="w-4 h-4 transition-transform duration-200"
+                        x-bind:class="filterOpen ? 'rotate-180 text-primary' : ''" />
+            </button>
+        </div>
+    </div>
+
+    <div x-show="isDesktop || filterOpen"
+         x-transition:enter="transition ease-out duration-220"
+         x-transition:enter-start="opacity-0 -translate-y-2"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-180"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 -translate-y-2"
+         class="mt-4 xl:mt-0">
     <form method="GET" action="{{ route('consultations.index') }}" class="flex flex-col xl:flex-row xl:items-end gap-4">
         <div class="grid grid-cols-1 md:grid-cols-2 {{ auth()->user()->isSuperAdmin() ? 'xl:grid-cols-5' : 'lg:grid-cols-4' }} gap-4 flex-1">
             {{-- Search --}}
@@ -1055,7 +1152,7 @@
                          x-transition:enter="transition ease-out duration-150"
                          x-transition:enter-start="opacity-0 -translate-y-1"
                          x-transition:enter-end="opacity-100 translate-y-0"
-                         class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                        class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                         <div class="border-b border-surface-container-low p-3">
                             <input x-ref="searchInput" type="text" x-model="search"
                                    class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -1103,7 +1200,7 @@
                          x-transition:enter="transition ease-out duration-150"
                          x-transition:enter-start="opacity-0 -translate-y-1"
                          x-transition:enter-end="opacity-100 translate-y-0"
-                         class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                        class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                         <div class="border-b border-surface-container-low p-3">
                             <input x-ref="searchInput" type="text" x-model="search"
                                    class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -1140,6 +1237,7 @@
             </button>
         </div>
     </form>
+    </div>
 </div>
 
 @if($recentImports->isNotEmpty())
@@ -1205,6 +1303,7 @@
                     <th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest leading-none">Nama Produk</th>
                     <th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest leading-none">Status</th>
                     <th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest leading-none">Tgl Konsul</th>
+                    <th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest leading-none">Tgl Update</th>
                     <th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest leading-none text-right">Aksi</th>
                 </tr>
             </thead>
@@ -1254,6 +1353,12 @@
                         </span>
                     </td>
                     <td class="px-6 py-4 text-sm text-on-surface-variant font-medium">{{ $c->consultation_date?->format('d/m/Y') }}</td>
+                    <td class="px-6 py-4">
+                        <div class="flex flex-col text-sm font-medium text-on-surface-variant">
+                            <span>{{ $c->updated_at?->format('d/m/Y') }}</span>
+                            <span class="text-[10px] opacity-70">{{ $c->updated_at?->format('H:i') }}</span>
+                        </div>
+                    </td>
                     <td class="px-6 py-4 text-right">
                         <div class="flex justify-end gap-1">
                             <a href="{{ route('consultations.show', $c) }}"
@@ -1294,11 +1399,11 @@
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="{{ auth()->user()->isSuperAdmin() ? 8 : 7 }}" class="px-6 py-16 text-center">
+                    <td colspan="{{ auth()->user()->isSuperAdmin() ? 9 : 8 }}" class="px-6 py-16 text-center">
                         <div class="flex flex-col items-center">
                             <x-icon name="person_off" class="w-16 h-16 text-outline-variant/30 mb-4" />
                             <p class="text-on-surface-variant font-bold">Tidak ada data konsultasi ditemukan.</p>
-                            <button type="button" @click="$dispatch('open-create-modal')" class="text-primary font-bold text-sm hover:underline mt-4 flex items-center gap-1 cursor-pointer">
+                            <button type="button" @click="openCreateLead()" class="text-primary font-bold text-sm hover:underline mt-4 flex items-center gap-1 cursor-pointer">
                                 <x-icon name="add" class="w-4 h-4" />
                                 <span>Buat Lead Baru</span>
                             </button>

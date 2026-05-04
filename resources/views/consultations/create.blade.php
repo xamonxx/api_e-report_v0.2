@@ -58,10 +58,24 @@
                 </div>
                 <div class="space-y-2">
                     <label for="phone" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">No. Telepon/WA <span class="text-error">*</span></label>
-                    <input type="text" id="phone" name="phone" value="{{ old('phone') }}" maxlength="25"
-                           oninput="this.value = this.value.replace(/[^0-9\s\-\+\(\)]/g, '')"
-                           class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 placeholder:text-outline-variant shadow-inner font-bold"
-                           placeholder="Contoh: 08123456789" required />
+                    <div x-data="phoneInputState(@js(old('phone')))" x-init="init()">
+                        <div class="phone-input-shell" :class="{ 'phone-input-shell--focused': focused }">
+                            <div class="phone-input-shell__prefix">
+                                <x-icon name="call" class="w-4 h-4" />
+                                <span>+62</span>
+                            </div>
+                            <div class="phone-input-shell__body">
+                                <input type="hidden" name="phone" :value="submittedValue()">
+                                <input type="tel" id="phone" x-model="core" maxlength="18" inputmode="numeric" autocomplete="tel-national"
+                                       @input="onInput($event.target.value)"
+                                       @focus="focused = true"
+                                       @blur="focused = false; core = window.formatIndonesiaPhoneCore(core)"
+                                       class="phone-input-shell__field"
+                                       placeholder="831-3755-4972" required />
+                            </div>
+                        </div>
+                        <p class="phone-input-shell__hint">Awali dengan 08, 8, atau +62. Sistem otomatis merapikan ke format WhatsApp.</p>
+                    </div>
                 </div>
             </div>
 
@@ -121,7 +135,7 @@
                                  x-transition:enter="transition ease-out duration-150"
                                  x-transition:enter-start="opacity-0 -translate-y-1"
                                  x-transition:enter-end="opacity-100 translate-y-0"
-                                 class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                                class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                                 <div class="border-b border-surface-container-low p-3">
                                     <input x-ref="searchInput"
                                            type="text"
@@ -232,7 +246,7 @@
                          x-transition:enter="transition ease-out duration-150"
                          x-transition:enter-start="opacity-0 -translate-y-1"
                          x-transition:enter-end="opacity-100 translate-y-0"
-                         class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                        class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                         <div class="border-b border-surface-container-low p-3">
                             <input x-ref="searchInput" type="text" x-model="search"
                                    class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
@@ -416,7 +430,7 @@
                              x-transition:enter="transition ease-out duration-150"
                              x-transition:enter-start="opacity-0 -translate-y-1"
                              x-transition:enter-end="opacity-100 translate-y-0"
-                             class="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
+                            class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
                             <div class="border-b border-surface-container-low p-3">
                                 <input x-ref="searchInput" type="text" x-model="search"
                                        class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
