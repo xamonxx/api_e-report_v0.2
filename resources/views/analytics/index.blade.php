@@ -222,7 +222,9 @@
                 <div>
                     <div class="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">Periode Aktif</div>
                     <div class="mt-1 text-lg font-extrabold text-on-surface font-headline">{{ $periodLabel }}</div>
-                    <div class="text-xs text-on-surface-variant">Dibandingkan dengan {{ $comparisonLabel }}</div>
+                    <div class="text-xs text-on-surface-variant">
+                        Scope: {{ $selectedAccountName }} · {{ number_format($totalLeads) }} konsultasi pada periode ini dari {{ number_format($totalLeadsAllPeriods ?? $totalLeads) }} total data scope.
+                    </div>
                 </div>
                 <div class="flex flex-wrap gap-2 no-print">
                     <a href="{{ route('export.analytics.excel', $exportQuery) }}"
@@ -263,26 +265,28 @@
         <p class="text-3xl font-extrabold font-headline text-on-surface">{{ number_format($totalLeads) }}</p>
     </div>
 
-    {{-- Rasio Konversi --}}
+    {{-- Deal Rate --}}
     <div class="bg-surface-container-lowest p-6 rounded-xl shadow-sm border border-transparent hover:border-primary/10 transition-all group hover-lift animate-fade-in">
         <div class="flex justify-between items-start mb-4">
             <div class="p-2 bg-tertiary-container/30 rounded-lg group-hover:bg-tertiary group-hover:text-on-primary transition-colors">
                 <x-icon name="trending_up" class="w-5 h-5" />
             </div>
         </div>
-        <h3 class="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-1">Rasio Konversi</h3>
+        <h3 class="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-1">Deal Rate</h3>
         <p class="text-3xl font-extrabold font-headline text-on-surface">{{ $conversionRate }}%</p>
+        <p class="mt-2 text-[11px] font-semibold text-on-surface-variant">{{ number_format($totalDeals) }} deal dari {{ number_format($totalLeads) }} konsultasi</p>
     </div>
 
-    {{-- Total Survey --}}
+    {{-- Total Request Survey --}}
     <div class="bg-surface-container-lowest p-6 rounded-xl shadow-sm border border-transparent hover:border-primary/10 transition-all group hover-lift animate-fade-in">
         <div class="flex justify-between items-start mb-4">
             <div class="p-2 bg-inverse-primary/20 rounded-lg group-hover:bg-inverse-primary group-hover:text-on-primary transition-colors">
                 <x-icon name="assignment" class="w-5 h-5" />
             </div>
         </div>
-        <h3 class="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-1">Total Survey</h3>
+        <h3 class="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-1">Total Request Survey</h3>
         <p class="text-3xl font-extrabold font-headline text-on-surface">{{ number_format($totalSurveys) }}</p>
+        <p class="mt-2 text-[11px] font-semibold text-on-surface-variant">{{ number_format($requestSurveyRate ?? 0, 1) }}% dari periode aktif</p>
     </div>
 
     {{-- Growth --}}
@@ -294,7 +298,7 @@
         </div>
         <h3 class="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-1">Growth</h3>
         <p class="text-3xl font-extrabold font-headline text-on-surface">{{ $growthPercent }}%</p>
-        <p class="mt-2 text-[11px] font-semibold text-on-surface-variant">vs {{ $comparisonLabel }}</p>
+        <p class="mt-2 text-[11px] font-semibold text-on-surface-variant">{{ ($growthDelta ?? 0) >= 0 ? '+' : '' }}{{ number_format($growthDelta ?? 0) }} vs {{ $comparisonLabel }}</p>
     </div>
 </div>
 
@@ -302,7 +306,7 @@
     $pendingConfirmationCards = [
         [
             'eyebrow' => 'Provinsi',
-            'title' => '% Belum Konfirmasi',
+            'title' => 'Provinsi Belum Konfirmasi',
             'description' => 'Lead yang provinsinya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
             'count_label' => 'Provinsi Belum Confirm',
             'icon' => 'flag',
@@ -316,7 +320,7 @@
         ],
         [
             'eyebrow' => 'Kota / Kabupaten',
-            'title' => '% Belum Konfirmasi',
+            'title' => 'Kota Belum Konfirmasi',
             'description' => 'Lead yang kota/kabupatennya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
             'count_label' => 'Kota Belum Confirm',
             'icon' => 'domain',
@@ -330,7 +334,7 @@
         ],
         [
             'eyebrow' => 'Kecamatan',
-            'title' => '% Belum Konfirmasi',
+            'title' => 'Kecamatan Belum Konfirmasi',
             'description' => 'Lead yang kecamatannya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
             'count_label' => 'Kecamatan Belum Confirm',
             'icon' => 'location_on',
@@ -344,7 +348,7 @@
         ],
         [
             'eyebrow' => 'Kebutuhan Produk',
-            'title' => '% Belum Konfirmasi',
+            'title' => 'Produk Belum Konfirmasi',
             'description' => 'Lead yang produk kebutuhannya masih memakai label "' . \App\Support\PendingConfirmation::LABEL . '".',
             'count_label' => 'Produk Belum Confirm',
             'icon' => 'assignment',
@@ -408,6 +412,512 @@
             </div>
         </div>
         @endforeach
+    </div>
+</div>
+@endif
+
+@if(collect($comparisonMatrix)->isNotEmpty())
+<div class="analytics-insight-shell mt-8 rounded-[1.75rem] p-6 sm:p-8">
+    <div class="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+            <div class="analytics-insight-kicker text-[10px] font-bold uppercase text-primary">Auto Comparison</div>
+            <h2 class="mt-2 text-2xl font-bold font-headline text-on-surface">Perbandingan Otomatis</h2>
+            <p class="mt-1 max-w-3xl text-sm text-on-surface-variant">Ringkasan performa konsultasi, request survey, dan deal untuk membaca ritme bisnis minggu ke minggu, bulan ke bulan, dan tahun ke tahun.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 text-[11px]">
+            <span class="analytics-insight-chip rounded-full px-3 py-1.5 font-semibold text-on-surface-variant">Aktif: {{ $periodLabel }}</span>
+            <span class="analytics-insight-chip rounded-full px-3 py-1.5 font-semibold text-on-surface-variant">Pembanding: {{ $comparisonLabel }}</span>
+        </div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        @foreach($comparisonMatrix as $comparison)
+        @php
+            $leadDirection = $comparison['leads']['direction'] ?? 'flat';
+            $leadTone = $leadDirection === 'up'
+                ? 'text-tertiary bg-tertiary-container/20'
+                : ($leadDirection === 'down' ? 'text-error bg-error-container/20' : 'text-on-surface-variant bg-surface-container');
+        @endphp
+        <div class="analytics-comparison-card rounded-[1.6rem] p-5 sm:p-6">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <div class="analytics-insight-kicker text-[10px] font-bold uppercase text-primary">{{ $comparison['short_label'] }}</div>
+                    <h3 class="mt-2 text-lg font-bold font-headline text-on-surface">{{ $comparison['title'] }}</h3>
+                    <p class="mt-1 text-[11px] text-on-surface-variant">{{ $comparison['current_label'] }}</p>
+                </div>
+                <div class="rounded-2xl bg-primary/10 p-2.5 text-primary shadow-inner shadow-primary/10">
+                    <x-icon name="{{ $comparison['icon'] }}" class="w-5 h-5" />
+                </div>
+            </div>
+            <div class="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-surface-container-low bg-surface-container-lowest/80 px-4 py-4">
+                <div class="min-w-0">
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Total Konsultasi</div>
+                    <div class="mt-1 text-3xl font-extrabold font-headline text-on-surface">{{ number_format($comparison['leads']['current']) }}</div>
+                </div>
+                <div class="rounded-full px-3 py-1 text-xs font-bold {{ $leadTone }}">
+                    {{ $comparison['leads']['delta'] > 0 ? '+' : '' }}{{ number_format($comparison['leads']['delta']) }}
+                    ({{ $comparison['leads']['delta_percent'] > 0 ? '+' : '' }}{{ number_format($comparison['leads']['delta_percent'], 1) }}%)
+                </div>
+            </div>
+            <div class="mt-3 text-[11px] leading-relaxed text-on-surface-variant">
+                Dibandingkan dengan {{ $comparison['previous_label'] }} yang mencatat {{ number_format($comparison['leads']['previous']) }} konsultasi.
+            </div>
+            <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div class="rounded-2xl border border-surface-container-low bg-surface-container-low/60 px-4 py-3">
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Request Survey</div>
+                    <div class="mt-1 text-lg font-extrabold text-on-surface">{{ number_format($comparison['surveys']['current']) }}</div>
+                    <div class="mt-1 text-[11px] text-on-surface-variant">
+                        {{ $comparison['surveys']['delta'] > 0 ? '+' : '' }}{{ number_format($comparison['surveys']['delta']) }} vs sebelumnya
+                    </div>
+                </div>
+                <div class="rounded-2xl border border-surface-container-low bg-surface-container-low/60 px-4 py-3">
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Deal</div>
+                    <div class="mt-1 text-lg font-extrabold text-on-surface">{{ number_format($comparison['deals']['current']) }}</div>
+                    <div class="mt-1 text-[11px] text-on-surface-variant">
+                        {{ $comparison['deals']['delta'] > 0 ? '+' : '' }}{{ number_format($comparison['deals']['delta']) }} vs sebelumnya
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-3 text-[11px] text-on-surface-variant">
+                <div class="analytics-insight-chip rounded-2xl px-4 py-3">
+                    Survey rate: <span class="font-bold text-on-surface">{{ number_format($comparison['survey_rate']['current'], 1) }}%</span>
+                </div>
+                <div class="analytics-insight-chip rounded-2xl px-4 py-3">
+                    Deal rate: <span class="font-bold text-on-surface">{{ number_format($comparison['deal_rate']['current'], 1) }}%</span>
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+@endif
+
+@if(collect($performanceAnalysis)->isNotEmpty())
+<div class="analytics-insight-shell mt-8 rounded-[1.9rem] p-6 sm:p-8">
+    <div class="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+            <div class="analytics-insight-kicker text-[10px] font-bold uppercase text-primary">Root Cause Reading</div>
+            <h2 class="mt-2 text-2xl font-bold font-headline text-on-surface">Analisa Penyebab</h2>
+            <p class="mt-1 max-w-3xl text-sm text-on-surface-variant">Membaca pendorong volume, perubahan performa, faktor yang memperkuat closing, dan hambatan utama yang masih menahan lead menjadi deal.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 text-[11px]">
+            <span class="analytics-insight-chip rounded-full px-3 py-1.5 font-semibold text-on-surface-variant">Scope: {{ $selectedAccountName }}</span>
+            <span class="analytics-insight-chip rounded-full px-3 py-1.5 font-semibold text-on-surface-variant">{{ $periodLabel }}</span>
+        </div>
+    </div>
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        @foreach($performanceAnalysis as $analysisCard)
+        @php
+            $toneClasses = match($analysisCard['tone']) {
+                'positive' => 'analytics-insight-card--positive',
+                'success' => 'analytics-insight-card--success',
+                'danger' => 'analytics-insight-card--danger',
+                default => 'analytics-insight-card--warning',
+            };
+            $iconTone = match($analysisCard['tone']) {
+                'positive' => 'text-tertiary bg-tertiary-container/25',
+                'success' => 'text-primary bg-primary/10',
+                'danger' => 'text-error bg-error-container/25',
+                default => 'text-amber-700 bg-amber-500/10',
+            };
+        @endphp
+        <div class="analytics-insight-card rounded-[1.6rem] p-5 sm:p-6 {{ $toneClasses }}">
+            <div class="flex items-start gap-4">
+                <div class="rounded-2xl p-3 {{ $iconTone }}">
+                    <x-icon name="{{ $analysisCard['icon'] }}" class="w-5 h-5" />
+                </div>
+                <div class="min-w-0 flex-1">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="min-w-0">
+                            <div class="analytics-insight-kicker text-[10px] font-bold uppercase text-on-surface-variant">{{ $analysisCard['eyebrow'] ?? 'Insight' }}</div>
+                            <h3 class="mt-2 text-xl font-bold font-headline text-on-surface">{{ $analysisCard['title'] }}</h3>
+                            <p class="mt-1 text-sm leading-relaxed text-on-surface-variant">{{ $analysisCard['subtitle'] ?? '' }}</p>
+                        </div>
+                        <div class="analytics-insight-chip rounded-2xl px-4 py-3 sm:min-w-[170px]">
+                            <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{{ $analysisCard['metric_label'] ?? 'Metric' }}</div>
+                            <div class="mt-1 text-2xl font-extrabold font-headline text-on-surface">{{ $analysisCard['metric'] ?? '-' }}</div>
+                        </div>
+                    </div>
+                    @if(!empty($analysisCard['badge']))
+                    <div class="mt-4">
+                        <span class="analytics-insight-chip inline-flex rounded-full px-3 py-1.5 text-[11px] font-semibold text-on-surface">
+                            {{ $analysisCard['badge'] }}
+                        </span>
+                    </div>
+                    @endif
+                    <div class="mt-4 space-y-2.5">
+                        @foreach($analysisCard['items'] as $item)
+                        <div class="analytics-insight-bullet rounded-2xl px-4 py-3.5 text-sm leading-relaxed text-on-surface">
+                            {!! $item !!}
+                        </div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+@endif
+
+@if(isset($onlyInquiryAnalysis))
+@php
+    $onlyInquiryTotal = (int) ($onlyInquiryAnalysis['total_only_inquiry'] ?? 0);
+    $onlyInquiryNotesCount = (int) ($onlyInquiryAnalysis['notes_filled_count'] ?? 0);
+    $onlyInquiryTopicCards = collect($onlyInquiryAnalysis['topic_cards'] ?? []);
+    $onlyInquiryTopKeywords = collect($onlyInquiryAnalysis['top_keywords'] ?? []);
+    $onlyInquiryAllSampleNotes = collect($onlyInquiryAnalysis['sample_notes'] ?? []);
+    $onlyInquiryDominantTopic = $onlyInquiryAnalysis['dominant_topic'] ?? null;
+    $onlyInquiryHasLeads = $onlyInquiryTotal > 0;
+    $onlyInquiryHasTopicData = $onlyInquiryNotesCount > 0 && $onlyInquiryTopicCards->isNotEmpty();
+    $onlyInquiryTopicPreviewCount = 4;
+    $onlyInquiryKeywordPreviewCount = 10;
+    $onlyInquirySamplePreviewCount = 4;
+    $onlyInquiryVisibleTopicCards = $onlyInquiryTopicCards->take($onlyInquiryTopicPreviewCount);
+    $onlyInquiryExtraTopicCards = $onlyInquiryTopicCards->slice($onlyInquiryTopicPreviewCount)->values();
+    $onlyInquiryVisibleKeywords = $onlyInquiryTopKeywords->take($onlyInquiryKeywordPreviewCount);
+    $onlyInquiryExtraKeywords = $onlyInquiryTopKeywords->slice($onlyInquiryKeywordPreviewCount)->values();
+    $onlyInquiryVisibleSampleNotes = $onlyInquiryAllSampleNotes->take($onlyInquirySamplePreviewCount);
+    $onlyInquiryExtraSampleNotes = $onlyInquiryAllSampleNotes->slice($onlyInquirySamplePreviewCount)->values();
+    $onlyInquirySampleNotes = $onlyInquiryVisibleSampleNotes;
+@endphp
+<div class="analytics-insight-shell mt-8 rounded-[1.9rem] p-6 sm:p-8"
+     x-data="{ showAllOnlyInquiryTopics: false, showAllOnlyInquiryKeywords: false, showAllOnlyInquiryNotes: false }">
+    <div class="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+            <div class="analytics-insight-kicker text-[10px] font-bold uppercase text-primary">Only Inquiry Decoder</div>
+            <h2 class="mt-2 text-2xl font-bold font-headline text-on-surface">Analisa Topik "Hanya Tanya Tanya"</h2>
+            <p class="mt-1 max-w-3xl text-sm text-on-surface-variant">Membaca isi note untuk mengetahui apakah lead hanya bertanya soal harga, material, desain, ukuran, survey, jadwal, atau pembayaran. Semakin disiplin pengisian note, semakin tajam hasil analisa ini.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 text-[11px]">
+            <span class="analytics-insight-chip rounded-full px-3 py-1.5 font-semibold text-on-surface-variant">Status: {{ $onlyInquiryAnalysis['status_label'] }}</span>
+            <span class="analytics-insight-chip rounded-full px-3 py-1.5 font-semibold text-on-surface-variant">Scope: {{ $selectedAccountName }}</span>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-5">
+        <div class="space-y-5">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="analytics-comparison-card rounded-[1.5rem] p-5">
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Lead Hanya Tanya Tanya</div>
+                    <div class="mt-2 text-3xl font-extrabold font-headline text-on-surface">{{ number_format($onlyInquiryTotal) }}</div>
+                    <div class="mt-2 text-[11px] text-on-surface-variant">Jumlah lead pada status ini di periode aktif.</div>
+                </div>
+                <div class="analytics-comparison-card rounded-[1.5rem] p-5">
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Notes Terisi</div>
+                    <div class="mt-2 text-3xl font-extrabold font-headline text-on-surface">{{ number_format($onlyInquiryNotesCount) }}</div>
+                    <div class="mt-2 text-[11px] text-on-surface-variant">{{ number_format($onlyInquiryAnalysis['notes_coverage_rate'], 1) }}% note sudah bisa dianalisa.</div>
+                </div>
+                <div class="analytics-comparison-card rounded-[1.5rem] p-5">
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Topik Terdeteksi</div>
+                    @if($onlyInquiryDominantTopic)
+                    <div class="mt-2 text-xl font-extrabold font-headline text-on-surface">{{ $onlyInquiryDominantTopic['label'] }}</div>
+                    <div class="mt-2 text-[11px] text-on-surface-variant">{{ number_format($onlyInquiryDominantTopic['coverage_rate'] ?? 0, 1) }}% dari note yang terisi.</div>
+                    @else
+                    <div class="mt-2 text-3xl font-extrabold font-headline text-on-surface">{{ number_format($onlyInquiryTopicCards->count()) }}</div>
+                    <div class="mt-2 text-[11px] text-on-surface-variant">Belum ada topik yang melewati batas minimum tampilan.</div>
+                    @endif
+                </div>
+            </div>
+
+            @if(! $onlyInquiryHasLeads)
+            <div class="analytics-comparison-card rounded-[1.6rem] p-6">
+                <div class="flex items-start gap-3">
+                    <div class="rounded-2xl bg-surface-container-low p-3 text-on-surface-variant">
+                        <x-icon name="chat" class="w-5 h-5" />
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold font-headline text-on-surface">Tidak Ada Lead di Status Ini</h3>
+                        <p class="mt-2 text-sm leading-relaxed text-on-surface-variant">
+                            Pada periode aktif dan scope yang dipilih, database tidak memiliki lead dengan status
+                            <strong>{{ $onlyInquiryAnalysis['status_label'] }}</strong>.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            @elseif($onlyInquiryHasTopicData)
+            <div>
+                <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <h3 class="text-lg font-bold font-headline text-on-surface">Peta Topik Pertanyaan</h3>
+                        <p class="text-xs text-on-surface-variant">Setiap kartu menunjukkan tema pertanyaan yang paling sering muncul dari isi note.</p>
+                    </div>
+                    @if($onlyInquiryExtraTopicCards->isNotEmpty())
+                    <button type="button"
+                            @click="showAllOnlyInquiryTopics = !showAllOnlyInquiryTopics"
+                            class="analytics-section-toggle shrink-0 rounded-full px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-primary">
+                        <span x-show="!showAllOnlyInquiryTopics">Lihat Semua Topik</span>
+                        <span x-show="showAllOnlyInquiryTopics">Ringkas Topik</span>
+                    </button>
+                    @endif
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    @foreach($onlyInquiryVisibleTopicCards as $topic)
+                    <div class="analytics-topic-card analytics-topic-card--{{ $topic['accent'] ?? 'sky' }} rounded-[1.45rem] p-5">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-variant">Topic Cluster</div>
+                                <h4 class="mt-2 text-lg font-bold font-headline text-on-surface">{{ $topic['label'] }}</h4>
+                            </div>
+                            <div class="rounded-2xl bg-surface-container-lowest/80 p-2.5 text-on-surface">
+                                <x-icon name="{{ $topic['icon'] }}" class="w-5 h-5" />
+                            </div>
+                        </div>
+                        <div class="mt-4 flex items-end justify-between gap-3">
+                            <div>
+                                <div class="text-3xl font-extrabold font-headline text-on-surface">{{ number_format($topic['note_count']) }}</div>
+                                <div class="mt-1 text-[11px] text-on-surface-variant">note membahas topik ini</div>
+                            </div>
+                            <div class="analytics-insight-chip rounded-full px-3 py-1.5 text-[11px] font-semibold text-on-surface">
+                                {{ number_format($topic['coverage_rate'], 1) }}% coverage
+                            </div>
+                        </div>
+                        <div class="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-surface-container-high">
+                            <div class="h-full rounded-full" style="width: {{ min($topic['coverage_rate'], 100) }}%; background: var(--topic-accent);"></div>
+                        </div>
+                        @if(!empty($topic['top_keywords']))
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            @foreach($topic['top_keywords'] as $keyword)
+                            <span class="analytics-insight-chip rounded-full px-2.5 py-1 text-[11px] font-semibold text-on-surface">{{ $keyword }}</span>
+                            @endforeach
+                        </div>
+                        @endif
+                    </div>
+                    @endforeach
+                </div>
+                @if($onlyInquiryExtraTopicCards->isNotEmpty())
+                <div x-show="showAllOnlyInquiryTopics"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 -translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     x-transition:leave="transition ease-in duration-150"
+                     x-transition:leave-start="opacity-100 translate-y-0"
+                     x-transition:leave-end="opacity-0 -translate-y-1"
+                     class="mt-4">
+                    <div class="analytics-scroll-panel max-h-[34rem] overflow-y-auto pr-1">
+                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            @foreach($onlyInquiryExtraTopicCards as $topic)
+                            <div class="analytics-topic-card analytics-topic-card--{{ $topic['accent'] ?? 'sky' }} rounded-[1.45rem] p-5">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-variant">Topic Cluster</div>
+                                        <h4 class="mt-2 text-lg font-bold font-headline text-on-surface">{{ $topic['label'] }}</h4>
+                                    </div>
+                                    <div class="rounded-2xl bg-surface-container-lowest/80 p-2.5 text-on-surface">
+                                        <x-icon name="{{ $topic['icon'] }}" class="w-5 h-5" />
+                                    </div>
+                                </div>
+                                <div class="mt-4 flex items-end justify-between gap-3">
+                                    <div>
+                                        <div class="text-3xl font-extrabold font-headline text-on-surface">{{ number_format($topic['note_count']) }}</div>
+                                        <div class="mt-1 text-[11px] text-on-surface-variant">note membahas topik ini</div>
+                                    </div>
+                                    <div class="analytics-insight-chip rounded-full px-3 py-1.5 text-[11px] font-semibold text-on-surface">
+                                        {{ number_format($topic['coverage_rate'], 1) }}% coverage
+                                    </div>
+                                </div>
+                                <div class="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-surface-container-high">
+                                    <div class="h-full rounded-full" style="width: {{ min($topic['coverage_rate'], 100) }}%; background: var(--topic-accent);"></div>
+                                </div>
+                                @if(!empty($topic['top_keywords']))
+                                <div class="mt-4 flex flex-wrap gap-2">
+                                    @foreach($topic['top_keywords'] as $keyword)
+                                    <span class="analytics-insight-chip rounded-full px-2.5 py-1 text-[11px] font-semibold text-on-surface">{{ $keyword }}</span>
+                                    @endforeach
+                                </div>
+                                @endif
+                            </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3 text-[11px] text-on-surface-variant">
+                    Menampilkan {{ number_format($onlyInquiryVisibleTopicCards->count()) }} topik pertama dari total {{ number_format((int) ($onlyInquiryAnalysis['topic_cards_total'] ?? $onlyInquiryTopicCards->count())) }} topik yang terdeteksi.
+                </div>
+                @endif
+            </div>
+            @else
+            <div class="analytics-comparison-card rounded-[1.6rem] p-6">
+                <div class="flex items-start gap-3">
+                    <div class="rounded-2xl bg-surface-container-low p-3 text-on-surface-variant">
+                        <x-icon name="chat" class="w-5 h-5" />
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold font-headline text-on-surface">Belum Ada Topik yang Bisa Dibaca</h3>
+                        <p class="mt-2 text-sm leading-relaxed text-on-surface-variant">
+                            @if($onlyInquiryNotesCount === 0)
+                            Ada <strong>{{ number_format($onlyInquiryTotal) }}</strong> lead dengan status
+                            <strong>{{ $onlyInquiryAnalysis['status_label'] }}</strong>, tetapi kolom note masih kosong sehingga belum ada topik riil yang bisa dianalisa dari database.
+                            @else
+                            Ada <strong>{{ number_format((int) ($onlyInquiryAnalysis['topic_cards_all_total'] ?? 0)) }}</strong> topik yang sebenarnya terbaca, tetapi belum ada yang frekuensinya melebihi {{ number_format((int) ($onlyInquiryAnalysis['topic_cards_min_occurrences'] ?? 4) - 1) }} note, sehingga kartunya sengaja tidak ditampilkan.
+                            @endif
+                        </p>
+                    </div>
+                </div>
+            </div>
+            @endif
+        </div>
+
+        <div class="space-y-5">
+            <div class="analytics-comparison-card rounded-[1.6rem] p-5 sm:p-6">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Keyword Lens</div>
+                        <h3 class="mt-2 text-lg font-bold font-headline text-on-surface">Kata yang Paling Sering Muncul</h3>
+                        @if($onlyInquiryTopKeywords->isNotEmpty())
+                        <p class="mt-1 text-[11px] text-on-surface-variant">
+                            Hanya menampilkan keyword dengan frekuensi lebih dari {{ number_format((int) ($onlyInquiryAnalysis['top_keywords_min_occurrences'] ?? 6) - 1) }} kali. Preview {{ number_format($onlyInquiryVisibleKeywords->count()) }} keyword dari {{ number_format((int) ($onlyInquiryAnalysis['top_keywords_filtered_total'] ?? $onlyInquiryTopKeywords->count())) }} keyword yang lolos filter.
+                        </p>
+                        @endif
+                    </div>
+                    <div class="rounded-2xl bg-primary/10 p-2.5 text-primary">
+                        <x-icon name="search" class="w-5 h-5" />
+                    </div>
+                </div>
+                @if($onlyInquiryTopKeywords->isNotEmpty())
+                <div class="mt-4 flex flex-wrap gap-2">
+                    @foreach($onlyInquiryVisibleKeywords as $keyword)
+                    <span class="analytics-insight-chip inline-flex rounded-full px-3 py-1.5 text-[11px] font-semibold text-on-surface">
+                        {{ $keyword['keyword'] }}
+                        <span class="ml-2 text-primary">{{ $keyword['count'] }}</span>
+                    </span>
+                    @endforeach
+                </div>
+                @if($onlyInquiryExtraKeywords->isNotEmpty())
+                <div x-show="showAllOnlyInquiryKeywords"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 -translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     x-transition:leave="transition ease-in duration-150"
+                     x-transition:leave-start="opacity-100 translate-y-0"
+                     x-transition:leave-end="opacity-0 -translate-y-1"
+                     class="mt-3 analytics-scroll-panel max-h-48 overflow-y-auto pr-1">
+                    <div class="flex flex-wrap gap-2">
+                        @foreach($onlyInquiryExtraKeywords as $keyword)
+                        <span class="analytics-insight-chip inline-flex rounded-full px-3 py-1.5 text-[11px] font-semibold text-on-surface">
+                            {{ $keyword['keyword'] }}
+                            <span class="ml-2 text-primary">{{ $keyword['count'] }}</span>
+                        </span>
+                        @endforeach
+                    </div>
+                </div>
+                <button type="button"
+                        @click="showAllOnlyInquiryKeywords = !showAllOnlyInquiryKeywords"
+                        class="analytics-section-toggle mt-4 rounded-full px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-primary">
+                    <span x-show="!showAllOnlyInquiryKeywords">Lihat Keyword Lainnya</span>
+                    <span x-show="showAllOnlyInquiryKeywords">Ringkas Keyword</span>
+                </button>
+                @endif
+                @else
+                <p class="mt-4 text-sm text-on-surface-variant">
+                    @if(! $onlyInquiryHasLeads)
+                    Tidak ada kata kunci karena belum ada lead pada status ini di database.
+                    @elseif($onlyInquiryNotesCount === 0)
+                    Tidak ada kata kunci karena note pada lead status ini masih kosong.
+                    @else
+                    Belum ada keyword yang frekuensinya melebihi {{ number_format((int) ($onlyInquiryAnalysis['top_keywords_min_occurrences'] ?? 6) - 1) }} kali, jadi panel ini sengaja dikosongkan.
+                    @endif
+                </p>
+                @endif
+            </div>
+
+            <div class="analytics-comparison-card rounded-[1.6rem] p-5 sm:p-6">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <div class="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Sample Notes</div>
+                        <h3 class="mt-2 text-lg font-bold font-headline text-on-surface">Contoh Note Terbaca</h3>
+                        @if($onlyInquiryAllSampleNotes->isNotEmpty())
+                        <p class="mt-1 text-[11px] text-on-surface-variant">
+                            Menampilkan {{ number_format($onlyInquiryVisibleSampleNotes->count()) }} note awal dari {{ number_format($onlyInquiryAllSampleNotes->count()) }} note terbaru. Total note terisi: {{ number_format((int) ($onlyInquiryAnalysis['sample_notes_total'] ?? $onlyInquiryAllSampleNotes->count())) }}.
+                        </p>
+                        @endif
+                    </div>
+                    <div class="rounded-2xl bg-primary/10 p-2.5 text-primary">
+                        <x-icon name="assignment" class="w-5 h-5" />
+                    </div>
+                </div>
+                @if($onlyInquirySampleNotes->isNotEmpty())
+                <div class="mt-4 space-y-3">
+                    @foreach($onlyInquirySampleNotes as $note)
+                    <div class="analytics-insight-bullet rounded-2xl px-4 py-3.5">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-sm font-bold text-on-surface">{{ $note['client_name'] }} <span class="text-on-surface-variant">• {{ $note['consultation_id'] }}</span></div>
+                                <div class="mt-1 text-[11px] text-on-surface-variant">{{ $note['updated_at'] }}</div>
+                            </div>
+                        </div>
+                        <div class="mt-3 text-sm leading-relaxed text-on-surface">{{ $note['note'] }}</div>
+                        @if(!empty($note['topics']))
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            @foreach($note['topics'] as $topic)
+                            <span class="analytics-insight-chip rounded-full px-2.5 py-1 text-[11px] font-semibold text-on-surface">{{ $topic }}</span>
+                            @endforeach
+                        </div>
+                        @endif
+                        @if(!empty($note['keywords']))
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            @foreach($note['keywords'] as $keyword)
+                            <span class="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">{{ $keyword }}</span>
+                            @endforeach
+                        </div>
+                        @endif
+                    </div>
+                    @endforeach
+                </div>
+                @if($onlyInquiryExtraSampleNotes->isNotEmpty())
+                <div x-show="showAllOnlyInquiryNotes"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 -translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     x-transition:leave="transition ease-in duration-150"
+                     x-transition:leave-start="opacity-100 translate-y-0"
+                     x-transition:leave-end="opacity-0 -translate-y-1"
+                     class="mt-3 analytics-scroll-panel max-h-[30rem] space-y-3 overflow-y-auto pr-1">
+                    @foreach($onlyInquiryExtraSampleNotes as $note)
+                    <div class="analytics-insight-bullet rounded-2xl px-4 py-3.5">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-sm font-bold text-on-surface">{{ $note['client_name'] }} <span class="text-on-surface-variant">&middot; {{ $note['consultation_id'] }}</span></div>
+                                <div class="mt-1 text-[11px] text-on-surface-variant">{{ $note['updated_at'] }}</div>
+                            </div>
+                        </div>
+                        <div class="mt-3 text-sm leading-relaxed text-on-surface">{{ $note['note'] }}</div>
+                        @if(!empty($note['topics']))
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            @foreach($note['topics'] as $topic)
+                            <span class="analytics-insight-chip rounded-full px-2.5 py-1 text-[11px] font-semibold text-on-surface">{{ $topic }}</span>
+                            @endforeach
+                        </div>
+                        @endif
+                        @if(!empty($note['keywords']))
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            @foreach($note['keywords'] as $keyword)
+                            <span class="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">{{ $keyword }}</span>
+                            @endforeach
+                        </div>
+                        @endif
+                    </div>
+                    @endforeach
+                </div>
+                <button type="button"
+                        @click="showAllOnlyInquiryNotes = !showAllOnlyInquiryNotes"
+                        class="analytics-section-toggle mt-4 rounded-full px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-primary">
+                    <span x-show="!showAllOnlyInquiryNotes">Lihat Note Lainnya</span>
+                    <span x-show="showAllOnlyInquiryNotes">Ringkas Note</span>
+                </button>
+                @endif
+                @else
+                <p class="mt-4 text-sm text-on-surface-variant">
+                    @if(! $onlyInquiryHasLeads)
+                    Tidak ada sample note karena belum ada lead pada status ini di database.
+                    @elseif($onlyInquiryNotesCount === 0)
+                    Tidak ada sample note karena kolom note pada lead status ini masih kosong.
+                    @else
+                    Belum ada sample note yang memenuhi kriteria tampilan saat ini.
+                    @endif
+                </p>
+                @endif
+            </div>
+        </div>
     </div>
 </div>
 @endif

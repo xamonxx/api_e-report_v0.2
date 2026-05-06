@@ -6,6 +6,8 @@ use App\Http\Requests\AnalyticsReportRequest;
 use App\Models\Consultation;
 use App\Services\Reports\AnalyticsExcelExporter;
 use App\Services\Reports\AnalyticsReportService;
+use App\Services\Reports\LeadsExcelExporter;
+use App\Services\Reports\LeadsReportService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -74,6 +76,36 @@ class ExportController extends Controller
         ]);
     }
 
+    public function exportLeadsExcel(
+        Request $request,
+        LeadsReportService $reportService,
+        LeadsExcelExporter $excelExporter
+    ): Response {
+        $report = $reportService->buildForUser($request->user(), $this->validatedLeadExportFilters($request));
+        $filename = $this->leadsFilename('xls', $report);
+
+        return response(
+            $excelExporter->buildWorkbook($report),
+            200,
+            [
+                'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                'Cache-Control' => 'max-age=0',
+            ]
+        );
+    }
+
+    public function exportLeadsPdf(Request $request, LeadsReportService $reportService): Response
+    {
+        $report = $reportService->buildForUser($request->user(), $this->validatedLeadExportFilters($request));
+        $filename = $this->leadsFilename('pdf', $report);
+
+        $pdf = Pdf::loadView('reports.pdf.leads-klasemen', $report)
+            ->setPaper('a3', 'landscape');
+
+        return $pdf->download($filename);
+    }
+
     public function exportAnalyticsExcel(
         AnalyticsReportRequest $request,
         AnalyticsReportService $reportService,
@@ -130,5 +162,31 @@ class ExportController extends Controller
             ->toString();
 
         return sprintf('laporan-analisis-%s-%s.%s', $account, $period, $extension);
+    }
+
+    private function validatedLeadExportFilters(Request $request): array
+    {
+        return $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'integer', 'exists:status_categories,id'],
+            'account' => ['nullable', 'integer', 'exists:accounts,id'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'month' => ['nullable', 'integer', 'between:1,12'],
+            'year' => ['nullable', 'integer', 'between:2000,2100'],
+        ]);
+    }
+
+    private function leadsFilename(string $extension, array $report): string
+    {
+        $account = str($report['selectedAccountName'] ?? 'semua-akun')
+            ->slug()
+            ->toString();
+
+        $period = str($report['periodLabel'] ?? 'periode')
+            ->slug()
+            ->toString();
+
+        return sprintf('data-leads-%s-%s.%s', $account, $period, $extension);
     }
 }

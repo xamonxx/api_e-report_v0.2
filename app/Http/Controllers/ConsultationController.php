@@ -5,11 +5,11 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ConsultationRequest;
 use App\Models\Account;
 use App\Models\Consultation;
-use App\Models\ConsultationImport;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Services\ConsultationImportService;
 use App\Services\NotificationSummaryService;
+use App\Services\Reports\LeadsExcelExporter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -47,6 +47,14 @@ class ConsultationController extends Controller
         if ($request->filled('end_date')) {
             $query->whereDate('consultation_date', '<=', $request->end_date);
         }
+        if (! $request->filled('start_date') && ! $request->filled('end_date')) {
+            if ($request->filled('month')) {
+                $query->whereMonth('consultation_date', (int) $request->month);
+                $query->whereYear('consultation_date', (int) $request->input('year', now()->year));
+            } elseif ($request->filled('year')) {
+                $query->whereYear('consultation_date', (int) $request->year);
+            }
+        }
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
             $phoneSearchSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')";
@@ -66,15 +74,14 @@ class ConsultationController extends Controller
             });
         }
 
-        $consultations = $query->latest()->paginate(15)->withQueryString();
+        $consultations = $query
+            ->orderByDesc('updated_at')
+            ->orderByDesc('created_at')
+            ->paginate(15)
+            ->withQueryString();
 
         $statuses = StatusCategory::orderBy('sort_order')->get();
         $accounts = $user->isSuperAdmin() ? Account::orderBy('name')->get() : ($user->account ? collect([$user->account]) : collect([]));
-        $recentImports = ConsultationImport::query()
-            ->where('user_id', $user->id)
-            ->latest()
-            ->take(5)
-            ->get();
 
         // Data needed for Create Consultation Modal
         $previewAccountId = $user->isAdmin() ? $user->account_id : ($accounts->first()?->id ?? 1);
@@ -82,7 +89,7 @@ class ConsultationController extends Controller
         $categories = NeedsCategory::forConsultationOptions()->get();
         $provinces = config('wilayah.provinces');
 
-        return view('consultations.index', compact('consultations', 'statuses', 'accounts', 'newId', 'categories', 'provinces', 'recentImports'));
+        return view('consultations.index', compact('consultations', 'statuses', 'accounts', 'newId', 'categories', 'provinces'));
     }
 
     public function create()
@@ -260,35 +267,32 @@ class ConsultationController extends Controller
         ]);
 
         $user = auth()->user();
-        $this->consultationImportService->queue($request->file('csv_file'), $user);
+        $import = $this->consultationImportService->queue($request->file('csv_file'), $user);
+
+        if ($import?->status === 'failed') {
+            return back()->with(
+                'error',
+                'Import CSV gagal: ' . str($import->error_preview)->limit(180)
+            );
+        }
 
         return back()->with(
             'success',
-            'File CSV berhasil diunggah ke antrean background. Proses import akan berjalan tanpa menahan browser.'
+            "Import selesai. Data baru: {$import->success_count}, Update: {$import->updated_count}, Error: {$import->error_count}."
         );
     }
 
-    public function downloadTemplate()
+    public function downloadTemplate(LeadsExcelExporter $excelExporter)
     {
-        $fileName = 'template_import_leads.csv';
-        $headers = [
-            'Content-type'        => 'text/csv',
-            'Content-Disposition' => 'attachment; filename=' . $fileName,
-            'Pragma'              => 'no-cache',
-            'Cache-Control'       => 'must-revalidate, post-check=0, pre-check=0',
-            'Expires'             => '0'
-        ];
+        $fileName = 'template_import_leads.xls';
 
-        $columns = ['Nama Klien', 'No Telepon', 'ID Akun (Kosongkan jika Admin)'];
-
-        $callback = function() use($columns) {
-            $file = fopen('php://output', 'w');
-            fputcsv($file, $columns);
-            fputcsv($file, ['Budi Santoso', '081234567890', '1']);
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
+        return response($excelExporter->buildTemplateWorkbook(auth()->user()), 200, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+            'Pragma' => 'no-cache',
+            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+            'Expires' => '0',
+        ]);
     }
 
     /**

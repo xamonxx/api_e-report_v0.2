@@ -30,6 +30,7 @@ class AnalyticsReportService
         $query = $this->baseQuery($user, $selectedAccount, $period['start'], $period['end']);
 
         $totalLeads = (clone $query)->count();
+        $totalLeadsAllPeriods = $this->baseScopeQuery($user, $selectedAccount)->count();
         $statusDistribution = $this->buildStatusDistribution($query);
         $needsDistribution = $this->buildNeedsDistribution($query);
         $provinceDistribution = $user->isSuperAdmin() ? $this->buildLocationDistribution($query, 'province') : collect();
@@ -38,16 +39,31 @@ class AnalyticsReportService
         $accountRanking = $user->isSuperAdmin() ? $this->buildAccountRanking($period, $selectedAccount) : collect();
         $adminRanking = $user->isSuperAdmin() ? $this->buildAdminRanking($period, $selectedAccount) : collect();
 
-        $totalSurveys = $this->countByStatusName($statusDistribution, $this->surveyStatusName());
-        $totalDeals = $this->countByStatusName($statusDistribution, $this->dealStatusName());
-        $conversionRate = $totalLeads > 0 ? round(($totalSurveys / $totalLeads) * 100, 1) : 0;
-        $dealRate = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
+        $totalSurveys = $this->countByStatusAliases($statusDistribution, $this->surveyStatusAliases());
+        $totalDeals = $this->countByStatusAliases($statusDistribution, $this->dealStatusAliases());
+        $requestSurveyRate = $totalLeads > 0 ? round(($totalSurveys / $totalLeads) * 100, 1) : 0;
+        $conversionRate = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
+        $dealRate = $conversionRate;
         $growthPercent = $this->buildGrowthPercent($user, $selectedAccount, $period);
+        $previousTotalLeads = $this->baseQuery(
+            $user,
+            $selectedAccount,
+            $period['comparison_start'],
+            $period['comparison_end']
+        )->count();
         $rawRows = $includeRawRows ? $this->buildRawRows($query) : collect();
         $trendSeries = $this->buildTrendSeries($query, $period);
         $dataQuality = $this->buildDataQuality($query, $period, $totalLeads);
         $pendingConfirmationStats = $this->buildPendingConfirmationStats($query, $totalLeads);
         $funnel = $this->buildFunnel($totalLeads, $totalSurveys, $totalDeals);
+        $diagnosticSnapshot = $this->buildDiagnosticSnapshot($user, $selectedAccount, $period);
+        $comparisonSnapshot = $this->buildDiagnosticSnapshot($user, $selectedAccount, [
+            'type' => $period['type'],
+            'start' => $period['comparison_start'],
+            'end' => $period['comparison_end'],
+            'label' => $period['comparison_label'],
+            'comparison_label' => $period['label'],
+        ]);
         $topPerformers = $this->buildTopPerformers(
             $statusDistribution,
             $needsDistribution,
@@ -68,11 +84,15 @@ class AnalyticsReportService
             'selectedYear' => $period['year'],
             'selectedAccountName' => $this->resolveAccountName($user, $selectedAccount),
             'totalLeads' => $totalLeads,
+            'totalLeadsAllPeriods' => $totalLeadsAllPeriods,
             'totalSurveys' => $totalSurveys,
             'totalDeals' => $totalDeals,
+            'requestSurveyRate' => $requestSurveyRate,
             'conversionRate' => $conversionRate,
             'dealRate' => $dealRate,
             'growthPercent' => $growthPercent,
+            'previousTotalLeads' => $previousTotalLeads,
+            'growthDelta' => $totalLeads - $previousTotalLeads,
             'statusDistribution' => $statusDistribution,
             'needsDistribution' => $needsDistribution,
             'provinceDistribution' => $provinceDistribution,
@@ -86,6 +106,15 @@ class AnalyticsReportService
             'funnel' => $funnel,
             'topPerformers' => $topPerformers,
             'summaryStats' => $summaryStats,
+            'comparisonMatrix' => $this->buildComparisonMatrix($user, $selectedAccount, $period),
+            'performanceAnalysis' => $this->buildPerformanceAnalysis(
+                $diagnosticSnapshot,
+                $comparisonSnapshot,
+                $period,
+                $dataQuality,
+                $pendingConfirmationStats
+            ),
+            'onlyInquiryAnalysis' => $this->buildOnlyInquiryAnalysis($user, $selectedAccount, $period),
             'insights' => $this->buildInsights(
                 $statusDistribution,
                 $needsDistribution,
@@ -103,20 +132,30 @@ class AnalyticsReportService
 
     private function baseQuery(User $user, ?int $selectedAccount, Carbon $start, Carbon $end): Builder
     {
+        $query = $this->baseScopeQuery($user, $selectedAccount);
+
+        return $query->whereBetween(
+            $this->consultationColumn('consultation_date'),
+            [$start->toDateString(), $end->toDateString()]
+        );
+    }
+
+    private function baseScopeQuery(User $user, ?int $selectedAccount): Builder
+    {
         $query = Consultation::query()->forUser($user);
 
         if ($user->isSuperAdmin() && $selectedAccount) {
-            $query->where('account_id', $selectedAccount);
+            $query->where($this->consultationColumn('account_id'), $selectedAccount);
         }
 
-        return $query->whereBetween('consultation_date', [$start->toDateString(), $end->toDateString()]);
+        return $query;
     }
 
     private function buildStatusDistribution(Builder $query): Collection
     {
         $counts = (clone $query)
-            ->selectRaw('status_category_id, count(*) as count')
-            ->groupBy('status_category_id')
+            ->selectRaw($this->consultationColumn('status_category_id') . ' as status_category_id, count(*) as count')
+            ->groupBy($this->consultationColumn('status_category_id'))
             ->pluck('count', 'status_category_id');
 
         return StatusCategory::orderBy('sort_order')->get()->map(fn ($status) => [
@@ -128,6 +167,11 @@ class AnalyticsReportService
 
     private function buildNeedsDistribution(Builder $query): Collection
     {
+        return $this->buildNeedsDistributionFromQuery($query);
+    }
+
+    private function buildNeedsDistributionFromQuery(Builder $query): Collection
+    {
         if (Consultation::hasNeedsCategoryPivot()) {
             $counts = (clone $query)
                 ->join('consultation_needs_category as cnc', 'consultations.id', '=', 'cnc.consultation_id')
@@ -136,9 +180,9 @@ class AnalyticsReportService
                 ->pluck('count', 'cnc.needs_category_id');
         } else {
             $counts = (clone $query)
-                ->whereNotNull('needs_category_id')
-                ->selectRaw('needs_category_id, count(*) as count')
-                ->groupBy('needs_category_id')
+                ->whereNotNull($this->consultationColumn('needs_category_id'))
+                ->selectRaw($this->consultationColumn('needs_category_id') . ' as needs_category_id, count(*) as count')
+                ->groupBy($this->consultationColumn('needs_category_id'))
                 ->pluck('count', 'needs_category_id');
         }
 
@@ -223,8 +267,8 @@ class AnalyticsReportService
 
     private function buildAccountRanking(array $period, ?int $selectedAccount = null): Collection
     {
-        $surveyStatusId = $this->resolveStatusId($this->surveyStatusAliases());
-        $dealStatusId = $this->resolveStatusId($this->dealStatusAliases());
+        $surveyStatusIds = $this->resolveStatusIds($this->surveyStatusAliases());
+        $dealStatusIds = $this->resolveStatusIds($this->dealStatusAliases());
 
         $query = Account::query();
 
@@ -241,24 +285,24 @@ class AnalyticsReportService
             },
         ]);
 
-        if ($surveyStatusId) {
+        if ($surveyStatusIds->isNotEmpty()) {
             $query->withCount([
-                'consultations as surveys_count' => function ($builder) use ($period, $surveyStatusId) {
+                'consultations as surveys_count' => function ($builder) use ($period, $surveyStatusIds) {
                     $builder->whereBetween('consultation_date', [
                         $period['start']->toDateString(),
                         $period['end']->toDateString(),
-                    ])->where('status_category_id', $surveyStatusId);
+                    ])->whereIn('status_category_id', $surveyStatusIds->all());
                 },
             ]);
         }
 
-        if ($dealStatusId) {
+        if ($dealStatusIds->isNotEmpty()) {
             $query->withCount([
-                'consultations as deals_count' => function ($builder) use ($period, $dealStatusId) {
+                'consultations as deals_count' => function ($builder) use ($period, $dealStatusIds) {
                     $builder->whereBetween('consultation_date', [
                         $period['start']->toDateString(),
                         $period['end']->toDateString(),
-                    ])->where('status_category_id', $dealStatusId);
+                    ])->whereIn('status_category_id', $dealStatusIds->all());
                 },
             ]);
         }
@@ -343,8 +387,8 @@ class AnalyticsReportService
 
     private function buildTrendSeries(Builder $query, array $period): Collection
     {
-        $surveyStatusId = $this->resolveStatusId($this->surveyStatusAliases());
-        $dealStatusId = $this->resolveStatusId($this->dealStatusAliases());
+        $surveyStatusIds = $this->resolveStatusIds($this->surveyStatusAliases());
+        $dealStatusIds = $this->resolveStatusIds($this->dealStatusAliases());
         $isYearly = $period['type'] === 'yearly';
 
         $buckets = collect();
@@ -365,27 +409,25 @@ class AnalyticsReportService
         }
 
         $bucketExpression = $isYearly
-            ? "DATE_FORMAT(consultation_date, '%Y-%m')"
-            : 'DATE(consultation_date)';
+            ? "DATE_FORMAT({$this->consultationColumn('consultation_date')}, '%Y-%m')"
+            : 'DATE(' . $this->consultationColumn('consultation_date') . ')';
 
         $aggregateQuery = (clone $query)
-            ->whereNotNull('consultation_date')
+            ->whereNotNull($this->consultationColumn('consultation_date'))
             ->selectRaw("{$bucketExpression} as bucket_key")
             ->selectRaw('COUNT(*) as total');
 
-        if ($surveyStatusId) {
+        if ($surveyStatusIds->isNotEmpty()) {
             $aggregateQuery->selectRaw(
-                'SUM(CASE WHEN status_category_id = ? THEN 1 ELSE 0 END) as surveys',
-                [(int) $surveyStatusId]
+                'SUM(CASE WHEN ' . $this->consultationColumn('status_category_id') . ' IN (' . $surveyStatusIds->implode(',') . ') THEN 1 ELSE 0 END) as surveys'
             );
         } else {
             $aggregateQuery->selectRaw('0 as surveys');
         }
 
-        if ($dealStatusId) {
+        if ($dealStatusIds->isNotEmpty()) {
             $aggregateQuery->selectRaw(
-                'SUM(CASE WHEN status_category_id = ? THEN 1 ELSE 0 END) as deals',
-                [(int) $dealStatusId]
+                'SUM(CASE WHEN ' . $this->consultationColumn('status_category_id') . ' IN (' . $dealStatusIds->implode(',') . ') THEN 1 ELSE 0 END) as deals'
             );
         } else {
             $aggregateQuery->selectRaw('0 as deals');
@@ -497,7 +539,7 @@ class AnalyticsReportService
             if (Consultation::hasNeedsCategoryPivot()) {
                 $productCount = (clone $query)
                     ->where(function (Builder $builder) use ($pendingConfirmationCategoryId) {
-                        $builder->where('needs_category_id', $pendingConfirmationCategoryId)
+                        $builder->where($this->consultationColumn('needs_category_id'), $pendingConfirmationCategoryId)
                             ->orWhereHas(
                                 'needsCategories',
                                 fn (Builder $relationQuery) => $relationQuery->where('needs_categories.id', $pendingConfirmationCategoryId)
@@ -507,7 +549,7 @@ class AnalyticsReportService
                     ->count('consultations.id');
             } else {
                 $productCount = (clone $query)
-                    ->where('needs_category_id', $pendingConfirmationCategoryId)
+                    ->where($this->consultationColumn('needs_category_id'), $pendingConfirmationCategoryId)
                     ->count();
             }
         }
@@ -550,6 +592,49 @@ class AnalyticsReportService
         ];
     }
 
+    private function buildComparisonMatrix(User $user, ?int $selectedAccount, array $period): Collection
+    {
+        $weeklyPeriod = $this->periodResolver->resolve([
+            'period_type' => 'weekly',
+            'week_date' => $period['end']->toDateString(),
+        ]);
+
+        $monthlyPeriod = $this->periodResolver->resolve([
+            'period_type' => 'monthly',
+            'month' => $period['end']->month,
+            'year' => $period['end']->year,
+        ]);
+
+        $yearlyPeriod = $this->periodResolver->resolve([
+            'period_type' => 'yearly',
+            'year' => $period['end']->year,
+        ]);
+
+        return collect([
+            ['key' => 'wow', 'short_label' => 'WoW', 'title' => 'Minggu ke Minggu', 'period' => $weeklyPeriod, 'icon' => 'history'],
+            ['key' => 'mom', 'short_label' => 'MoM', 'title' => 'Bulan ke Bulan', 'period' => $monthlyPeriod, 'icon' => 'calendar_month'],
+            ['key' => 'yoy', 'short_label' => 'YoY', 'title' => 'Tahun ke Tahun', 'period' => $yearlyPeriod, 'icon' => 'leaderboard'],
+        ])->map(function (array $item) use ($user, $selectedAccount) {
+            $periodWindow = $item['period'];
+            $current = $this->buildMetricSnapshot($user, $selectedAccount, $periodWindow['start'], $periodWindow['end']);
+            $previous = $this->buildMetricSnapshot($user, $selectedAccount, $periodWindow['comparison_start'], $periodWindow['comparison_end']);
+
+            return [
+                'key' => $item['key'],
+                'short_label' => $item['short_label'],
+                'title' => $item['title'],
+                'icon' => $item['icon'],
+                'current_label' => $periodWindow['label'],
+                'previous_label' => $periodWindow['comparison_label'],
+                'leads' => $this->buildDeltaMetric($current['total_leads'], $previous['total_leads']),
+                'surveys' => $this->buildDeltaMetric($current['surveys'], $previous['surveys']),
+                'deals' => $this->buildDeltaMetric($current['deals'], $previous['deals']),
+                'deal_rate' => $this->buildDeltaMetric($current['deal_rate'], $previous['deal_rate'], false),
+                'survey_rate' => $this->buildDeltaMetric($current['survey_rate'], $previous['survey_rate'], false),
+            ];
+        })->values();
+    }
+
     private function buildFunnel(int $totalLeads, int $totalSurveys, int $totalDeals): array
     {
         return [
@@ -559,6 +644,456 @@ class AnalyticsReportService
             'survey_rate' => $this->toRate($totalSurveys, $totalLeads),
             'deal_rate' => $this->toRate($totalDeals, $totalLeads),
             'deal_from_survey_rate' => $this->toRate($totalDeals, $totalSurveys),
+        ];
+    }
+
+    private function buildMetricSnapshot(User $user, ?int $selectedAccount, Carbon $start, Carbon $end): array
+    {
+        $query = $this->baseQuery($user, $selectedAccount, $start, $end);
+        $surveyStatusIds = $this->resolveStatusIds($this->surveyStatusAliases());
+        $dealStatusIds = $this->resolveStatusIds($this->dealStatusAliases());
+        $totalLeads = (clone $query)->count();
+        $surveys = $surveyStatusIds->isNotEmpty()
+            ? (clone $query)->whereIn($this->consultationColumn('status_category_id'), $surveyStatusIds->all())->count()
+            : 0;
+        $deals = $dealStatusIds->isNotEmpty()
+            ? (clone $query)->whereIn($this->consultationColumn('status_category_id'), $dealStatusIds->all())->count()
+            : 0;
+
+        return [
+            'total_leads' => $totalLeads,
+            'surveys' => $surveys,
+            'deals' => $deals,
+            'survey_rate' => $this->toRate($surveys, $totalLeads),
+            'deal_rate' => $this->toRate($deals, $totalLeads),
+            'active_days' => (clone $query)
+                ->whereNotNull($this->consultationColumn('consultation_date'))
+                ->selectRaw('DATE(' . $this->consultationColumn('consultation_date') . ') as day_key')
+                ->groupBy('day_key')
+                ->get()
+                ->count(),
+        ];
+    }
+
+    private function buildDiagnosticSnapshot(User $user, ?int $selectedAccount, array $period): array
+    {
+        $query = $this->baseQuery($user, $selectedAccount, $period['start'], $period['end']);
+        $metrics = $this->buildMetricSnapshot($user, $selectedAccount, $period['start'], $period['end']);
+        $dealStatusIds = $this->resolveStatusIds($this->dealStatusAliases());
+        $statusDistribution = $this->buildStatusDistribution($query);
+        $needsDistribution = $this->buildNeedsDistributionFromQuery($query);
+        $trendSeries = $this->buildTrendSeries($query, [
+            'type' => $period['type'] ?? 'monthly',
+            'start' => $period['start'],
+            'end' => $period['end'],
+        ]);
+        $topPeak = $trendSeries->sortByDesc('total')->first();
+
+        $dealNeeds = $dealStatusIds->isNotEmpty()
+            ? $this->buildNeedsDistributionFromQuery(
+                (clone $query)->whereIn($this->consultationColumn('status_category_id'), $dealStatusIds->all())
+            )
+            : collect();
+
+        $nonDealNeeds = $dealStatusIds->isNotEmpty()
+            ? $this->buildNeedsDistributionFromQuery(
+                (clone $query)->whereNotIn($this->consultationColumn('status_category_id'), $dealStatusIds->all())
+            )
+            : $needsDistribution;
+
+        $contributorDimension = $user->isSuperAdmin() && ! $selectedAccount ? 'account' : 'admin';
+        $contributors = $this->buildContributorDistribution($query, $contributorDimension);
+        $dealContributors = $dealStatusIds->isNotEmpty()
+            ? $this->buildContributorDistribution(
+                (clone $query)->whereIn($this->consultationColumn('status_category_id'), $dealStatusIds->all()),
+                $contributorDimension
+            )
+            : collect();
+
+        return [
+            'label' => $period['label'] ?? '',
+            'total_leads' => $metrics['total_leads'],
+            'surveys' => $metrics['surveys'],
+            'deals' => $metrics['deals'],
+            'non_deals' => max($metrics['total_leads'] - $metrics['deals'], 0),
+            'survey_rate' => $metrics['survey_rate'],
+            'deal_rate' => $metrics['deal_rate'],
+            'active_days' => $metrics['active_days'],
+            'top_need' => $needsDistribution->first(),
+            'top_deal_need' => $dealNeeds->first(),
+            'top_non_deal_need' => $nonDealNeeds->first(),
+            'top_contributor' => $contributors->first(),
+            'top_deal_contributor' => $dealContributors->first(),
+            'top_non_deal_statuses' => $statusDistribution
+                ->filter(fn (array $status) => $status['count'] > 0 && ! $this->statusNameMatches($status['name'], $this->dealStatusAliases()))
+                ->sortByDesc('count')
+                ->take(3)
+                ->values(),
+            'need_map' => $needsDistribution->pluck('count', 'name')->all(),
+            'contributor_map' => $contributors->pluck('count', 'name')->all(),
+            'peak_bucket' => $topPeak,
+            'contributor_dimension' => $contributorDimension,
+        ];
+    }
+
+    private function buildContributorDistribution(Builder $query, string $dimension = 'admin'): Collection
+    {
+        if ($dimension === 'account') {
+            $counts = (clone $query)
+                ->join('accounts', 'accounts.id', '=', 'consultations.account_id')
+                ->selectRaw('accounts.name as contributor_name, COUNT(*) as aggregate_count')
+                ->groupBy('accounts.name')
+                ->orderByDesc('aggregate_count')
+                ->get();
+        } else {
+            $counts = (clone $query)
+                ->leftJoin('users', 'users.id', '=', 'consultations.created_by')
+                ->selectRaw("COALESCE(users.name, 'Tanpa Admin') as contributor_name, COUNT(*) as aggregate_count")
+                ->groupBy('contributor_name')
+                ->orderByDesc('aggregate_count')
+                ->get();
+        }
+
+        return collect($counts)->map(fn ($row) => [
+            'name' => (string) $row->contributor_name,
+            'count' => (int) $row->aggregate_count,
+        ])->values();
+    }
+
+    private function buildPerformanceAnalysis(
+        array $current,
+        array $previous,
+        array $period,
+        array $dataQuality,
+        array $pendingConfirmationStats
+    ): Collection {
+        $consultationUp = collect();
+        $consultationDown = collect();
+        $dealUp = collect();
+        $dealDown = collect();
+
+        if ($current['total_leads'] > 0) {
+            $consultationUp->push(sprintf(
+                'Total konsultasi periode ini <strong>%s</strong> lead. Kebutuhan paling dominan adalah <strong>%s</strong> dengan <strong>%s</strong> lead.',
+                number_format($current['total_leads']),
+                $current['top_need']['name'] ?? '-',
+                number_format((int) ($current['top_need']['count'] ?? 0))
+            ));
+
+            if (! empty($current['top_contributor']['name'])) {
+                $consultationUp->push(sprintf(
+                    'Kontributor terbesar datang dari <strong>%s %s</strong> dengan <strong>%s</strong> lead.',
+                    $current['contributor_dimension'] === 'account' ? 'akun' : 'admin',
+                    $current['top_contributor']['name'],
+                    number_format((int) ($current['top_contributor']['count'] ?? 0))
+                ));
+            }
+
+            if (($current['peak_bucket']['total'] ?? 0) > 0) {
+                $consultationUp->push(sprintf(
+                    'Puncak volume terjadi pada <strong>%s</strong> dengan <strong>%s</strong> konsultasi.',
+                    $current['peak_bucket']['full_label'] ?? ($current['peak_bucket']['label'] ?? '-'),
+                    number_format((int) ($current['peak_bucket']['total'] ?? 0))
+                ));
+            }
+        } else {
+            $consultationUp->push('Belum ada konsultasi pada periode ini, jadi belum ada pendorong volume yang bisa dianalisa.');
+        }
+
+        $leadDelta = $current['total_leads'] - $previous['total_leads'];
+        $leadDeltaPct = $this->deltaPercent($current['total_leads'], $previous['total_leads']);
+        $consultationDown->push(sprintf(
+            'Perbandingan vs <strong>%s</strong>: konsultasi %s <strong>%s</strong> lead (%s<strong>%s%%</strong>).',
+            $period['comparison_label'],
+            $leadDelta >= 0 ? 'naik' : 'turun',
+            number_format(abs($leadDelta)),
+            $leadDelta >= 0 ? '+' : '-',
+            number_format(abs($leadDeltaPct), 1)
+        ));
+
+        if ($topDropNeed = $this->findLargestDeltaItem($current['need_map'], $previous['need_map'], 'decrease')) {
+            $consultationDown->push(sprintf(
+                'Penurunan paling terasa ada pada kebutuhan <strong>%s</strong> yang turun <strong>%s</strong> lead dari periode pembanding.',
+                $topDropNeed['name'],
+                number_format(abs($topDropNeed['delta']))
+            ));
+        }
+
+        if ($topDropContributor = $this->findLargestDeltaItem($current['contributor_map'], $previous['contributor_map'], 'decrease')) {
+            $consultationDown->push(sprintf(
+                'Kontribusi <strong>%s %s</strong> juga turun <strong>%s</strong> lead.',
+                $current['contributor_dimension'] === 'account' ? 'akun' : 'admin',
+                $topDropContributor['name'],
+                number_format(abs($topDropContributor['delta']))
+            ));
+        }
+
+        if ($current['active_days'] < $previous['active_days']) {
+            $consultationDown->push(sprintf(
+                'Hari aktif input berkurang dari <strong>%s</strong> hari menjadi <strong>%s</strong> hari.',
+                number_format($previous['active_days']),
+                number_format($current['active_days'])
+            ));
+        }
+
+        if ($current['deals'] > 0) {
+            $dealUp->push(sprintf(
+                'Periode ini menghasilkan <strong>%s</strong> deal dengan deal rate <strong>%s%%</strong>.',
+                number_format($current['deals']),
+                number_format($current['deal_rate'], 1)
+            ));
+
+            if (! empty($current['top_deal_need']['name'])) {
+                $dealUp->push(sprintf(
+                    'Kebutuhan paling sering berujung deal adalah <strong>%s</strong> dengan <strong>%s</strong> deal.',
+                    $current['top_deal_need']['name'],
+                    number_format((int) ($current['top_deal_need']['count'] ?? 0))
+                ));
+            }
+
+            if (! empty($current['top_deal_contributor']['name'])) {
+                $dealUp->push(sprintf(
+                    'Kontributor deal terbesar berasal dari <strong>%s %s</strong> dengan <strong>%s</strong> deal.',
+                    $current['contributor_dimension'] === 'account' ? 'akun' : 'admin',
+                    $current['top_deal_contributor']['name'],
+                    number_format((int) ($current['top_deal_contributor']['count'] ?? 0))
+                ));
+            }
+        } else {
+            $dealUp->push('Belum ada deal pada periode ini, jadi belum ada pola kemenangan yang bisa dibaca.');
+        }
+
+        $dealDelta = $current['deals'] - $previous['deals'];
+        $dealDeltaPct = $this->deltaPercent($current['deals'], $previous['deals']);
+        $dealDown->push(sprintf(
+            'Deal vs <strong>%s</strong> %s <strong>%s</strong> (%s<strong>%s%%</strong>).',
+            $period['comparison_label'],
+            $dealDelta >= 0 ? 'naik' : 'turun',
+            number_format(abs($dealDelta)),
+            $dealDelta >= 0 ? '+' : '-',
+            number_format(abs($dealDeltaPct), 1)
+        ));
+
+        $topNonDealStatuses = $current['top_non_deal_statuses'] ?? collect();
+        if ($topNonDealStatuses instanceof Collection && $topNonDealStatuses->isNotEmpty()) {
+            $labels = $topNonDealStatuses->take(2)->map(
+                fn (array $status) => sprintf('%s (%s)', $status['name'], number_format($status['count']))
+            )->implode(', ');
+
+            $dealDown->push(sprintf(
+                'Lead yang belum deal paling banyak tertahan di status <strong>%s</strong>.',
+                $labels
+            ));
+        }
+
+        if (! empty($current['top_non_deal_need']['name'])) {
+            $dealDown->push(sprintf(
+                'Kebutuhan yang paling banyak belum deal adalah <strong>%s</strong> dengan <strong>%s</strong> lead.',
+                $current['top_non_deal_need']['name'],
+                number_format((int) ($current['top_non_deal_need']['count'] ?? 0))
+            ));
+        }
+
+        if (($pendingConfirmationStats['product']['count'] ?? 0) > 0 || ($pendingConfirmationStats['city']['count'] ?? 0) > 0) {
+            $dealDown->push(sprintf(
+                'Masih ada hambatan kualitas data: produk belum konfirmasi <strong>%s</strong> lead dan kota belum konfirmasi <strong>%s</strong> lead.',
+                number_format((int) ($pendingConfirmationStats['product']['count'] ?? 0)),
+                number_format((int) ($pendingConfirmationStats['city']['count'] ?? 0))
+            ));
+        }
+
+        if (($dataQuality['notes_completion_rate'] ?? 0) < 60) {
+            $dealDown->push(sprintf(
+                'Kelengkapan catatan baru <strong>%s%%</strong>, ini bisa membuat penyebab gagal closing kurang terbaca dengan tajam.',
+                number_format((float) ($dataQuality['notes_completion_rate'] ?? 0), 1)
+            ));
+        }
+
+        return collect([
+            [
+                'eyebrow' => 'Volume Driver',
+                'title' => 'Pendorong Konsultasi',
+                'subtitle' => 'Faktor utama yang paling mendorong masuknya konsultasi pada periode aktif.',
+                'icon' => 'trending_up',
+                'tone' => 'positive',
+                'metric' => number_format($current['total_leads']),
+                'metric_label' => 'Total konsultasi',
+                'badge' => $current['top_need']['name'] ?? 'Belum ada kebutuhan dominan',
+                'items' => $consultationUp->filter()->values()->all(),
+            ],
+            [
+                'eyebrow' => 'Volume Change',
+                'title' => $leadDelta < 0 ? 'Penyebab Konsultasi Turun' : 'Arah Perubahan Konsultasi',
+                'subtitle' => 'Membandingkan perubahan volume dengan periode pembanding untuk melihat area yang menekan atau menahan pertumbuhan.',
+                'icon' => 'history_toggle_off',
+                'tone' => 'warning',
+                'metric' => ($leadDelta > 0 ? '+' : ($leadDelta < 0 ? '-' : '')) . number_format(abs($leadDelta)),
+                'metric_label' => 'Delta vs ' . $period['comparison_label'],
+                'badge' => $leadDelta >= 0 ? 'Volume masih bertumbuh' : 'Butuh pemulihan volume',
+                'items' => $consultationDown->filter()->values()->all(),
+            ],
+            [
+                'eyebrow' => 'Closing Driver',
+                'title' => 'Pendorong Deal',
+                'subtitle' => 'Sinyal yang paling banyak berkontribusi terhadap deal dan efektivitas closing.',
+                'icon' => 'verified',
+                'tone' => 'success',
+                'metric' => number_format($current['deals']),
+                'metric_label' => 'Total deal',
+                'badge' => number_format($current['deal_rate'], 1) . '% deal rate',
+                'items' => $dealUp->filter()->values()->all(),
+            ],
+            [
+                'eyebrow' => 'Closing Barrier',
+                'title' => 'Hambatan Closing',
+                'subtitle' => 'Pola yang paling sering membuat lead belum bergerak sampai deal.',
+                'icon' => 'warning',
+                'tone' => 'danger',
+                'metric' => number_format($current['non_deals']),
+                'metric_label' => 'Lead belum deal',
+                'badge' => ($current['top_non_deal_statuses']->first()['name'] ?? 'Belum ada hambatan dominan'),
+                'items' => $dealDown->filter()->values()->all(),
+            ],
+        ]);
+    }
+
+    private function buildOnlyInquiryAnalysis(User $user, ?int $selectedAccount, array $period): array
+    {
+        $topicMinOccurrences = 4;
+        $keywordLimit = 24;
+        $sampleLimit = 12;
+        $keywordMinOccurrences = 6;
+        $statusId = $this->resolveStatusId($this->onlyInquiryStatusAliases());
+
+        if (! $statusId) {
+            return $this->emptyOnlyInquiryAnalysis();
+        }
+
+        $rows = $this->baseQuery($user, $selectedAccount, $period['start'], $period['end'])
+            ->where($this->consultationColumn('status_category_id'), $statusId)
+            ->orderByDesc('updated_at')
+            ->get(['consultation_id', 'client_name', 'notes', 'consultation_date', 'updated_at']);
+
+        $totalOnlyInquiry = $rows->count();
+        $filledNotes = $rows->filter(fn ($row) => filled(trim((string) $row->notes)))->values();
+        $notesFilledCount = $filledNotes->count();
+
+        if ($totalOnlyInquiry === 0) {
+            return $this->emptyOnlyInquiryAnalysis();
+        }
+
+        $topicDefinitions = $this->onlyInquiryTopicDefinitions();
+        $topicStats = collect($topicDefinitions)->mapWithKeys(function (array $topic) {
+            return [$topic['key'] => array_merge($topic, [
+                'note_count' => 0,
+                'keyword_hits' => 0,
+                'matched_keywords' => [],
+            ])];
+        });
+
+        $rawKeywordCounter = [];
+        $samples = collect();
+        $uncategorizedCount = 0;
+
+        foreach ($filledNotes as $row) {
+            $rawNote = trim((string) $row->notes);
+            $normalizedNote = $this->normalizeAnalysisText($rawNote);
+            $tokens = $this->tokenizeAnalysisWords($normalizedNote);
+            $matchedTopics = collect();
+            $matchedKeywordPreview = collect();
+
+            foreach ($tokens as $token) {
+                $rawKeywordCounter[$token] = ($rawKeywordCounter[$token] ?? 0) + 1;
+            }
+
+            foreach ($topicDefinitions as $topic) {
+                $matchedKeywords = collect($topic['keywords'])
+                    ->map(fn (string $keyword) => $this->normalizeAnalysisText($keyword))
+                    ->filter(fn (string $keyword) => $keyword !== '' && $this->analysisTextContains($normalizedNote, $keyword))
+                    ->unique()
+                    ->values();
+
+                if ($matchedKeywords->isEmpty()) {
+                    continue;
+                }
+
+                $matchedTopics->push($topic['label']);
+                $matchedKeywordPreview = $matchedKeywordPreview->merge($matchedKeywords);
+                $currentTopic = $topicStats->get($topic['key']);
+                $currentTopic['note_count']++;
+                $currentTopic['keyword_hits'] += $matchedKeywords->count();
+
+                foreach ($matchedKeywords as $keyword) {
+                    $currentTopic['matched_keywords'][$keyword] = ($currentTopic['matched_keywords'][$keyword] ?? 0) + 1;
+                }
+
+                $topicStats->put($topic['key'], $currentTopic);
+            }
+
+            if ($matchedTopics->isEmpty()) {
+                $uncategorizedCount++;
+            }
+
+            $samples->push([
+                'consultation_id' => $row->consultation_id,
+                'client_name' => $row->client_name,
+                'note' => $rawNote,
+                'topics' => $matchedTopics->values()->all(),
+                'keywords' => $matchedKeywordPreview->unique()->take(5)->values()->all(),
+                'updated_at' => $row->updated_at ? Carbon::parse($row->updated_at)->format('d M Y H:i') : '-',
+            ]);
+        }
+
+        $allTopicCards = $topicStats->values()
+            ->filter(fn (array $topic) => $topic['note_count'] > 0)
+            ->map(function (array $topic) use ($notesFilledCount) {
+                arsort($topic['matched_keywords']);
+                $topic['coverage_rate'] = $notesFilledCount > 0 ? round(($topic['note_count'] / $notesFilledCount) * 100, 1) : 0;
+                $topic['top_keywords'] = collect($topic['matched_keywords'])->take(4)->keys()->values()->all();
+
+                return $topic;
+            })
+            ->sortByDesc('note_count')
+            ->values();
+
+        $topicCards = $allTopicCards
+            ->filter(fn (array $topic) => (int) $topic['note_count'] >= $topicMinOccurrences)
+            ->values();
+
+        arsort($rawKeywordCounter);
+        $topKeywords = collect($rawKeywordCounter)
+            ->filter(fn (int $count) => $count >= $keywordMinOccurrences)
+            ->take($keywordLimit)
+            ->map(fn ($count, $keyword) => [
+                'keyword' => $keyword,
+                'count' => $count,
+            ])
+            ->values();
+
+        $dominantTopic = $topicCards->first();
+        $sampleNotes = $samples->take($sampleLimit)->values();
+
+        return [
+            'status_label' => 'Hanya Tanya Tanya',
+            'total_only_inquiry' => $totalOnlyInquiry,
+            'notes_filled_count' => $notesFilledCount,
+            'notes_coverage_rate' => $totalOnlyInquiry > 0 ? round(($notesFilledCount / $totalOnlyInquiry) * 100, 1) : 0,
+            'uncategorized_count' => $uncategorizedCount,
+            'categorized_count' => max($notesFilledCount - $uncategorizedCount, 0),
+            'dominant_topic' => $dominantTopic,
+            'topic_cards' => $topicCards,
+            'topic_cards_all_total' => $allTopicCards->count(),
+            'topic_cards_total' => $topicCards->count(),
+            'topic_cards_min_occurrences' => $topicMinOccurrences,
+            'top_keywords' => $topKeywords,
+            'top_keywords_total' => count($rawKeywordCounter),
+            'top_keywords_filtered_total' => $topKeywords->count(),
+            'top_keywords_limit' => $keywordLimit,
+            'top_keywords_min_occurrences' => $keywordMinOccurrences,
+            'sample_notes' => $sampleNotes,
+            'sample_notes_total' => $notesFilledCount,
+            'sample_notes_limit' => $sampleLimit,
+            'has_data' => $notesFilledCount > 0,
         ];
     }
 
@@ -589,7 +1124,7 @@ class AnalyticsReportService
         )->count();
 
         if ($previous > 0) {
-            return round((($current - $previous) / $previous) * 100, 1);
+            return round($this->deltaPercent($current, $previous), 1);
         }
 
         return $current > 0 ? 100.0 : 0.0;
@@ -731,6 +1266,184 @@ class AnalyticsReportService
         return $insights->values();
     }
 
+    private function buildDeltaMetric(int|float $current, int|float $previous, bool $roundPercent = true): array
+    {
+        $delta = $current - $previous;
+        $deltaPercent = $this->deltaPercent($current, $previous);
+
+        return [
+            'current' => $current,
+            'previous' => $previous,
+            'delta' => $delta,
+            'delta_percent' => $roundPercent ? round($deltaPercent, 1) : $deltaPercent,
+            'direction' => $delta > 0 ? 'up' : ($delta < 0 ? 'down' : 'flat'),
+        ];
+    }
+
+    private function deltaPercent(int|float $current, int|float $previous): float
+    {
+        if ((float) $previous === 0.0) {
+            return (float) $current > 0 ? 100.0 : 0.0;
+        }
+
+        return max(-100.0, min((($current - $previous) / $previous) * 100, 100.0));
+    }
+
+    private function findLargestDeltaItem(array $currentMap, array $previousMap, string $direction = 'increase'): ?array
+    {
+        $keys = collect(array_keys($currentMap))
+            ->merge(array_keys($previousMap))
+            ->unique()
+            ->values();
+
+        $candidates = $keys->map(function ($key) use ($currentMap, $previousMap) {
+            $current = (int) ($currentMap[$key] ?? 0);
+            $previous = (int) ($previousMap[$key] ?? 0);
+
+            return [
+                'name' => (string) $key,
+                'current' => $current,
+                'previous' => $previous,
+                'delta' => $current - $previous,
+            ];
+        });
+
+        $filtered = $direction === 'decrease'
+            ? $candidates->filter(fn (array $item) => $item['delta'] < 0)->sortBy('delta')
+            : $candidates->filter(fn (array $item) => $item['delta'] > 0)->sortByDesc('delta');
+
+        return $filtered->first();
+    }
+
+    private function onlyInquiryStatusAliases(): array
+    {
+        return ['Hanya Tanya Tanya'];
+    }
+
+    private function onlyInquiryTopicDefinitions(): array
+    {
+        return [
+            [
+                'key' => 'harga_budget',
+                'label' => 'Harga & Budget',
+                'icon' => 'sell',
+                'accent' => 'rose',
+                'keywords' => ['harga', 'budget', 'biaya', 'murah', 'mahal', 'promo', 'diskon', 'estimasi', 'quotation', 'penawaran', 'per meter', 'permeter', 'meteran'],
+            ],
+            [
+                'key' => 'material_bahan',
+                'label' => 'Material & Bahan',
+                'icon' => 'category',
+                'accent' => 'sky',
+                'keywords' => ['bahan', 'material', 'multiplek', 'plywood', 'pvc', 'hpl', 'aluminium', 'almunium', 'kaca', 'duco', 'mfc', 'mdf', 'kayu', 'besi', 'marmer', 'granit'],
+            ],
+            [
+                'key' => 'desain_model',
+                'label' => 'Desain & Model',
+                'icon' => 'architecture',
+                'accent' => 'violet',
+                'keywords' => ['desain', 'design', 'model', 'minimalis', 'modern', 'klasik', 'layout', 'konsep', 'custom', 'gambar', 'warna', 'motif'],
+            ],
+            [
+                'key' => 'ukuran_spesifikasi',
+                'label' => 'Ukuran & Spesifikasi',
+                'icon' => 'tag',
+                'accent' => 'amber',
+                'keywords' => ['ukuran', 'dimensi', 'lebar', 'tinggi', 'panjang', 'detail ukuran', 'spesifikasi', 'size', 'cm', 'meter'],
+            ],
+            [
+                'key' => 'survey_lokasi',
+                'label' => 'Survey & Lokasi',
+                'icon' => 'location_on',
+                'accent' => 'emerald',
+                'keywords' => ['survey', 'survei', 'lokasi', 'alamat', 'kunjungan', 'visit', 'cek lokasi', 'ukur lokasi'],
+            ],
+            [
+                'key' => 'jadwal_waktu',
+                'label' => 'Jadwal & Waktu',
+                'icon' => 'schedule',
+                'accent' => 'cyan',
+                'keywords' => ['jadwal', 'kapan', 'deadline', 'estimasi waktu', 'lama', 'cepat', 'proses', 'pengerjaan', 'hari', 'minggu', 'bulan'],
+            ],
+            [
+                'key' => 'pembayaran',
+                'label' => 'Pembayaran',
+                'icon' => 'save',
+                'accent' => 'indigo',
+                'keywords' => ['dp', 'termin', 'pelunasan', 'pembayaran', 'cash', 'transfer', 'cicilan', 'invoice'],
+            ],
+        ];
+    }
+
+    private function emptyOnlyInquiryAnalysis(): array
+    {
+        return [
+            'status_label' => 'Hanya Tanya Tanya',
+            'total_only_inquiry' => 0,
+            'notes_filled_count' => 0,
+            'notes_coverage_rate' => 0,
+            'uncategorized_count' => 0,
+            'categorized_count' => 0,
+            'dominant_topic' => null,
+            'topic_cards' => collect(),
+            'topic_cards_all_total' => 0,
+            'topic_cards_total' => 0,
+            'topic_cards_min_occurrences' => 4,
+            'top_keywords' => collect(),
+            'top_keywords_total' => 0,
+            'top_keywords_filtered_total' => 0,
+            'top_keywords_limit' => 24,
+            'top_keywords_min_occurrences' => 6,
+            'sample_notes' => collect(),
+            'sample_notes_total' => 0,
+            'sample_notes_limit' => 12,
+            'has_data' => false,
+        ];
+    }
+
+    private function normalizeAnalysisText(?string $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        return (string) Str::of($value)
+            ->lower()
+            ->ascii()
+            ->replaceMatches('/[^a-z0-9]+/', ' ')
+            ->squish();
+    }
+
+    private function tokenizeAnalysisWords(string $normalizedText): array
+    {
+        if ($normalizedText === '') {
+            return [];
+        }
+
+        $stopwords = [
+            'dan', 'atau', 'yang', 'untuk', 'dengan', 'dari', 'pada', 'agar', 'jadi', 'sudah',
+            'belum', 'masih', 'bisa', 'apakah', 'kah', 'nya', 'aja', 'saja', 'minta', 'ingin',
+            'mau', 'buat', 'perlu', 'lebih', 'kurang', 'sih', 'nih', 'dong', 'ya', 'yg', 'utk',
+            'di', 'ke', 'itu', 'ini', 'karena', 'tentang', 'soal', 'via', 'wa', 'chat', 'konsul',
+            'konsultasi', 'tanya', 'tanyatanya', 'only', 'lead', 'admin',
+        ];
+
+        return collect(explode(' ', $normalizedText))
+            ->map(fn (string $token) => trim($token))
+            ->filter(fn (string $token) => $token !== '' && strlen($token) >= 3 && ! in_array($token, $stopwords, true))
+            ->values()
+            ->all();
+    }
+
+    private function analysisTextContains(string $normalizedText, string $normalizedKeyword): bool
+    {
+        if ($normalizedText === '' || $normalizedKeyword === '') {
+            return false;
+        }
+
+        return str_contains(' ' . $normalizedText . ' ', ' ' . $normalizedKeyword . ' ');
+    }
+
     private function resolveAccountName(User $user, ?int $selectedAccount): string
     {
         if ($user->isSuperAdmin()) {
@@ -744,14 +1457,55 @@ class AnalyticsReportService
         return $user->account?->name ?? 'Akun Admin';
     }
 
-    private function countByStatusName(Collection $statusDistribution, string $statusName): int
+    private function countByStatusAliases(Collection $statusDistribution, array $aliases): int
     {
-        return (int) ($statusDistribution->firstWhere('name', $statusName)['count'] ?? 0);
+        return (int) $statusDistribution
+            ->filter(fn (array $status) => $this->statusNameMatches($status['name'] ?? '', $aliases))
+            ->sum('count');
     }
 
     private function resolveStatusId(array $aliases): ?int
     {
-        return StatusCategory::whereIn('name', array_values(array_filter($aliases)))->value('id');
+        return $this->resolveStatusIds($aliases)->first();
+    }
+
+    private function resolveStatusIds(array $aliases): Collection
+    {
+        $normalizedAliases = collect($aliases)
+            ->filter()
+            ->map(fn (string $alias) => $this->normalizeStatusName($alias))
+            ->unique()
+            ->values();
+
+        if ($normalizedAliases->isEmpty()) {
+            return collect();
+        }
+
+        return StatusCategory::query()
+            ->get(['id', 'name'])
+            ->filter(fn (StatusCategory $status) => $normalizedAliases->contains($this->normalizeStatusName($status->name)))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+    }
+
+    private function statusNameMatches(?string $statusName, array $aliases): bool
+    {
+        $normalizedStatus = $this->normalizeStatusName($statusName);
+
+        return collect($aliases)
+            ->filter()
+            ->map(fn (string $alias) => $this->normalizeStatusName($alias))
+            ->contains($normalizedStatus);
+    }
+
+    private function normalizeStatusName(?string $value): string
+    {
+        return (string) Str::of((string) $value)
+            ->lower()
+            ->ascii()
+            ->replace(['/', '-', '_'], ' ')
+            ->squish();
     }
 
     private function surveyStatusName(): string
@@ -810,7 +1564,9 @@ class AnalyticsReportService
 
     private function applyPendingConfirmationConstraint(Builder $query, string $column): void
     {
-        $query->whereRaw("LOWER(TRIM(COALESCE({$column}, ''))) = ?", [mb_strtolower(PendingConfirmation::LABEL)]);
+        $qualifiedColumn = str_contains($column, '.') ? $column : $this->consultationColumn($column);
+
+        $query->whereRaw("LOWER(TRIM(COALESCE({$qualifiedColumn}, ''))) = ?", [mb_strtolower(PendingConfirmation::LABEL)]);
     }
 
     private function normalizeLocation(?string $value): string
@@ -880,5 +1636,10 @@ class AnalyticsReportService
                 'color' => '#64748b',
             ],
         ];
+    }
+
+    private function consultationColumn(string $column): string
+    {
+        return 'consultations.' . $column;
     }
 }

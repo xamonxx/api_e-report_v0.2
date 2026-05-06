@@ -295,6 +295,9 @@
                     shouldShowOtherDetails() {
                         return !!this.otherNeedsProductId && this.selectedProductIds.includes(this.otherNeedsProductId);
                     },
+                    isProductSelected(id) {
+                        return this.selectedProductIds.includes(String(id));
+                    },
                     selectedProducts() {
                         return this.selectedProductIds
                             .map((id) => this.productOptions.find((option) => option.id === String(id)))
@@ -351,14 +354,16 @@
                                             if ($isPending) $labelColor = 'text-amber-600 dark:text-amber-400 font-bold';
                                             elseif ($isOther) $labelColor = 'text-sky-600 dark:text-sky-400 font-bold';
                                         @endphp
-                                        <label class="product-picker-item">
+                                        <label class="product-picker-item"
+                                               :class="{ 'product-picker-item--selected': isProductSelected('{{ $category->id }}') }">
                             <input type="checkbox" name="needs_category_ids[]" value="{{ $category->id }}" class="peer sr-only" x-model="selectedProductIds"
                                    {{ in_array((string) $category->id, $selectedProductIds, true) ? 'checked' : '' }}>
                                             <span class="product-picker-item__label {{ $labelColor }}">
                                 {{ $category->name }}
                             </span>
-                                            <span class="product-picker-item__check">
-                                                <x-icon name="check" class="h-3.5 w-3.5 shrink-0 text-primary opacity-0 transition-opacity peer-checked:opacity-100" />
+                                            <span class="product-picker-item__check"
+                                                  :class="{ 'product-picker-item__check--selected': isProductSelected('{{ $category->id }}') }">
+                                                <x-icon name="check" class="product-picker-item__check-icon" />
                                             </span>
                                         </label>
                         @endforeach

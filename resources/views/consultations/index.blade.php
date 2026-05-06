@@ -22,10 +22,15 @@
             <x-icon name="upload_file" class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Import</span>
         </button>
-        <a href="{{ route('export.csv', request()->query()) }}"
+        <a href="{{ route('export.leads.excel', request()->query()) }}"
            class="flex-1 sm:flex-none border border-outline-variant/30 text-on-surface-variant px-3 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold hover:bg-surface-container transition-colors flex items-center justify-center gap-2">
             <x-icon name="download" class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>Export</span>
+            <span>Excel</span>
+        </a>
+        <a href="{{ route('export.leads.pdf', request()->query()) }}"
+           class="flex-1 sm:flex-none border border-outline-variant/30 text-on-surface-variant px-3 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold hover:bg-surface-container transition-colors flex items-center justify-center gap-2">
+            <x-icon name="print" class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span>PDF</span>
         </a>
         <button @click="openCreateLead()"
            class="w-full sm:w-auto bg-primary text-on-primary px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary-dim transition-colors">
@@ -50,21 +55,33 @@
                 
                 <div class="mb-6">
                     <a href="{{ route('consultations.template') }}" class="text-primary text-sm font-bold hover:underline flex items-center gap-1">
-                        <x-icon name="download" class="w-3.5 h-3.5" /> Download Template CSV
+                        <x-icon name="download" class="w-3.5 h-3.5" /> Download Template Excel
                     </a>
                 </div>
 
-                <form action="{{ route('consultations.import') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
+                <form action="{{ route('consultations.import') }}" method="POST" enctype="multipart/form-data" class="space-y-6"
+                      x-data="{ selectedImportFileName: '' }">
                     @csrf
-                    <div class="border-2 border-dashed border-outline-variant/30 rounded-xl p-6 sm:p-8 text-center hover:bg-surface-container-low transition-colors relative group">
-                        <input type="file" name="csv_file" accept=".csv" required class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"/>
+                    <div class="border-2 border-dashed border-outline-variant/30 rounded-xl p-6 sm:p-8 text-center hover:bg-surface-container-low transition-colors relative group"
+                         :class="selectedImportFileName ? 'border-primary/50 bg-primary/5' : ''">
+                        <input type="file" name="csv_file" accept=".csv" required
+                               @change="selectedImportFileName = $event.target.files[0]?.name || ''"
+                               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"/>
                         <div class="space-y-2">
                             <x-icon name="cloud_upload" class="w-10 h-10 text-outline-variant group-hover:text-primary transition-colors" />
-                            <p class="text-xs sm:text-sm text-on-surface-variant group-hover:text-on-surface transition-colors font-medium">Klik atau drop file CSV di sini</p>
+                            <p class="text-xs sm:text-sm text-on-surface-variant group-hover:text-on-surface transition-colors font-medium"
+                               x-show="!selectedImportFileName">Klik atau drop file CSV di sini</p>
+                            <div x-show="selectedImportFileName" x-cloak class="space-y-1">
+                                <p class="text-[10px] font-bold uppercase tracking-widest text-primary">File dipilih</p>
+                                <p class="text-xs sm:text-sm font-bold text-on-surface break-all" x-text="selectedImportFileName"></p>
+                            </div>
                         </div>
                     </div>
+                    @error('csv_file')
+                        <p class="text-error text-xs font-semibold -mt-3">{{ $message }}</p>
+                    @enderror
                     <div class="flex gap-3 justify-end mt-4">
-                        <button type="button" @click="showImportModal = false" class="px-5 py-2.5 rounded-xl font-bold text-sm text-on-surface-variant hover:bg-surface-container-low transition-colors">Batal</button>
+                        <button type="button" @click="showImportModal = false; selectedImportFileName = ''" class="px-5 py-2.5 rounded-xl font-bold text-sm text-on-surface-variant hover:bg-surface-container-low transition-colors">Batal</button>
                         <button type="submit" class="bg-primary text-on-primary px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary-dim transition-colors">Mulai Import</button>
                     </div>
                 </form>
@@ -392,6 +409,9 @@
                                 shouldShowOtherDetails() {
                                     return !!this.otherNeedsProductId && this.selectedProductIds.includes(this.otherNeedsProductId);
                                 },
+                                isProductSelected(id) {
+                                    return this.selectedProductIds.includes(String(id));
+                                },
                                 selectedProducts() {
                                     return this.selectedProductIds
                                         .map((id) => this.productOptions.find((option) => option.id === String(id)))
@@ -449,14 +469,16 @@
                                         if ($isPending) $labelColor = 'text-amber-600 dark:text-amber-400 font-bold';
                                         elseif ($isOther) $labelColor = 'text-sky-600 dark:text-sky-400 font-bold';
                                     @endphp
-                                    <label class="product-picker-item">
+                                    <label class="product-picker-item"
+                                           :class="{ 'product-picker-item--selected': isProductSelected('{{ $category->id }}') }">
                                         <input type="checkbox" name="needs_category_ids[]" value="{{ $category->id }}" class="peer sr-only" x-model="selectedProductIds"
                                                {{ in_array((string) $category->id, $selectedProductIds, true) ? 'checked' : '' }}>
                                         <span class="product-picker-item__label {{ $labelColor }}">
                                             {{ $category->name }}
                                         </span>
-                                        <span class="product-picker-item__check">
-                                            <x-icon name="check" class="h-3.5 w-3.5 shrink-0 text-primary opacity-0 transition-opacity peer-checked:opacity-100" />
+                                        <span class="product-picker-item__check"
+                                              :class="{ 'product-picker-item__check--selected': isProductSelected('{{ $category->id }}') }">
+                                            <x-icon name="check" class="product-picker-item__check-icon" />
                                         </span>
                                     </label>
                                     @endforeach
@@ -825,10 +847,11 @@
                         <div class="space-y-5 sm:space-y-6"
                              x-data="{
                                 productOptions: @js($categories->map(fn($category) => ['id' => (string) $category->id, 'name' => $category->name])->values()),
+                                selectedProductIds: [],
                                 pendingConfirmationProductId: @js($pendingConfirmationProductId ? (string) $pendingConfirmationProductId : null),
                                 otherNeedsProductId: @js($otherNeedsProductId ? (string) $otherNeedsProductId : null),
-                                normalizeSelectedProducts(value) {
-                                    const ids = [...new Set((Array.isArray(value) ? value : [value]).map((item) => String(item ?? '')).filter(Boolean))];
+                                normalizeSelectedProducts(value, fallbackValue = null) {
+                                    const ids = window.normalizeConsultationCategoryIds(value, fallbackValue);
                                     const lastSelectedId = ids[ids.length - 1] ?? null;
 
                                     const isPendingLast = this.pendingConfirmationProductId && lastSelectedId === this.pendingConfirmationProductId;
@@ -844,25 +867,46 @@
                                         return;
                                     }
 
-                                    editData.needs_category_ids = [this.pendingConfirmationProductId];
+                                    this.selectedProductIds = [this.pendingConfirmationProductId];
                                 },
                                 shouldShowOtherDetails() {
-                                    const ids = Array.isArray(editData.needs_category_ids) ? editData.needs_category_ids.map((value) => String(value)) : [];
-                                    return !!this.otherNeedsProductId && ids.includes(this.otherNeedsProductId);
+                                    return !!this.otherNeedsProductId && this.selectedProductIds.includes(this.otherNeedsProductId);
+                                },
+                                isProductSelected(id) {
+                                    return this.selectedProductIds.includes(String(id));
                                 },
                                 selectedProducts() {
-                                    const ids = Array.isArray(editData.needs_category_ids) ? this.normalizeSelectedProducts(editData.needs_category_ids) : [];
-                                    return ids
+                                    return this.selectedProductIds
                                         .map((id) => this.productOptions.find((option) => option.id === String(id)))
                                         .filter(Boolean);
+                                },
+                                syncFromEditData() {
+                                    this.selectedProductIds = this.normalizeSelectedProducts(
+                                        editData.needs_category_ids,
+                                        editData.needs_category_id
+                                    );
                                 }
                              }"
                              x-init="
-                                $watch('editData.needs_category_ids', (value) => {
-                                    const rawIds = (Array.isArray(value) ? value : [value]).map((item) => String(item ?? '')).filter(Boolean);
-                                    const normalized = normalizeSelectedProducts(value);
-                                    if (JSON.stringify(normalized) !== JSON.stringify(rawIds)) {
-                                        editData.needs_category_ids = normalized;
+                                syncFromEditData();
+                                $watch('selectedProductIds', (value) => {
+                                    const normalized = normalizeSelectedProducts(value, editData.needs_category_id);
+                                    if (JSON.stringify(normalized) !== JSON.stringify(value)) {
+                                        selectedProductIds = normalized;
+                                        return;
+                                    }
+
+                                    editData.needs_category_ids = normalized;
+                                    editData.needs_category_id = normalized[0] ?? '';
+                                });
+                                $watch('showEditModal', (value) => {
+                                    if (value) {
+                                        syncFromEditData();
+                                    }
+                                });
+                                $watch('editData.id', () => {
+                                    if (showEditModal) {
+                                        syncFromEditData();
                                     }
                                 });
                              ">
@@ -905,13 +949,15 @@
                                         if ($isPending) $labelColor = 'text-amber-600 dark:text-amber-400 font-bold';
                                         elseif ($isOther) $labelColor = 'text-sky-600 dark:text-sky-400 font-bold';
                                     @endphp
-                                    <label class="product-picker-item">
-                                        <input type="checkbox" name="needs_category_ids[]" value="{{ $category->id }}" class="peer sr-only" x-model="editData.needs_category_ids">
+                                    <label class="product-picker-item"
+                                           :class="{ 'product-picker-item--selected': isProductSelected('{{ $category->id }}') }">
+                                        <input type="checkbox" name="needs_category_ids[]" value="{{ $category->id }}" class="peer sr-only" x-model="selectedProductIds">
                                         <span class="product-picker-item__label {{ $labelColor }}">
                                             {{ $category->name }}
                                         </span>
-                                        <span class="product-picker-item__check">
-                                            <x-icon name="check" class="h-3.5 w-3.5 shrink-0 text-primary opacity-0 transition-opacity peer-checked:opacity-100" />
+                                        <span class="product-picker-item__check"
+                                              :class="{ 'product-picker-item__check--selected': isProductSelected('{{ $category->id }}') }">
+                                            <x-icon name="check" class="product-picker-item__check-icon" />
                                         </span>
                                     </label>
                                     @endforeach
@@ -1021,7 +1067,22 @@
 
 {{-- Filters --}}
 @php
-    $hasActiveConsultationFilters = request()->hasAny(['search', 'status', 'account', 'start_date', 'end_date']);
+    $hasActiveConsultationFilters = request()->hasAny(['search', 'status', 'account', 'start_date', 'end_date', 'month', 'year']);
+    $monthOptions = [
+        1 => 'Januari',
+        2 => 'Februari',
+        3 => 'Maret',
+        4 => 'April',
+        5 => 'Mei',
+        6 => 'Juni',
+        7 => 'Juli',
+        8 => 'Agustus',
+        9 => 'September',
+        10 => 'Oktober',
+        11 => 'November',
+        12 => 'Desember',
+    ];
+    $yearOptions = range(now()->year + 1, 2020);
 @endphp
 <div x-data="{
         isDesktop: window.innerWidth >= 1280,
@@ -1062,7 +1123,7 @@
             this.manualMobilePreference = this.filterOpen;
         }
     }"
-    class="bg-surface-container-lowest p-4 sm:p-6 rounded-xl shadow-sm mb-6 no-print border border-surface-container-low">
+    class="w-full max-w-[1020px] bg-surface-container-lowest p-4 sm:p-5 rounded-2xl shadow-sm mb-6 no-print border border-surface-container-low">
     <div class="xl:hidden rounded-2xl border border-surface-container-low bg-surface-container-low/40 px-3.5 py-3 shadow-inner">
         <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -1088,8 +1149,8 @@
          x-transition:leave-start="opacity-100 translate-y-0"
          x-transition:leave-end="opacity-0 -translate-y-2"
          class="mt-4 xl:mt-0">
-    <form method="GET" action="{{ route('consultations.index') }}" class="flex flex-col xl:flex-row xl:items-end gap-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 {{ auth()->user()->isSuperAdmin() ? 'xl:grid-cols-5' : 'lg:grid-cols-4' }} gap-4 flex-1">
+    <form method="GET" action="{{ route('consultations.index') }}" class="space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 {{ auth()->user()->isSuperAdmin() ? '2xl:grid-cols-4' : '' }} gap-3">
             {{-- Search --}}
             <div class="xl:col-span-1">
                 <label class="block text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest mb-1.5 px-1 opacity-70">Search</label>
@@ -1124,6 +1185,86 @@
                     </span>
                     <input type="date" name="end_date" value="{{ request('end_date') }}"
                            class="w-full bg-surface-container-low border-0 rounded-xl pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner" />
+                </div>
+            </div>
+
+            {{-- Month Filter --}}
+            <div>
+                <label class="block text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest mb-1.5 px-1 opacity-70">Bulan</label>
+                <div x-data="searchableSelect(@js(collect([['value' => '', 'label' => 'Semua Bulan']])->concat(collect($monthOptions)->map(fn($monthName, $monthNumber) => ['value' => (string) $monthNumber, 'label' => $monthName])->values())), @js((string) request('month', '')))"
+                     @click.outside="close()"
+                     @keydown.escape.prevent.stop="close()"
+                     class="relative">
+                    <input type="hidden" name="month" :value="selected">
+                    <button type="button"
+                            @click="toggle()"
+                            class="w-full bg-surface-container-low rounded-xl pl-4 pr-12 py-2.5 text-left text-sm shadow-inner transition focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            :class="open ? 'ring-2 ring-primary/20' : ''"
+                            :aria-expanded="open.toString()"
+                            aria-haspopup="listbox">
+                        <span class="block truncate font-semibold text-on-surface-variant"
+                              x-text="selectedLabel('Semua Bulan')"></span>
+                    </button>
+                    <x-icon name="expand_more"
+                            class="w-5 h-5 absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none transition-transform"
+                            x-bind:class="open ? 'rotate-180 text-primary' : ''" />
+                    <div x-show="open"
+                         x-cloak
+                         x-transition:enter="transition ease-out duration-150"
+                         x-transition:enter-start="opacity-0 -translate-y-1"
+                         x-transition:enter-end="opacity-100 translate-y-0"
+                         class="app-select-panel absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest p-2.5 shadow-2xl sm:min-w-[28rem]">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <template x-for="option in options" :key="option.value">
+                                <button type="button"
+                                        @mousedown.prevent="setSelected(option.value)"
+                                        class="min-h-[42px] rounded-xl px-3 py-2.5 text-center text-sm font-bold transition hover:bg-primary/10 hover:text-primary"
+                                        :class="selected === option.value ? 'bg-primary/10 text-primary' : 'text-on-surface'">
+                                    <span class="block truncate" x-text="option.label"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Year Filter --}}
+            <div>
+                <label class="block text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest mb-1.5 px-1 opacity-70">Tahun</label>
+                <div x-data="searchableSelect(@js(collect([['value' => '', 'label' => 'Semua Tahun']])->concat(collect($yearOptions)->map(fn($yearOption) => ['value' => (string) $yearOption, 'label' => (string) $yearOption])->values())), @js((string) request('year', '')))"
+                     @click.outside="close()"
+                     @keydown.escape.prevent.stop="close()"
+                     class="relative">
+                    <input type="hidden" name="year" :value="selected">
+                    <button type="button"
+                            @click="toggle()"
+                            class="w-full bg-surface-container-low rounded-xl pl-4 pr-12 py-2.5 text-left text-sm shadow-inner transition focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            :class="open ? 'ring-2 ring-primary/20' : ''"
+                            :aria-expanded="open.toString()"
+                            aria-haspopup="listbox">
+                        <span class="block truncate font-semibold text-on-surface-variant"
+                              x-text="selectedLabel('Semua Tahun')"></span>
+                    </button>
+                    <x-icon name="expand_more"
+                            class="w-5 h-5 absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none transition-transform"
+                            x-bind:class="open ? 'rotate-180 text-primary' : ''" />
+                    <div x-show="open"
+                         x-cloak
+                         x-transition:enter="transition ease-out duration-150"
+                         x-transition:enter-start="opacity-0 -translate-y-1"
+                         x-transition:enter-end="opacity-100 translate-y-0"
+                         class="app-select-panel absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest p-2.5 shadow-2xl sm:min-w-[22rem]">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <template x-for="option in options" :key="option.value">
+                                <button type="button"
+                                        @mousedown.prevent="setSelected(option.value)"
+                                        class="min-h-[42px] rounded-xl px-3 py-2.5 text-center text-sm font-bold transition hover:bg-primary/10 hover:text-primary"
+                                        :class="selected === option.value ? 'bg-primary/10 text-primary' : 'text-on-surface'">
+                                    <span class="block truncate" x-text="option.label"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1224,14 +1365,14 @@
             @endif
         </div>
 
-        <div class="flex items-center gap-3 shrink-0 w-full xl:w-auto xl:pb-0.5">
-            @if(request()->hasAny(['search', 'status', 'account', 'start_date', 'end_date']))
-            <a href="{{ route('consultations.index') }}" class="flex items-center justify-center gap-1.5 text-error text-xs font-bold bg-error/5 hover:bg-error/10 px-4 py-2.5 rounded-xl transition-all h-[42px] border border-error/10">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2.5 pt-1">
+            @if(request()->hasAny(['search', 'status', 'account', 'start_date', 'end_date', 'month', 'year']))
+            <a href="{{ route('consultations.index') }}" class="inline-flex items-center justify-center gap-1.5 text-error text-xs font-bold bg-error/5 hover:bg-error/10 px-4 py-2.5 rounded-xl transition-all h-[40px] border border-error/10 sm:w-auto">
                 <x-icon name="restart_alt" class="w-4 h-4" />
-                <span class="hidden sm:inline">Reset</span>
+                <span>Reset</span>
             </a>
             @endif
-            <button type="submit" class="bg-primary text-on-primary px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary-dim transition-all active:scale-[0.98] flex items-center justify-center gap-2 h-[42px] w-full xl:w-auto">
+            <button type="submit" class="bg-primary text-on-primary px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary-dim transition-all active:scale-[0.98] inline-flex items-center justify-center gap-2 h-[40px] w-full sm:w-auto">
                 <x-icon name="filter_alt" class="w-4 h-4" />
                 <span>Terapkan Filter</span>
             </button>
@@ -1239,54 +1380,6 @@
     </form>
     </div>
 </div>
-
-@if($recentImports->isNotEmpty())
-<div class="bg-surface-container-lowest rounded-2xl shadow-sm border border-surface-container-low p-4 sm:p-6 mb-6">
-    <div class="flex items-center justify-between gap-3 mb-4">
-        <div>
-            <h3 class="font-bold text-on-surface">Riwayat Import CSV</h3>
-            <p class="text-xs text-on-surface-variant">Pantau proses import yang sudah masuk antrean background.</p>
-        </div>
-    </div>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        @foreach($recentImports as $import)
-        <div class="rounded-xl border border-surface-container-low bg-surface-container-low/40 p-4">
-            <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                    <p class="text-sm font-bold text-on-surface truncate">{{ $import->original_name }}</p>
-                    <p class="text-[11px] text-on-surface-variant mt-1">
-                        Diunggah {{ $import->created_at->diffForHumans() }}
-                    </p>
-                </div>
-                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest
-                    {{ $import->status === 'completed' ? 'bg-tertiary/10 text-tertiary' : '' }}
-                    {{ $import->status === 'failed' ? 'bg-error/10 text-error' : '' }}
-                    {{ in_array($import->status, ['queued', 'processing']) ? 'bg-primary/10 text-primary' : '' }}">
-                    {{ $import->status }}
-                </span>
-            </div>
-            <div class="grid grid-cols-3 gap-2 mt-4 text-center">
-                <div class="rounded-lg bg-white/70 px-2 py-2">
-                    <div class="text-[10px] uppercase tracking-widest text-on-surface-variant">Sukses</div>
-                    <div class="text-sm font-bold text-on-surface mt-1">{{ $import->success_count }}</div>
-                </div>
-                <div class="rounded-lg bg-white/70 px-2 py-2">
-                    <div class="text-[10px] uppercase tracking-widest text-on-surface-variant">Duplikat</div>
-                    <div class="text-sm font-bold text-on-surface mt-1">{{ $import->duplicate_count }}</div>
-                </div>
-                <div class="rounded-lg bg-white/70 px-2 py-2">
-                    <div class="text-[10px] uppercase tracking-widest text-on-surface-variant">Error</div>
-                    <div class="text-sm font-bold text-on-surface mt-1">{{ $import->error_count }}</div>
-                </div>
-            </div>
-            @if($import->error_preview)
-            <p class="text-xs text-error mt-3 whitespace-pre-line">{{ $import->error_preview }}</p>
-            @endif
-        </div>
-        @endforeach
-    </div>
-</div>
-@endif
 
 {{-- Data Table --}}
 <div class="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden flex flex-col">
@@ -1334,7 +1427,7 @@
                         <div class="space-y-1 min-w-[180px] group relative">
                             <span class="text-sm font-medium text-on-surface-variant block truncate max-w-[200px]" title="{{ $c->product_names_label ?: 'Belum Ada' }}">{{ $c->product_names_label ?: 'Belum Ada' }}</span>
                             @if($c->product_details)
-                            <p class="text-[11px] leading-relaxed text-outline-variant line-clamp-2 cursor-help" title="{{ htmlspecialchars($c->product_details, ENT_QUOTES) }}">{{ $c->product_details }}</p>
+                            <p class="text-[11px] leading-relaxed text-outline-variant line-clamp-2 cursor-help" title="{{ $c->product_details }}">{{ $c->product_details }}</p>
                             @endif
                             <div class="absolute z-50 hidden group-hover:block left-0 top-full mt-1 w-[420px] max-w-[calc(100vw-4rem)] whitespace-normal break-words overflow-hidden bg-surface-container-high p-3 rounded-lg shadow-xl border border-surface-container text-xs">
                                 <p class="font-bold text-on-surface mb-1">Nama Produk:</p>
@@ -1368,7 +1461,7 @@
                             </a>
                             <button type="button" class="btn-edit w-8 h-8 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors"
                                 data-id="{{ $c->id }}"
-                                data-name="{{ htmlspecialchars($c->client_name, ENT_QUOTES) }}"
+                                data-name="{{ $c->client_name }}"
                                 data-phone="{{ $c->phone }}"
                                 data-province="{{ $c->province ?? '' }}"
                                 data-city="{{ $c->city ?? '' }}"
@@ -1376,11 +1469,11 @@
                                 data-address="{{ $c->address ?? '' }}"
                                 data-account="{{ $c->account_id }}"
                                 data-category="{{ $c->needs_category_id }}"
-                                data-category-ids="{{ e($c->productCategories()->pluck('id')->map(fn ($id) => (string) $id)->values()->toJson()) }}"
-                                data-product-details="{{ htmlspecialchars($c->product_details ?? '', ENT_QUOTES) }}"
+                                data-category-ids='@json($c->productCategories()->pluck("id")->map(fn ($id) => (string) $id)->values())'
+                                data-product-details="{{ $c->product_details ?? '' }}"
                                 data-status="{{ $c->status_category_id }}"
                                 data-date="{{ $c->consultation_date?->format('Y-m-d') }}"
-                                data-notes="{{ htmlspecialchars($c->notes ?? '', ENT_QUOTES) }}"
+                                data-notes="{{ $c->notes ?? '' }}"
                                 data-consultation-id="{{ $c->consultation_id }}"
                                 title="Edit">
                                 <x-icon name="edit" class="w-[18px] h-[18px]" />

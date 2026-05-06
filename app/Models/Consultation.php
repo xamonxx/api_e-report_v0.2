@@ -384,7 +384,7 @@ class Consultation extends Model
     public function scopeForUser($query, $user)
     {
         if ($user->isAdmin()) {
-            $query->where('account_id', $user->account_id);
+            $query->where($this->qualifyColumn('account_id'), $user->account_id);
         }
 
         return $query;

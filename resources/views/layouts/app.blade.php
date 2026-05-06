@@ -57,15 +57,15 @@
          class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden">
     </div>
 
-    <div class="app-shell flex min-h-screen lg:h-screen relative lg:overflow-hidden">
+    <div class="app-shell flex min-h-screen lg:h-screen relative lg:overflow-y-hidden lg:overflow-x-visible">
         <div id="sidebar-drawer"
              :aria-hidden="(isMobile && !sidebarOpen).toString()"
-             class="mobile-sidebar-drawer fixed inset-y-0 left-0 z-50 lg:static transition-all duration-300 ease-in-out shrink-0 overflow-hidden {{ $isSidebarOpen ? 'max-lg:-translate-x-full lg:translate-x-0 lg:w-64' : '-translate-x-full lg:translate-x-0 lg:w-[5.5rem]' }}"
+             class="mobile-sidebar-drawer fixed inset-y-0 left-0 z-50 lg:relative lg:z-40 transition-all duration-300 ease-in-out shrink-0 overflow-hidden lg:overflow-visible {{ $isSidebarOpen ? 'max-lg:-translate-x-full lg:translate-x-0 lg:w-64' : '-translate-x-full lg:translate-x-0 lg:w-[5.5rem]' }}"
              :class="sidebarOpen ? '!translate-x-0 !w-[86vw] sm:!w-72 lg:!w-64' : '!-translate-x-full lg:!translate-x-0 lg:!w-[5.5rem] !w-[86vw] sm:!w-72'">
             @include('components.sidebar')
         </div>
 
-        <main id="main-content" class="app-main-scroll flex-1 flex flex-col min-w-0 bg-surface-container-low w-full overflow-x-hidden lg:overflow-y-auto">
+        <main id="main-content" class="app-main-scroll relative z-0 flex-1 flex flex-col min-w-0 bg-surface-container-low w-full overflow-x-hidden lg:overflow-y-auto">
             @include('components.header')
 
             @if(session('success'))

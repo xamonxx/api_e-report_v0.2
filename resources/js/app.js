@@ -482,16 +482,50 @@ window.notificationCenter = function notificationCenter(initialCount, countApiUr
 
 window.notificationBadge = window.notificationCenter;
 
-window.consultationsPage = function consultationsPage(config) {
-    const parseJsonArray = (rawValue) => {
-        try {
-            const parsed = JSON.parse(rawValue ?? '[]');
-            return Array.isArray(parsed) ? parsed.map((value) => String(value)) : [];
-        } catch (_error) {
-            return [];
+window.normalizeConsultationCategoryIds = function normalizeConsultationCategoryIds(rawValue, fallbackValue = null) {
+    let values = [];
+    const decodeHtmlEntities = (value) => {
+        if (typeof value !== 'string' || !value.includes('&')) {
+            return value;
         }
+
+        const textarea = document.createElement('textarea');
+        textarea.innerHTML = value;
+
+        return textarea.value;
     };
 
+    if (Array.isArray(rawValue)) {
+        values = rawValue;
+    } else if (typeof rawValue === 'string') {
+        const trimmed = decodeHtmlEntities(rawValue).trim();
+
+        if (trimmed !== '') {
+            try {
+                const parsed = JSON.parse(trimmed);
+                values = Array.isArray(parsed) ? parsed : [parsed];
+            } catch (_error) {
+                values = trimmed.includes(',')
+                    ? trimmed.split(',').map((item) => item.trim())
+                    : [trimmed];
+            }
+        }
+    } else if (rawValue !== null && rawValue !== undefined) {
+        values = [rawValue];
+    }
+
+    if (values.length === 0 && fallbackValue !== null && fallbackValue !== undefined) {
+        const fallback = String(fallbackValue).trim();
+
+        if (fallback !== '') {
+            values = [fallback];
+        }
+    }
+
+    return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))];
+};
+
+window.consultationsPage = function consultationsPage(config) {
     return {
         showImportModal: config.showImportModal,
         showCreateModal: config.showCreateModal,
@@ -528,6 +562,11 @@ window.consultationsPage = function consultationsPage(config) {
         init() {
             document.querySelectorAll('.btn-edit').forEach((button) => {
                 button.addEventListener('click', () => {
+                    const selectedCategoryIds = window.normalizeConsultationCategoryIds(
+                        button.getAttribute('data-category-ids'),
+                        button.getAttribute('data-category')
+                    );
+
                     this.editData = {
                         id: button.getAttribute('data-id'),
                         consultation_id: button.getAttribute('data-consultation-id'),
@@ -538,8 +577,8 @@ window.consultationsPage = function consultationsPage(config) {
                         district: button.getAttribute('data-district'),
                         address: button.getAttribute('data-address'),
                         account_id: button.getAttribute('data-account'),
-                        needs_category_id: button.getAttribute('data-category'),
-                        needs_category_ids: parseJsonArray(button.getAttribute('data-category-ids')),
+                        needs_category_id: selectedCategoryIds[0] ?? button.getAttribute('data-category') ?? '',
+                        needs_category_ids: selectedCategoryIds,
                         product_details: button.getAttribute('data-product-details'),
                         status_category_id: button.getAttribute('data-status'),
                         consultation_date: button.getAttribute('data-date'),

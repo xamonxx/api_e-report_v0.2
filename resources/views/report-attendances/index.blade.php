@@ -2,6 +2,7 @@
 @section('title', 'Monitoring Laporan Harian')
 
 @php
+    $exportBaseUrl = route('report-attendances.export', ['date' => $date->format('Y-m-d')]);
     $statusFilterChips = [
         'all' => [
             'label' => 'Semua Data',
@@ -71,6 +72,34 @@
             <x-icon name="filter_list" class="w-4 h-4" />
             <span>Tampilkan Data</span>
         </button>
+        <div x-data="{ exportGroup: 'PC', exportBaseUrl: @js($exportBaseUrl) }"
+             class="w-full md:w-auto flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+            <div class="min-w-[10rem]">
+                <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2 px-1">Kategori</label>
+                <input type="hidden" x-model="exportGroup">
+                <div class="grid grid-cols-2 rounded-xl border border-surface-container-low bg-surface-container-low p-1 shadow-inner">
+                    <button type="button"
+                            @click="exportGroup = 'PC'"
+                            class="min-h-[2.5rem] rounded-lg px-4 text-sm font-bold transition-all flex items-center justify-center gap-1.5"
+                            :class="exportGroup === 'PC' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'">
+                        <span>PC</span>
+                        <x-icon name="check" class="w-3.5 h-3.5" x-show="exportGroup === 'PC'" />
+                    </button>
+                    <button type="button"
+                            @click="exportGroup = 'NPP'"
+                            class="min-h-[2.5rem] rounded-lg px-4 text-sm font-bold transition-all flex items-center justify-center gap-1.5"
+                            :class="exportGroup === 'NPP' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'">
+                        <span>NPP</span>
+                        <x-icon name="check" class="w-3.5 h-3.5" x-show="exportGroup === 'NPP'" />
+                    </button>
+                </div>
+            </div>
+            <a :href="`${exportBaseUrl}&account_group=${exportGroup}`"
+               class="w-full sm:w-auto bg-surface-container-high text-on-surface px-7 py-3 rounded-xl font-bold hover:bg-surface-container transition-all border border-surface-container-low flex items-center justify-center gap-2 active:scale-[0.98]">
+                <x-icon name="download" class="w-4 h-4" />
+                <span>Export Excel</span>
+            </a>
+        </div>
     </form>
 </div>
 
@@ -124,7 +153,13 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-surface-container-low">
-                @forelse($adminAttendances as $att)
+                @forelse($groupedAttendances as $accountGroup => $items)
+                <tr class="bg-surface-container-high/80">
+                    <td colspan="5" class="px-5 py-2 text-xs font-extrabold uppercase tracking-widest text-primary border-y border-surface-container-low">
+                        {{ $accountGroup }}
+                    </td>
+                </tr>
+                @foreach($items as $att)
                 <tr class="hover:bg-surface-container-low/30 transition-colors">
                     <td class="px-4 sm:px-5 py-3 text-center">
                         @if($att->has_reported)
@@ -204,6 +239,7 @@
                         </form>
                     </td>
                 </tr>
+                @endforeach
                 @empty
                 <tr>
                     <td colspan="5" class="px-6 sm:px-8 py-16 text-center">

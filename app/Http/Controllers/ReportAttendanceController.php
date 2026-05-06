@@ -7,7 +7,9 @@ use Illuminate\Http\Request;
 use App\Models\ReportAttendance;
 use Carbon\Carbon;
 use App\Models\User;
+use App\Services\Reports\AdminReportAttendanceExcelExporter;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpFoundation\Response;
 
 class ReportAttendanceController extends Controller
 {
@@ -59,9 +61,13 @@ class ReportAttendanceController extends Controller
             'belum_laporan' => $adminAttendances->where('has_reported', false)->values(),
             default => $adminAttendances->values(),
         };
+        $groupedAttendances = $filteredAttendances
+            ->groupBy(fn ($attendance) => $this->accountGroupLabel($attendance->account?->description))
+            ->sortBy(fn ($items, string $group) => $group === 'PC' ? 0 : 1);
 
         return view('report-attendances.index', [
             'adminAttendances' => $filteredAttendances,
+            'groupedAttendances' => $groupedAttendances,
             'date' => $date,
             'selectedStatus' => $selectedStatus,
             'statusCounts' => $statusCounts,
@@ -112,6 +118,29 @@ class ReportAttendanceController extends Controller
         return back()->with('success', 'Status absensi admin berhasil diperbarui.');
     }
 
+    public function export(Request $request, AdminReportAttendanceExcelExporter $excelExporter): Response
+    {
+        $user = auth()->user();
+        if (!$user->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'date' => ['nullable', 'date'],
+            'account_group' => ['required', 'in:PC,NPP'],
+        ]);
+
+        $date = Carbon::parse($validated['date'] ?? Carbon::today()->format('Y-m-d'));
+        $accountGroup = $validated['account_group'];
+        $filename = sprintf('rekap-laporan-admin-%s-%s.xls', strtolower($accountGroup), $date->format('Y-m'));
+
+        return response($excelExporter->buildWorkbook($date, $accountGroup), 200, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'max-age=0',
+        ]);
+    }
+
     public function store(Request $request)
     {
         $user = auth()->user();
@@ -144,5 +173,20 @@ class ReportAttendanceController extends Controller
         }
 
         return back()->with('success', 'Berhasil melakukan absensi report harian!');
+    }
+
+    private function accountGroupLabel(?string $description): string
+    {
+        $normalized = str((string) $description)->upper()->squish()->toString();
+
+        if (str_contains($normalized, 'PUTRA') || $normalized === 'PC') {
+            return 'PC';
+        }
+
+        if (str_contains($normalized, 'NPP')) {
+            return 'NPP';
+        }
+
+        return 'NPP';
     }
 }

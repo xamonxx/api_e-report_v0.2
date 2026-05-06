@@ -74,6 +74,8 @@ Route::middleware('auth')->group(function () {
 
     // Export
     Route::get('/export/csv', [ExportController::class, 'exportCsv'])->name('export.csv');
+    Route::get('/export/leads/excel', [ExportController::class, 'exportLeadsExcel'])->name('export.leads.excel');
+    Route::get('/export/leads/pdf', [ExportController::class, 'exportLeadsPdf'])->name('export.leads.pdf');
     Route::get('/export/analytics/excel', [ExportController::class, 'exportAnalyticsExcel'])->name('export.analytics.excel');
     Route::get('/export/analytics/pdf', [ExportController::class, 'exportAnalyticsPdf'])->name('export.analytics.pdf');
 
@@ -83,6 +85,7 @@ Route::middleware('auth')->group(function () {
 
         // Report Attendance
         Route::get('/report-attendances', [ReportAttendanceController::class, 'index'])->name('report-attendances.index');
+        Route::get('/report-attendances/export', [ReportAttendanceController::class, 'export'])->name('report-attendances.export');
         Route::post('/report-attendances/upsert', [ReportAttendanceController::class, 'upsertBySuperAdmin'])->name('report-attendances.upsert');
 
         // Master Data

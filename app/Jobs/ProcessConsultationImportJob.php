@@ -15,7 +15,6 @@ class ProcessConsultationImportJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public string $queue = 'imports';
     public int $tries = 3;
     public int $timeout = 300;
     public int $maxExceptions = 1;
@@ -24,6 +23,7 @@ class ProcessConsultationImportJob implements ShouldQueue, ShouldBeUnique
     public function __construct(
         public int $importId
     ) {
+        $this->onQueue('imports');
     }
 
     public function uniqueId(): string

@@ -11,6 +11,7 @@ use App\Models\StatusCategory;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
@@ -68,7 +69,7 @@ class DashboardController extends Controller
             ->count();
 
         $growthPercent = $lastMonth > 0
-            ? round((($thisMonth - $lastMonth) / $lastMonth) * 100, 1)
+            ? max(-100, min(round((($thisMonth - $lastMonth) / $lastMonth) * 100, 1), 100))
             : ($thisMonth > 0 ? 100 : 0);
 
         return [
@@ -145,7 +146,6 @@ class DashboardController extends Controller
         $cacheKey = "dashboard:admin:{$accountId}";
         $cachedData = Cache::remember($cacheKey, 5 * 60, function () use ($accountId, $user) {
             $dealStatusId = $this->resolveStatusId('deal');
-            $surveyStatusId = $this->resolveStatusId('survey');
 
             $totalLeads = Consultation::where('account_id', $accountId)->count();
 
@@ -154,15 +154,10 @@ class DashboardController extends Controller
                 : 0;
             $conversionRate = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
 
-            $pendingSurveys = $surveyStatusId
-                ? Consultation::where('account_id', $accountId)->where('status_category_id', $surveyStatusId)->count()
-                : 0;
-
             return [
                 'account' => $user->account,
                 'totalLeads' => $totalLeads,
                 'conversionRate' => $conversionRate,
-                'pendingSurveys' => $pendingSurveys,
                 'statusDistribution' => StatusCategory::withCount(['consultations' => fn($q) => $q->where('account_id', $accountId)])
                     ->orderBy('sort_order')->get(),
                 'needsDistribution' => NeedsCategory::withCount(['consultations' => fn($q) => $q->where('account_id', $accountId)])
@@ -180,10 +175,30 @@ class DashboardController extends Controller
             ];
         });
 
+        $cachedData['pendingSurveys'] = $this->countRequestSurveys($accountId);
         $cachedData['hasReportedToday'] = ReportAttendance::where('user_id', $user->id)
             ->where('report_date', Carbon::today())->exists();
 
         return view('dashboard.admin', $cachedData);
+    }
+
+    private function countRequestSurveys(int $accountId): int
+    {
+        $aliases = collect($this->statusAliases('survey'))
+            ->map(fn (string $name) => str($name)->lower()->squish()->toString())
+            ->unique()
+            ->values();
+
+        if ($aliases->isEmpty()) {
+            return 0;
+        }
+
+        return Consultation::query()
+            ->where('account_id', $accountId)
+            ->whereHas('statusCategory', function ($query) use ($aliases) {
+                $query->whereIn(DB::raw('LOWER(TRIM(name))'), $aliases->all());
+            })
+            ->count();
     }
 
     /**

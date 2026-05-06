@@ -1,0 +1,306 @@
+﻿;Note :  *Untuk coloum yang berwarna BIRU, mohon di isi dengan pilihan yang telah tersedian *Untuk coloum yang berwarna Orange, Dilarang di isi karena sudah otomatis;;;;;;;;;;;;
+;;;;;;;;;;;;;
+NO;ID KONSUMEN;TGL. AWAL KONSUL;NAMA AKUN;DATA KONSUMEN;;;;;KEBUTUHAN KATEGORI;;;;UPDATE
+;;;;Nama Konsumen;WA Konsumen;Domisili;Provinsi;Kota Kab.;Jenis Kebutuhan;Detail Kebutuhan;Catatan;kategori;Tanggal Update
+1;20.2601.0001;04/01/2026;DEKOR INTERIOR;Jaenal;+62 813-8050-9502;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchen Set 10 juta;Overbudget karena ukurannya 5 meter dan kosongan;Kendala Anggaran;04/02/2026
+2;20.2602.0002;04/02/2026;DEKOR INTERIOR;Nani;+62 838-7334-7862;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchen set;Masih tanya-tanya;Hanya Tanya Tanya;04/02/2026
+3;20.2603.0003;04/03/2026;DEKOR INTERIOR;Rifki;+62 812-3669-3636;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchen set;Mau Survey;Tidak Ada Respon;04/08/2026
+4;20.2603.0004;04/03/2026;DEKOR INTERIOR;Nining ;+62 897-5378-979;Luar Kota;Jawa Barat;Karawang;Kamarset;Kamar anak;Masih tanya-tanya;Tidak Ada Respon;04/04/2026
+5;20.2604.0005;04/04/2026;DEKOR INTERIOR;Isma;+62 857-7641-3377;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchenset;dana 10 juta;Tidak Ada Respon;04/04/2026
+6;20.2605.0009;04/05/2026;DEKOR INTERIOR;Dwi;+62 813-8381-9776;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchenset;Masih tanya-tanya;Tidak Ada Respon;04/06/2026
+7;20.2605.0010;04/05/2026;DEKOR INTERIOR;Tari;+62 858-6154-9671;Luar Kota;Jawa Barat;Sukabumi;Kitchenset;Kitchenset;Budget 5 juta;Kendala Anggaran;04/06/2026
+8;20.2606.0008;04/06/2026;DEKOR INTERIOR;Febiyola;+62 815-1161-5041;Luar Kota;Banten;Tangsel;Kitchenset;Kitchenset;Masih tanya-tanya;Hanya Tanya Tanya;04/06/2026
+9;20.2603.0009;04/03/2026;DEKOR INTERIOR;Nusanti;+62 812-8480-6662;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchenset;Masih tanya-tanya;Hanya Tanya Tanya;04/07/2026
+10;20.2607.0010;04/07/2026;DEKOR INTERIOR;Nunung;+62 821-4688-5134;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchenset;masuk survey;Request Survey;04/07/2026
+11;20.2608.0011;04/08/2026;DEKOR INTERIOR;Maya;+62 896-1145-0097;Luar Kota;Jawa Barat;Karawang;Kitchenset;Kitchenset;Over budget;Kendala Anggaran;04/09/2026
+12;20.2609.0012;04/09/2026;DEKOR INTERIOR;Evans;+62 811-1905-1196;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchenset;Masih tanya-tanya;Tidak Ada Respon;04/09/2026
+13;20.2610.0013;04/10/2026;DEKOR INTERIOR;Faris;+62 895-1676-7568;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchenset;Budget 10 juta;Kendala Anggaran;04/10/2026
+14;20.2610.0014;04/10/2026;DEKOR INTERIOR;Titin;+62 815-8476-8500;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchenset;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;04/10/2026
+15;20.2610.0015;04/10/2026;DEKOR INTERIOR;Iis;+62 858-4678-4047;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchenset;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;04/10/2026
+16;20.2610.0016;04/10/2026;DEKOR INTERIOR;Barri;+62 813-1785-5188;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchenset;Sudah di estimasi;Perbandingan Harga;04/10/2026
+17;20.2611.0017;04/11/2026;DEKOR INTERIOR;Nurroidah;+62 857-1109-0195;Luar Kota;Jawa Barat;Bekasi;Kamarset;Kamar anak;Budget 5 juta;Kendala Anggaran;04/11/2026
+18;20.2611.0018;04/11/2026;DEKOR INTERIOR;Yani;+62 812-1092-4868;Luar Kota;Jawa Barat;Depok;Kitchenset;Kitchenset;Sudah di estimasi;Perbandingan Harga;04/11/2026
+19;20.2611.0019;04/11/2026;DEKOR INTERIOR;Mamah Haikal;+62 819-0677-1783;Luar Kota;Jawa Barat;Karawang;Kitchenset;Kitchenset;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;04/11/2026
+20;20.2611.0020;04/11/2026;DEKOR INTERIOR;Nur Asma;+62 812-9735-6165;Luar Kota;Banten;Tangsel;Kitchenset;Kitchen Set 10 juta;mau material alumunium;Kendala Anggaran;04/11/2026
+21;20.2612.0021;04/12/2026;DEKOR INTERIOR;Alice;+62 811-8281-177;Luar Kota;DKI Jakarta;Jakbar;Apartement;Interior Apartment;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;04/12/2026
+22;20.2612.0022;04/12/2026;DEKOR INTERIOR;Ratna;+62 895-3888-90603;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchen Set;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;04/12/2026
+23;20.2612.0023;04/12/2026;DEKOR INTERIOR;Berri;+62 823-8747-8647;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchen Set;Sudah di estimasi;Masuk Survey;04/12/2026
+24;20.2602.0024;04/02/2026;DEKOR INTERIOR;Ibu Rosi;+62 813-8936-8862;Luar Kota;Jawa Barat;Depok;Kitchenset;Kitchen Set;Sudah di estimasi;Masuk Survey;13/4/2026
+25;20.2604.0025;13/4/2026;DEKOR INTERIOR;Ummu Humairo;+62 813-8000-3636;Luar Kota;Jawa Barat;Sukabumi;Kitchenset;Kitchen Set;Budget 10 juta;Hanya Tanya Tanya;13/4/2026
+26;20.2604.0026;13/4/2026;DEKOR INTERIOR;Ade Pitriani;+62 877-7711-2658;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchen Set;Sudah di estimasi;Perbandingan Harga;13/4/2026
+27;20.2604.0027;13/4/2026;DEKOR INTERIOR;Upi;+62 815-8458-3335;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchen Set;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;13/4/2026
+28;20.2604.0028;13/4/2026;DEKOR INTERIOR;Intan;+62 859-1065-23718;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchen Set;Pertimbangkan untuk survey;Penjadwalan;13/4/2026
+29;20.2604.0029;13/4/2026;DEKOR INTERIOR;Ian;+62 819-3259-2420;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchen Set;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;13/4/2026
+30;20.2604.0030;14/4/2026;DEKOR INTERIOR;Abdul;+62 853-2039-1445;Luar Kota;Jawa Barat;Cianjur;Sipil;pindah layout bangunan;masih konsul;Hanya Tanya Tanya;14/4/2026
+31;20.2604.0031;15/4/2026;DEKOR INTERIOR;Nasib;+62 818-0774-5175;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchen Set;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;15/4/2026
+32;20.2604.0032;15/4/2026;DEKOR INTERIOR;Amanda;+62 811-1185-8282;Luar Kota;DKI Jakarta;Jakarta Utara;Sipil;Renov Kostan;Masih tanya-tanya;Tidak Ada Respon;15/4/2026
+33;20.2604.0033;15/4/2026;DEKOR INTERIOR;Saepudin;+62 812-1922-9138;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchen Set;Masih tanya-tanya;Tidak Ada Respon;15/4/2026
+34;20.2604.0034;15/4/2026;DEKOR INTERIOR;Sifra Ringo;+62 852-8263-9578;Luar Kota;Jawa Barat;Depok;Kitchenset;Kitchen Set;Sudah di estimasi;Tidak Ada Respon;15/4/2026
+35;20.2604.0035;16/4/2026;DEKOR INTERIOR;Wahid;+62 851-7227-9931;Luar Kota;Jawa Barat;Bogor;Kamarset;Kamar;tunggu bangunan;Menunggu Bangunan;16/4/2026
+36;20.2604.0036;17/4/2026;DEKOR INTERIOR;Hamdani;+62 821-6553-8665;Luar Kota;Jawa Barat;Depok;Kitchenset;Kitchenset;masih konsul;Hanya Tanya Tanya;17/4/2026
+37;20.2604.0037;17/4/2026;DEKOR INTERIOR;Nela;+62 812-1159-1891;Luar Kota;Jawa Barat;Karawang;Kitchenset;Kitchenset;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;17/4/2026
+38;20.2604.0038;17/4/2026;DEKOR INTERIOR;Rhaxma;+62 811-1513-737;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchenset;tanya pricelist;Kendala Anggaran;17/4/2026
+39;20.2604.0039;18/4/2026;DEKOR INTERIOR;Alfatih;+62 858-8814-2307;Luar Kota;Jawa Barat;Karawang;Kitchenset;Kitchenset;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;18/4/2026
+40;20.2604.0040;18/4/2026;DEKOR INTERIOR;Ashari;+62 896-1755-3346;Luar Kota;Jawa Barat;Bekasi;Sipil;renov rumah;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;18/4/2026
+41;20.2604.0041;20/4/2026;DEKOR INTERIOR;Risna;+62 878-8327-9327;Luar Kota;Jawa Barat;Bekasi;Kitchenset;kitchenset;masih konsul;Tidak Ada Respon;20/4/2026
+42;20.2604.0042;19/4/2026;DEKOR INTERIOR;Nabila;+62 813-1773-9119;Luar Kota;Jawa Barat;Bekasi;Kitchenset;kitchenset;masih konsul;Tidak Ada Respon;20/4/2026
+43;20.2604.0043;19/4/2026;DEKOR INTERIOR;Badru;+81 70-8530-5210;Luar Kota;Jawa Barat;Bogor;Kitchenset;kitchenset;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;20/4/2026
+44;20.2604.0044;20/4/2026;DEKOR INTERIOR;bu Santy;+62 852-1912-0380;Luar Kota;Jawa Barat;Bekasi;Kitchenset;kitchenset;tunggu bangunan;Menunggu Bangunan;20/4/2026
+45;20.2604.0045;20/4/2026;DEKOR INTERIOR;Megha Chaniago;+62 822-4667-5559;Luar Kota;Banten;Tangsel;Sipil;Renov Rumah;masih konsul;Tidak Ada Respon;20/4/2026
+46;20.2604.0046;21/4/2026;DEKOR INTERIOR;Avan;+62 856-9772-0506;Luar Kota;Jawa Barat;Depok;Kamarset;Tatami bed dan Lemari;masih konsul;Tidak Ada Respon;21/4/2026
+47;20.2604.0047;21/4/2026;DEKOR INTERIOR;Tia;+62 857-1538-4468;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchen Set 10 juta;masih konsul;Tidak Ada Respon;21/4/2026
+48;20.2604.0048;22/4/2026;DEKOR INTERIOR;Ambar;+62 811-8123-3373;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchen set;masih konsul;Tidak Ada Respon;22/4/2026
+49;20.2604.0049;23/4/2026;DEKOR INTERIOR;Rafur;+62 812-9337-4720;Luar Kota;Jawa Barat;Depok;Kamarset;Kamar anak;Sudah di estimasi;Penjadwalan;23/4/2026
+50;20.2604.0050;24/4/2026;DEKOR INTERIOR;Hardy;+62 896-0683-2343;Luar Kota;DKI Jakarta;Jakarta Barat;Kitchenset;Kitchen Set;masih konsul;Tidak Ada Respon;24/4/2026
+51;20.2604.0051;26/4/2026;DEKOR INTERIOR;Risa;+62 812-9568-1895;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchen set budget 10 juta;masih konsul;Tidak Ada Respon;26/4/2026
+52;20.2604.0052;26/4/2026;DEKOR INTERIOR;Reny;+62 812-1128-9300;Luar Kota;Banten;Tangerang;Wall Moulding;wallmoulding;masih konsul;Tidak Ada Respon;26/4/2026
+53;20.2604.0053;26/4/2026;DEKOR INTERIOR;Yusmardi;+62 813-8014-5693;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchenset;masih konsul;Tidak Ada Respon;26/4/2026
+54;20.2604.0054;26/4/2026;DEKOR INTERIOR;Betin;+62 895-6157-73048;Luar Kota;Jawa Barat;Bekasi;Kitchenset;Kitchenset;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;26/4/2026
+55;20.2604.0055;27/4/2026;DEKOR INTERIOR;Dede;+62 856-9707-3180;Luar Kota;Jawa Barat;Depok;Kitchenset;Kitchenset budget 10 juta;kendala anggaran;Kendala Anggaran;27/4/2026
+56;20.2604.0056;28/4/2026;DEKOR INTERIOR;Septian;+62 897-4382-253;Luar Kota;Jawa Barat;Karawang;Kitchenset;kitchen set;Sudah di estimasi;Hanya Tanya Tanya;28/4/2026
+57;20.2604.0057;28/4/2026;DEKOR INTERIOR;Teo;+62 821-2557-4082;Luar Kota;Jawa Barat;Depok;Kitchenset;kitchen set;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;28/4/2026
+58;20.2604.0058;28/4/2026;DEKOR INTERIOR;Ayu;+62 813-1619-5910;Luar Kota;Banten;Tangerang;Kitchenset;kitchen set;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;28/4/2026
+59;20.2604.0059;29/4/2026;DEKOR INTERIOR;Lia;+62 811-8441-001;Luar Kota;Banten;Tangsel;Kitchenset;kitchen set;Sudah di estimasi;Tidak Ada Respon;29/4/2026
+60;20.2604.0060;29/4/2026;DEKOR INTERIOR;Tika;+62 896-0476-7385;Luar Kota;Jawa Barat;Bekasi;Kitchenset;kitchen set;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;29/4/2026
+61;20.2604.0061;30/4/2026;DEKOR INTERIOR;Daniels;+62 859-2424-3835;Luar Kota;Jawa Barat;Bekasi;Kitchenset;kitchen set;Tunggu Foto bidang dan ukuran;Tidak Ada Respon;30/4/2026
+62;20.2604.0062;30/4/2026;DEKOR INTERIOR;Siska;+62 816-1989-410;Luar Kota;DKI Jakarta;Jakarta;Jasa Design;kamrset;Masih tanya-tanya;Tidak Ada Respon;30/4/2026
+63;20.2601.0063;05/01/2026;DEKOR INTERIOR;Anisa Handayani;+62 812-9393-1053;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchen set;kendala anggaran;Kendala Anggaran;05/01/2026
+64;20.2602.0064;05/02/2026;DEKOR INTERIOR;Dhinnie Mariany;+62 812-8666-9405;Luar Kota;Banten;Tangerang;Kitchenset;Kitchen set;masih konsul;Hanya Tanya Tanya;05/02/2026
+65;20.2602.0065;05/02/2026;DEKOR INTERIOR;Khalid;+62 822-2777-3849;Luar Kota;Jawa Barat;Bekasi;Sipil;bikin teras;masih konsul;Hanya Tanya Tanya;05/02/2026
+66;20.2602.0066;05/02/2026;DEKOR INTERIOR;Ratna;+62 812-9993-3850;Luar Kota;Banten;Tangerang;Lain-Lain;Buat lantai 2 dan interior kamar;masuk survey;Request Survey;05/02/2026
+67;20.2602.0067;05/02/2026;DEKOR INTERIOR;Lie;+62 812-1306-4117;Luar Kota;Banten;Tangsel;Lain-Lain;Meja rias, kitchen set, dan backdrop TV;masuk survey;Request Survey;05/02/2026
+68;20.2603.0068;05/03/2026;DEKOR INTERIOR;Chrismalia;+62 821-1182-5258;Luar Kota;DKI Jakarta;Jakarta;Kitchenset;Kitchen Set;Masih tanya-tanya;Tidak Ada Respon;05/03/2026
+69;20.2604.0069;05/04/2026;DEKOR INTERIOR;Tati;+62 878-8521-1468;Luar Kota;Jawa Barat;Depok;Kitchenset;Kitchen Set;Masih tanya-tanya;Hanya Tanya Tanya;05/04/2026
+70;20.2604.0070;05/04/2026;DEKOR INTERIOR;Pawan;+1 (867) 670-4411;Luar Kota;Jawa Barat;Bogor;Kitchenset;Kitchen Set;Masih tanya-tanya;Hanya Tanya Tanya;05/04/2026
+71;20.2605.0074;05/05/2026;DEKOR INTERIOR;Reviyan;+62 813-3405-8597;Luar Kota;Jawa Barat;Purwakarta;Kitchenset;Kitchen Set;Tunggu Foto bidang dan ukuran;Hanya Tanya Tanya;05/05/2026
+72;20.2605.0075;05/05/2026;DEKOR INTERIOR;Sarah;+62 812-1245-1303;Luar Kota;Jawa Barat;Bogor;Lain-Lain;renov kantin;masih konsul;Hanya Tanya Tanya;05/05/2026
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;
+;;;;;;;;;;;;;

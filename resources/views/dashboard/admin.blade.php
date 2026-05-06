@@ -126,14 +126,19 @@
 
     <div class="bg-surface-container-lowest p-6 rounded-xl shadow-sm flex flex-col justify-between h-40 group hover-lift animate-fade-in">
         <div class="flex justify-between items-start">
-            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Jadwal Survey</span>
+            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Total Request Survey</span>
             <div class="w-10 h-10 rounded-lg bg-secondary-container/30 flex items-center justify-center text-secondary">
                 <x-icon name="calendar_month" class="w-5 h-5" />
             </div>
         </div>
         <div>
             <p class="text-3xl sm:text-4xl font-extrabold text-on-surface font-headline">{{ $pendingSurveys }}</p>
-            <p class="text-xs text-on-surface-variant font-medium mt-1">Permintaan terjadwal</p>
+            <p class="text-xs text-on-surface-variant font-medium mt-1">
+                {{ $pendingSurveys > 0 ? 'Status Request Survey di akun ini' : 'Belum ada Request Survey di akun ini' }}
+            </p>
+            <p class="text-[11px] text-outline-variant mt-1 truncate" title="{{ $account->name }}">
+                Akun: {{ $account->name }}
+            </p>
         </div>
     </div>
 
