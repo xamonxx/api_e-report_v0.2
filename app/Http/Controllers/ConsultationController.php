@@ -57,19 +57,17 @@ class ConsultationController extends Controller
         }
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
-            $phoneSearchSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')";
-            $phoneSearchTokens = collect([
-                Consultation::normalizeLeadPhone($search),
-                ltrim(preg_replace('/^(?:62|0)/', '', Consultation::normalizeLeadPhone($search)) ?? '', '0'),
-            ])->filter()->unique()->values();
-
-            $query->where(function($q) use ($search, $phoneSearchSql, $phoneSearchTokens) {
+            $normalizedSearch = Consultation::normalizeLeadPhone($search);
+            
+            $query->where(function($q) use ($search, $normalizedSearch) {
                 $q->where('client_name', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
                   ->orWhere('consultation_id', 'like', "%{$search}%");
-
-                foreach ($phoneSearchTokens as $token) {
-                    $q->orWhereRaw("{$phoneSearchSql} like ?", ["%{$token}%"]);
+                
+                if ($normalizedSearch) {
+                    $q->orWhereRaw(
+                        "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ?",
+                        ["%{$normalizedSearch}%"]
+                    );
                 }
             });
         }

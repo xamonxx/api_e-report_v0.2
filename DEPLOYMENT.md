@@ -1,72 +1,105 @@
-# Deployment Guide
+# Auto Deploy ke Hostinger
 
-## Target Production Stack
-- PHP 8.2+
-- MySQL 8+
-- Redis
-- Nginx or Apache
-- Supervisor or systemd for queue worker
-- Cron for Laravel scheduler
+## 📋 Langkah Setup
 
-## Recommended Runtime Settings
-- `APP_ENV=production`
-- `APP_DEBUG=false`
-- `CACHE_STORE=redis`
-- `SESSION_DRIVER=redis`
-- `QUEUE_CONNECTION=redis`
-- import job runs on queue `imports`
+### 1. GitHub Secrets
+Buat secrets di GitHub repository (`Settings > Secrets and variables > Actions`):
 
-Gunakan [`.env.production.example`](/C:/laragon/www/E-report/.env.production.example) sebagai template.
+| Secret Name | Value |
+|-------------|-------|
+| `HOSTINGER_SSH_HOST` | `153.92.9.128` |
+| `HOSTINGER_SSH_PORT` | `65002` |
+| `HOSTINGER_SSH_USER` | `u603012205` |
+| `HOSTINGER_SSH_PRIVATE_KEY` | (SSH Key dari server) |
+| `PROJECT_DIR` | `~/domains/homeputrainterior.com/webHPI` |
+| `PRODUCTION_APP_URL` | `https://homeputrainterior.com` |
+| `PRODUCTION_DB_DATABASE` | `u603012205_hpi` |
+| `PRODUCTION_DB_USERNAME` | `u603012205_hpi` |
+| `PRODUCTION_DB_PASSWORD` | `Hsn090698@#` |
 
-## First-Time Deploy
+### 2. Setup SSH Key di Server
+
+Di terminal server (via SSH), generate SSH key:
 ```bash
-composer install --no-dev --optimize-autoloader
-npm ci
-npm run build
-php artisan migrate --force
-php artisan storage:link
-php artisan optimize
+ssh-keygen -t ed25519 -C "github-deploy"
 ```
 
-## Queue Workers
-Pisahkan worker queue biasa dan queue import agar import CSV tidak mengganggu request utama:
-
+Copy public key ke authorized_keys:
 ```bash
-php artisan queue:work redis --queue=default --sleep=1 --tries=3 --timeout=120
-php artisan queue:work redis --queue=imports --sleep=1 --tries=3 --timeout=300
+cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
 ```
 
-Jika belum memakai Redis, fallback sementara:
+### 3. Setup .env di Server
 
+Login ke server via SSH:
 ```bash
-php artisan queue:work database --queue=default --sleep=1 --tries=3 --timeout=120
-php artisan queue:work database --queue=imports --sleep=1 --tries=3 --timeout=300
+ssh -p 65002 u603012205@153.92.9.128
 ```
 
-## Scheduler
-Jalankan salah satu:
-
+Buat .env:
 ```bash
-php artisan schedule:work
+cd ~/domains/homeputrainterior.com
+mkdir -p webHPI
+cd webHPI
+cp .env.example .env
+nano .env
 ```
 
-Atau cron:
+Isi .env:
+```env
+APP_NAME="Home Putra Interior"
+APP_ENV=production
+APP_KEY=base64:XXXXX... (generate dengan: php artisan key:generate)
+APP_DEBUG=false
+APP_URL=https://homeputrainterior.com
 
+LOG_CHANNEL=stack
+LOG_LEVEL=error
+
+DB_CONNECTION=mysql
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=u603012205_hpi
+DB_USERNAME=u603012205_hpi
+DB_PASSWORD=Hsn090698@#
+
+CACHE_DRIVER=file
+SESSION_DRIVER=file
+QUEUE_CONNECTION=sync
+FILESYSTEM_DISK=public
+```
+
+### 4. Generate APP_KEY
 ```bash
-* * * * * php /path/to/artisan schedule:run >> /dev/null 2>&1
+cd ~/domains/homeputrainterior.com/webHPI
+php artisan key:generate
 ```
 
-## Health Check
-Aplikasi menyediakan endpoint health check:
-
-```text
-/up
+### 5. Push ke GitHub
+```bash
+git add .
+git commit -m "Add auto deploy configuration"
+git push origin main
 ```
 
-## Post-Deploy Checklist
-- pastikan `storage` dan `bootstrap/cache` writable
-- pastikan Redis aktif jika memakai session/cache/queue Redis
-- cek worker queue berjalan
-- cek scheduler aktif
-- cek build asset terbaru sudah ada di `public/build`
-- cek login, halaman leads, analytics, dan import CSV
+## 🚀 Cara Kerja
+
+Setiap push ke branch `main` akan trigger workflow:
+1. Checkout kode
+2. Setup PHP 8.2
+3. Install SSH key
+4. SSH ke server Hostinger
+5. Pull latest code
+6. Install composer
+7. Build frontend (npm)
+8. Run migrations
+9. Clear & cache Laravel
+10. Set permissions
+11. Verify deployment
+
+## ⚠️ Catatan Keamanan
+
+- Jangan commit file .env
+- Pastikan APP_DEBUG=false di production
+- SSH key lebih aman daripada password
+-，定期 rotate SSH key

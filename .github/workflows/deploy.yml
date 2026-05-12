@@ -1,0 +1,125 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+      - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammaths/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: dom, curl, mbstring, zip, pdo, pdo_mysql
+
+      - name: Install SSH key
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+
+      - name: Add known hosts
+        run: |
+          echo "${{ secrets.HOSTINGER_SSH_HOST }} ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..." >> ~/.ssh/known_hosts
+          mkdir -p ~/.ssh
+          echo "Host ${{ secrets.HOSTINGER_SSH_HOST }}
+            HostName ${{ secrets.HOSTINGER_SSH_HOST }}
+            Port ${{ secrets.HOSTINGER_SSH_PORT }}
+            User ${{ secrets.HOSTINGER_SSH_USER }}
+            StrictHostKeyChecking no
+            UserKnownHostsFile ~/.ssh/known_hosts" > ~/.ssh/config
+
+      - name: Deploy via SSH
+        env:
+          PROJECT_DIR: ${{ secrets.PROJECT_DIR }}
+          DB_DATABASE: ${{ secrets.PRODUCTION_DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.PRODUCTION_DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
+          APP_URL: ${{ secrets.PRODUCTION_APP_URL }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_SSH_PORT }} ${{ secrets.HOSTINGER_SSH_USER }}@${{ secrets.HOSTINGER_SSH_HOST }} << 'EOF'
+            set -e
+            
+            echo "=== Starting Deployment ==="
+            
+            PROJECT_DIR="$HOME/domains/homeputrainterior.com/webHPI"
+            REPO_URL="https://github.com/xamonxx/webHPI.git"
+            BRANCH="main"
+            
+            # Clone or pull
+            if [ ! -d "$PROJECT_DIR" ]; then
+              echo "Cloning repository..."
+              mkdir -p "$HOME/domains/homeputrainterior.com"
+              git clone -b $BRANCH $REPO_URL "$PROJECT_DIR"
+            else
+              echo "Pulling latest code..."
+              cd "$PROJECT_DIR"
+              git fetch origin $BRANCH
+              git reset --hard "origin/$BRANCH"
+            fi
+            
+            cd "$PROJECT_DIR"
+            
+            # Check .env exists
+            if [ ! -f ".env" ]; then
+              echo "ERROR: .env file not found!"
+              echo "Please create .env on server first."
+              exit 1
+            fi
+            
+            # Install dependencies
+            echo "Installing composer dependencies..."
+            composer install --no-dev --optimize-autoloader --no-interaction || true
+            
+            # Install npm and build
+            if command -v npm >/dev/null 2>&1; then
+              echo "Building frontend..."
+              npm ci --legacy-peer-deps || true
+              npm run build || true
+            fi
+            
+            # Laravel commands
+            echo "Running Laravel migrations..."
+            php artisan migrate --force --no-interaction || true
+            
+            echo "Clearing and caching..."
+            php artisan config:clear
+            php artisan cache:clear
+            php artisan route:clear
+            php artisan view:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+            php artisan optimize
+            
+            # Permissions
+            chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+            
+            # Storage link
+            php artisan storage:link 2>/dev/null || true
+            
+            echo "=== Deployment Complete ==="
+            date
+          EOF
+
+      - name: Verify deployment
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" ${{ secrets.PRODUCTION_APP_URL }} || echo "Site may need HTTPS configuration"
+
+      - name: Deployment status
+        if: success()
+        run: echo "✅ Deployment successful!"
+
+      - name: Deployment failed
+        if: failure()
+        run: echo "❌ Deployment failed. Check logs above."

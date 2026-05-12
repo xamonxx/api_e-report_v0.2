@@ -15,10 +15,31 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ExportController extends Controller
 {
+    /**
+     * Optimized CSV export: select only needed columns to reduce memory usage.
+     * Uses lazy() for chunked processing to handle large datasets.
+     */
     public function exportCsv(Request $request): StreamedResponse
     {
         $user = auth()->user();
-        $query = Consultation::query()->withProductRelations();
+        $query = Consultation::query()
+            ->select([
+                'consultations.id',
+                'consultations.consultation_id',
+                'consultations.client_name',
+                'consultations.phone',
+                'consultations.province',
+                'consultations.city',
+                'consultations.account_id',
+                'consultations.needs_category_id',
+                'consultations.product_details',
+                'consultations.status_category_id',
+                'consultations.notes',
+                'consultations.consultation_date',
+                'consultations.created_by',
+                'consultations.updated_at',
+            ])
+            ->withProductRelations();
 
         $query->forUser($user);
 

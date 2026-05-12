@@ -92,6 +92,8 @@ class AccountController extends Controller
                 $validated['logo_path'] = $request->file('logo')->store('accounts', 'public');
             }
 
+            unset($validated['logo'], $validated['remove_logo']);
+
             Account::create($validated);
         });
 
@@ -123,13 +125,19 @@ class AccountController extends Controller
         $validated = $request->validated();
 
         DB::transaction(function () use ($request, &$validated, $account) {
-            if ($request->hasFile('logo')) {
-                // Delete old logo to prevent orphan files
+            if ($request->boolean('remove_logo')) {
+                if ($account->logo_path) {
+                    Storage::disk('public')->delete($account->logo_path);
+                    $validated['logo_path'] = null;
+                }
+            } elseif ($request->hasFile('logo') && $request->file('logo')->isValid()) {
                 if ($account->logo_path) {
                     Storage::disk('public')->delete($account->logo_path);
                 }
                 $validated['logo_path'] = $request->file('logo')->store('accounts', 'public');
             }
+
+            unset($validated['logo'], $validated['remove_logo']);
 
             $account->update($validated);
         });

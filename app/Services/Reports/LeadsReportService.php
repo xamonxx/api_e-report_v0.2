@@ -356,14 +356,9 @@ class LeadsReportService
                 'aliases' => ['Hanya Tanya Tanya'],
             ],
             [
-                'category' => 'Penjadwalan',
-                'detail' => 'Menunggu jadwal survey atau janji temu lapangan',
-                'aliases' => ['Penjadwalan'],
-            ],
-            [
-                'category' => 'Perbandingan Harga',
-                'detail' => 'Sedang membandingkan harga dengan vendor lain',
-                'aliases' => ['Perbandingan Harga'],
+                'category' => 'Request Survey',
+                'detail' => 'Report Survey',
+                'aliases' => ['Request Survey', 'Masuk Survey', 'Survey'],
             ],
             [
                 'category' => 'Kendala Anggaran',
@@ -371,19 +366,19 @@ class LeadsReportService
                 'aliases' => ['Kendala Anggaran'],
             ],
             [
-                'category' => 'Menunggu Bangunan',
-                'detail' => 'Menunggu progres renovasi atau serah terima kunci',
-                'aliases' => ['Menunggu Bangunan'],
-            ],
-            [
                 'category' => 'Tidak Ada Respon',
                 'detail' => 'Tidak membalas pesan atau menunda komunikasi',
                 'aliases' => ['Tidak Ada Respon'],
             ],
             [
-                'category' => 'Masuk Survey',
-                'detail' => 'Report Survey',
-                'aliases' => ['Masuk Survey', 'Request Survey'],
+                'category' => 'Selesai/Deal',
+                'detail' => 'Closing atau sudah deal',
+                'aliases' => ['Selesai/Deal', 'Selesai Deal'],
+            ],
+            [
+                'category' => 'Masih konsultasi',
+                'detail' => 'Masih dalam proses konsultasi atau follow up',
+                'aliases' => ['Masih konsultasi', 'Masih Konsultasi', 'Penjadwalan', 'Perbandingan Harga', 'Menunggu Bangunan'],
             ],
         ]);
 
@@ -391,10 +386,16 @@ class LeadsReportService
             ->groupBy(fn (array $row) => $this->normalizeAnalysisCategory($row['status'] ?? ''))
             ->map->count();
         $total = max($detailRows->count(), 0);
+        $mappedStatusKeys = collect();
 
-        return $definitions->map(function (array $definition) use ($statusCounts, $total) {
+        $analysisRows = $definitions->map(function (array $definition) use ($statusCounts, $total, $mappedStatusKeys) {
             $count = collect($definition['aliases'])
-                ->sum(fn (string $alias) => (int) ($statusCounts[$this->normalizeAnalysisCategory($alias)] ?? 0));
+                ->sum(function (string $alias) use ($statusCounts, $mappedStatusKeys) {
+                    $key = $this->normalizeAnalysisCategory($alias);
+                    $mappedStatusKeys->push($key);
+
+                    return (int) ($statusCounts[$key] ?? 0);
+                });
 
             return [
                 'category' => $definition['category'],
@@ -403,6 +404,23 @@ class LeadsReportService
                 'percentage' => $total > 0 ? $count / $total : 0,
             ];
         });
+
+        $unmappedStatuses = $statusCounts
+            ->reject(fn (int $count, string $status) => $mappedStatusKeys->contains($status));
+
+        if ($unmappedStatuses->isNotEmpty()) {
+            $analysisRows->push([
+                'category' => 'Belum dikategorikan',
+                'detail' => $unmappedStatuses
+                    ->keys()
+                    ->map(fn (string $status) => $status !== '' && $status !== '-' ? $status : 'Tanpa status')
+                    ->implode(', '),
+                'count' => (int) $unmappedStatuses->sum(),
+                'percentage' => $total > 0 ? (int) $unmappedStatuses->sum() / $total : 0,
+            ]);
+        }
+
+        return $analysisRows;
     }
 
     private function normalizeAnalysisCategory(?string $value): string
