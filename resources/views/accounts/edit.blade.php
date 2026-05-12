@@ -30,28 +30,39 @@
         </div>
         @endif
 
-        <form method="POST" action="{{ route('accounts.update', $account) }}" enctype="multipart/form-data" class="space-y-6 sm:space-y-8">
+        <form method="POST" action="{{ route('accounts.update', $account) }}" enctype="multipart/form-data" class="space-y-6 sm:space-y-8" id="accountForm">
             @csrf @method('PUT')
+            <input type="hidden" name="remove_logo" value="0" id="removeLogoField" />
             
             {{-- Logo Section --}}
             <div class="space-y-3">
                 <label class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Logo / Branding Akun</label>
                 <div class="flex flex-col sm:flex-row items-center gap-6 p-4 bg-surface-container-low rounded-2xl border border-surface-container shadow-inner">
-                    @if($account->logo_path)
-                        <img src="{{ Storage::url($account->logo_path) }}" alt="{{ $account->name }} Logo" loading="lazy" class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-sm bg-white p-1 ring-1 ring-surface-container" />
-                    @else
-                        <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white flex items-center justify-center text-primary shadow-sm border border-surface-container shrink-0">
-                            <x-icon name="domain" class="w-8 h-8" />
-                        </div>
-                    @endif
+                    <div id="logoPreviewContainer">
+                        @if($account->logo_path)
+                            <img src="{{ Storage::url($account->logo_path) }}" alt="{{ $account->name }} Logo" loading="lazy" id="logoPreview" class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-sm bg-white p-1 ring-1 ring-surface-container" />
+                        @else
+                            <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white flex items-center justify-center text-primary shadow-sm border border-surface-container shrink-0" id="logoPlaceholder">
+                                <x-icon name="domain" class="w-8 h-8" />
+                            </div>
+                        @endif
+                    </div>
                     <div class="flex-1 w-full">
-                        <input type="file" name="logo" accept="image/*" class="block w-full text-xs text-on-surface-variant
+
+                        <input type="file" name="logo" accept="image/*" id="logoInput" class="block w-full text-xs text-on-surface-variant
                             file:mr-4 file:py-2 file:px-4
                             file:rounded-xl file:border-0
                             file:text-xs file:font-bold
                             file:bg-primary file:text-on-primary
                             hover:file:bg-primary-dim transition-all cursor-pointer shadow-sm
                         "/>
+                        @if($account->logo_path)
+                        <div class="flex items-center gap-2 mt-2" id="logoActions">
+                            <button type="button" id="removeLogoBtn" class="text-[9px] font-bold text-error bg-error/10 px-2 py-1 rounded-lg hover:bg-error/20 transition-all">
+                                Hapus Logo
+                            </button>
+                        </div>
+                        @endif
                         <p class="text-[9px] text-on-surface-variant mt-2 font-medium italic opacity-60">Gunakan format JPG/PNG, ukuran ideal 200x200px.</p>
                     </div>
                 </div>
@@ -99,4 +110,56 @@
         </form>
     </div>
 </div>
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const logoInput = document.getElementById('logoInput');
+    const logoPreviewContainer = document.getElementById('logoPreviewContainer');
+    const removeLogoBtn = document.getElementById('removeLogoBtn');
+    const removeLogoField = document.getElementById('removeLogoField');
+    
+    let originalLogoUrl = '{{ $account->logo_path ? Storage::url($account->logo_path) : '' }}';
+    let newLogoFile = null;
+    let logoRemoved = false;
+
+    logoInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        
+        if (file) {
+            newLogoFile = file;
+            logoRemoved = false;
+            removeLogoField.value = '0';
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                logoPreviewContainer.innerHTML = `
+                    <img src="${e.target.result}" alt="Preview Logo" class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-sm bg-white p-1 ring-1 ring-primary/50" />
+                `;
+            };
+            
+            reader.readAsDataURL(file);
+        }
+    });
+
+    if (removeLogoBtn) {
+        removeLogoBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            newLogoFile = null;
+            logoInput.value = '';
+            logoRemoved = true;
+            removeLogoField.value = '1';
+            
+            logoPreviewContainer.innerHTML = `
+                <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white flex items-center justify-center text-primary shadow-sm border border-surface-container shrink-0" id="logoPlaceholder">
+                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h8v2zm0-4h-8v-2h8v2zm0-4h-8V9h8v2zm0-4h-8V5h8v2z"/></svg>
+                </div>
+            `;
+        });
+    }
+});
+</script>
+@endpush
 @endsection

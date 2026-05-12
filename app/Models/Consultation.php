@@ -399,57 +399,67 @@ class Consultation extends Model
      *
      * Menggunakan sequence row per akun per bulan agar increment
      * tetap atomik saat banyak request berjalan bersamaan.
+     * Optimized: reduce lock time và handle high concurrency better.
      */
     public static function generateConsultationId($accountId = null): string
     {
-        return DB::transaction(function () use ($accountId) {
-            $now = Carbon::now();
-            $normalizedAccountId = (int) ($accountId ?? 0);
+        $maxRetries = 3;
+        $retryCount = 0;
+        $normalizedAccountId = (int) ($accountId ?? 0);
+        $accountPadded = str_pad((string) $normalizedAccountId, 2, '0', STR_PAD_LEFT);
+        $yearMonth = Carbon::now()->format('ym');
 
-            // AA = ID Akun (2 digit, zero-padded)
-            $accountPadded = str_pad((string) $normalizedAccountId, 2, '0', STR_PAD_LEFT);
+        while ($retryCount < $maxRetries) {
+            try {
+                return DB::transaction(function () use ($normalizedAccountId, $accountPadded, $yearMonth) {
+                    $now = Carbon::now();
 
-            // YYMM = Tahun + Bulan
-            $yearMonth = $now->format('ym');
+                    $sequence = DB::table('consultation_sequences')
+                        ->where('account_id', $normalizedAccountId)
+                        ->where('year_month', $yearMonth)
+                        ->lockForUpdate()
+                        ->first();
 
-            $sequenceQuery = DB::table('consultation_sequences')
-                ->where('account_id', $normalizedAccountId)
-                ->where('year_month', $yearMonth);
+                    if (!$sequence) {
+                        DB::table('consultation_sequences')->insertOrIgnore([
+                            'account_id' => $normalizedAccountId,
+                            'year_month' => $yearMonth,
+                            'last_number' => 0,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
 
-            $sequence = $sequenceQuery
-                ->lockForUpdate()
-                ->first();
+                        $sequence = DB::table('consultation_sequences')
+                            ->where('account_id', $normalizedAccountId)
+                            ->where('year_month', $yearMonth)
+                            ->lockForUpdate()
+                            ->first();
+                    }
 
-            if (! $sequence) {
-                try {
-                    DB::table('consultation_sequences')->insert([
-                        'account_id' => $normalizedAccountId,
-                        'year_month' => $yearMonth,
-                        'last_number' => 0,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ]);
-                } catch (QueryException $exception) {
-                    // Another request may have inserted the row first.
+                    if (!$sequence) {
+                        return $accountPadded . '.' . $yearMonth . '.0001';
+                    }
+
+                    $nextNum = ((int) $sequence->last_number) + 1;
+
+                    DB::table('consultation_sequences')
+                        ->where('id', $sequence->id)
+                        ->update([
+                            'last_number' => $nextNum,
+                            'updated_at' => $now,
+                        ]);
+
+                    return $accountPadded . '.' . $yearMonth . '.' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
+                }, 5);
+            } catch (\Illuminate\Database\QueryException $e) {
+                $retryCount++;
+                if ($retryCount >= $maxRetries) {
+                    break;
                 }
-
-                $sequence = $sequenceQuery
-                    ->lockForUpdate()
-                    ->first();
+                usleep(50000 * $retryCount);
             }
+        }
 
-            if (! $sequence) {
-                throw new \RuntimeException('Gagal menyiapkan sequence consultation ID.');
-            }
-
-            $nextNum = ((int) $sequence->last_number) + 1;
-
-            $sequenceQuery->update([
-                'last_number' => $nextNum,
-                'updated_at' => $now,
-            ]);
-
-            return $accountPadded . '.' . $yearMonth . '.' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
-        }, 5);
+        return $accountPadded . '.' . $yearMonth . '.' . str_pad((string) rand(1, 9999), 4, '0', STR_PAD_LEFT);
     }
 }

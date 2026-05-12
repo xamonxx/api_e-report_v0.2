@@ -27,12 +27,21 @@ class LeadsExcelExporter
     ];
 
     private const DATA_LEADS_COLUMNS = [
-        28, 132, 125, 151, 169, 115, 80, 88, 106, 131, 143, 272, 143, 167,
+        28, 132, 125, 151, 169, 145, 145, 145, 145, 131, 143, 272, 143, 167,
     ];
 
     private const ANALYSIS_COLUMNS = [213, 372, 143, 213];
 
     private const DATA_LEADS_TEMPLATE_ROWS = 302;
+
+    private const LEAD_STATUS_OPTIONS = [
+        'Hanya Tanya Tanya',
+        'Request Survey',
+        'Kendala Anggaran',
+        'Tidak Ada Respon',
+        'Selesai/Deal',
+        'Masih konsultasi',
+    ];
 
     private const METRIC_KEYS = [
         'interaction',
@@ -61,9 +70,9 @@ class LeadsExcelExporter
         $options = $this->excelOptions($report['allowedAccounts'] ?? null);
 
         $worksheets = [
-            $this->buildKlasemenSheet($report),
-            $this->buildAnalysisSheet($report),
             $this->buildDataSheet($report, $options),
+            $this->buildAnalysisSheet($report),
+            $this->buildKlasemenSheet($report, hidden: true),
             $this->buildOptionsSheet($options),
         ];
 
@@ -125,7 +134,7 @@ class LeadsExcelExporter
         return implode('', $xml);
     }
 
-    private function buildKlasemenSheet(array $report): array
+    private function buildKlasemenSheet(array $report, bool $hidden = false): array
     {
         $periodTitle = $report['periodTitle'] ?? strtoupper($report['periodLabel'] ?? '-');
 
@@ -227,6 +236,7 @@ class LeadsExcelExporter
             'columns' => self::KLASEMEN_COLUMNS,
             'rows' => $rows,
             'freeze_rows' => 8,
+            'hidden' => $hidden,
         ];
     }
 
@@ -351,7 +361,9 @@ class LeadsExcelExporter
     private function buildAnalysisSheet(array $report): array
     {
         $analysisRows = ($report['analysisRows'] ?? collect())->values();
-        $total = (int) ($report['analysisTotal'] ?? $analysisRows->sum('count'));
+        $prospectTotal = (int) ($report['analysisTotal'] ?? $analysisRows->sum('count'));
+        $categoryTotal = (int) $analysisRows->sum('count');
+        $totalPercentage = $prospectTotal > 0 ? $categoryTotal / $prospectTotal : 0;
         $periodTitle = $report['periodTitle'] ?? strtoupper($report['periodLabel'] ?? '-');
 
         $rows = [
@@ -364,7 +376,7 @@ class LeadsExcelExporter
             ], 18),
             $this->row([
                 $this->cell('Total Prospek :', 'analysisMetaLabel'),
-                $this->cell($total, 'analysisMetaValueNumber', 'Number', mergeAcross: 2),
+                $this->cell($prospectTotal, 'analysisMetaValueNumber', 'Number', mergeAcross: 2),
             ], 18),
             $this->blankRow(4, 16),
             $this->row([
@@ -387,8 +399,8 @@ class LeadsExcelExporter
         $rows[] = $this->row([
             $this->cell('TOTAL', 'analysisBodyBold'),
             $this->cell('', 'analysisBody'),
-            $this->cell($total, 'analysisBodyNumber', 'Number'),
-            $this->cell($total > 0 ? 1 : 0, 'analysisBodyPercent', 'Number'),
+            $this->cell($categoryTotal, 'analysisBodyNumber', 'Number'),
+            $this->cell($totalPercentage, 'analysisBodyPercent', 'Number'),
         ], 18);
 
         return [
@@ -425,6 +437,9 @@ class LeadsExcelExporter
             count($options['statuses']),
             count($options['domiciles']),
             count($options['sequences']),
+            count($options['city_province_rows']),
+            count($options['city_province_lookup_rows']),
+            count($options['city_domicile_lookup_rows']),
             1
         );
 
@@ -438,12 +453,21 @@ class LeadsExcelExporter
                 $this->cell('Sequence Key', 'dataLeadHeader'),
                 $this->cell('Sequence Akun', 'dataLeadHeader'),
                 $this->cell('Last Number', 'dataLeadHeader'),
+                $this->cell('Kota/Kabupaten', 'dataLeadHeader'),
+                $this->cell('Provinsi Mapping', 'dataLeadHeader'),
+                $this->cell('Kota Lookup', 'dataLeadHeader'),
+                $this->cell('Provinsi Lookup', 'dataLeadHeader'),
+                $this->cell('Kota Domisili Lookup', 'dataLeadHeader'),
+                $this->cell('Domisili Lookup', 'dataLeadHeader'),
             ], 22),
         ];
 
         for ($index = 0; $index < $maxRows; $index++) {
             $account = $options['accounts'][$index] ?? null;
             $sequence = $options['sequences'][$index] ?? null;
+            $cityProvince = $options['city_province_rows'][$index] ?? null;
+            $cityProvinceLookup = $options['city_province_lookup_rows'][$index] ?? null;
+            $cityDomicileLookup = $options['city_domicile_lookup_rows'][$index] ?? null;
 
             $rows[] = $this->row([
                 $this->cell($account['name'] ?? '', 'dataLeadBody'),
@@ -454,12 +478,18 @@ class LeadsExcelExporter
                 $this->cell($sequence['key'] ?? '', 'dataLeadBody'),
                 $this->cell($sequence['account_id'] ?? '', 'dataLeadBody', ($sequence['account_id'] ?? '') !== '' ? 'Number' : 'String'),
                 $this->cell($sequence['last_number'] ?? '', 'dataLeadBody', ($sequence['last_number'] ?? '') !== '' ? 'Number' : 'String'),
+                $this->cell($cityProvince['city'] ?? '', 'dataLeadBody'),
+                $this->cell($cityProvince['province'] ?? '', 'dataLeadBody'),
+                $this->cell($cityProvinceLookup['city'] ?? '', 'dataLeadBody'),
+                $this->cell($cityProvinceLookup['province'] ?? '', 'dataLeadBody'),
+                $this->cell($cityDomicileLookup['city'] ?? '', 'dataLeadBody'),
+                $this->cell($cityDomicileLookup['domicile'] ?? '', 'dataLeadBody'),
             ], 18);
         }
 
         return [
             'name' => 'Opsi',
-            'columns' => [190, 70, 190, 190, 105, 115, 95, 95],
+            'columns' => [190, 70, 190, 190, 105, 115, 95, 95, 200, 160, 200, 160, 200, 115],
             'rows' => $rows,
             'freeze_rows' => 1,
             'hidden' => true,
@@ -468,6 +498,10 @@ class LeadsExcelExporter
                 ['name' => 'ProductOptions', 'refers_to' => '=Opsi!R2C3:R' . max(2, count($options['products']) + 1) . 'C3'],
                 ['name' => 'StatusOptions', 'refers_to' => '=Opsi!R2C4:R' . max(2, count($options['statuses']) + 1) . 'C4'],
                 ['name' => 'DomicileOptions', 'refers_to' => '=Opsi!R2C5:R' . max(2, count($options['domiciles']) + 1) . 'C5'],
+                ['name' => 'CityOptions', 'refers_to' => '=Opsi!R2C9:R' . max(2, count($options['city_province_rows']) + 1) . 'C9'],
+                ['name' => 'CityProvinceMap', 'refers_to' => '=Opsi!R2C9:R' . max(2, count($options['city_province_rows']) + 1) . 'C10'],
+                ['name' => 'CityProvinceLookup', 'refers_to' => '=Opsi!R2C11:R' . max(2, count($options['city_province_lookup_rows']) + 1) . 'C12'],
+                ['name' => 'CityDomicileLookup', 'refers_to' => '=Opsi!R2C13:R' . max(2, count($options['city_domicile_lookup_rows']) + 1) . 'C14'],
             ],
         ];
     }
@@ -478,15 +512,21 @@ class LeadsExcelExporter
             $this->row([
                 $this->cell('', 'dataLeadNoteBlank'),
                 $this->cell(
-                    "Note : \n*Untuk coloum yang berwarna BIRU, mohon di isi dengan pilihan yang telah tersedian\n*Untuk coloum yang berwarna Orange, Dilarang di isi karena sudah otomatis",
+                    "Note:\n*Ikuti legenda warna di samping.\n*Gunakan pilihan dropdown jika tersedia.\n*Tanggal pakai format tanggal/bulan/tahun. Contoh: 07/05/2026.\n*Tips tanggal: bisa ketik 7/5 lalu Enter, 07/05 lalu Enter, atau 7/5/26 lalu Enter.",
                     'dataLeadNote',
                     mergeAcross: 3,
                     mergeDown: 1
                 ),
+                $this->cell('BIRU: boleh diubah, pilih dari dropdown', 'dataLeadBlueWrap', index: 6, mergeAcross: 1),
+                $this->cell('PUTIH: boleh diisi manual', 'dataLeadBodyWrap', mergeAcross: 1),
+                $this->cell('ORANGE: otomatis, jangan diubah', 'dataLeadAutoWrap', mergeAcross: 1),
             ], 36),
             $this->row([
                 $this->cell('', 'dataLeadNoteBlank'),
-            ], 18),
+                $this->cell('Contoh: Nama Akun, Jenis Kebutuhan, Kategori, Kota Kab.', 'dataLeadBlueWrap', index: 6, mergeAcross: 1),
+                $this->cell('Contoh: Nama Konsumen, WA, Detail, Catatan', 'dataLeadBodyWrap', mergeAcross: 1),
+                $this->cell('Contoh: NO, ID Konsumen, Domisili, Provinsi', 'dataLeadAutoWrap', mergeAcross: 1),
+            ], 36),
             $this->row([
                 $this->cell('NO', 'dataLeadHeader', mergeDown: 1),
                 $this->cell('ID KONSUMEN', 'dataLeadHeader', mergeDown: 1),
@@ -521,17 +561,17 @@ class LeadsExcelExporter
                 ? $this->cell($number, 'dataLeadAuto', 'Number')
                 : $this->cell('', 'dataLeadAuto', formula: $this->rowNumberFormula()),
             $consultationId !== ''
-                ? $this->cell($consultationId, 'dataLeadBody')
-                : $this->cell('', 'dataLeadBody', formula: $this->consultationIdFormula()),
+                ? $this->cell($consultationId, 'dataLeadAuto')
+                : $this->cell('', 'dataLeadAuto', formula: $this->consultationIdFormula()),
             ! empty($item['consultation_date_excel'])
                 ? $this->cell($item['consultation_date_excel'], 'dataLeadDate', 'DateTime')
                 : $this->cell('', 'dataLeadDate'),
             $this->cell($item['account'] ?? '', 'dataLeadBlue'),
             $this->cell($item['client_name'] ?? '', 'dataLeadBody'),
             $this->cell($item['phone'] ?? '', 'dataLeadPhone'),
-            $this->cell($item['domicile'] ?? '', 'dataLeadBody'),
-            $this->cell($item['province'] ?? '', 'dataLeadBody'),
-            $this->cell($item['city'] ?? '', 'dataLeadBody'),
+            $this->cell($item['domicile'] ?? '', 'dataLeadAuto', formula: $this->domicileByCityFormula()),
+            $this->cell($item['province'] ?? '', 'dataLeadAuto', formula: $this->provinceByCityFormula()),
+            $this->cell($this->excelCityName($item['city'] ?? ''), 'dataLeadBlue'),
             $this->cell($item['need'] ?? '', 'dataLeadBlue'),
             $this->cell($item['product_details'] ?? '', 'dataLeadBodyWrap'),
             $this->cell($item['notes'] ?? '', 'dataLeadBodyWrap'),
@@ -581,11 +621,13 @@ class LeadsExcelExporter
             ->values()
             ->all();
 
-        $statuses = StatusCategory::query()
-            ->orderBy('sort_order')
-            ->orderBy('name')
+        $availableStatuses = StatusCategory::query()
+            ->whereIn('name', self::LEAD_STATUS_OPTIONS)
             ->pluck('name')
-            ->map(fn ($name) => (string) $name)
+            ->flip();
+
+        $statuses = collect(self::LEAD_STATUS_OPTIONS)
+            ->filter(fn (string $status) => $availableStatuses->has($status))
             ->values()
             ->all();
 
@@ -603,13 +645,129 @@ class LeadsExcelExporter
             ->values()
             ->all();
 
+        $cityProvinceRows = collect(config('wilayah_kota.mapping', []))
+            ->map(fn (string $province, string $city) => [
+                'city' => $this->excelCityName($city),
+                'province' => $province,
+            ])
+            ->sortBy([
+                ['province', 'asc'],
+                ['city', 'asc'],
+            ], SORT_NATURAL | SORT_FLAG_CASE)
+            ->values()
+            ->all();
+
+        $cityProvinceLookupRows = $this->cityProvinceLookupRows($cityProvinceRows);
+        $cityDomicileLookupRows = $this->cityDomicileLookupRows($cityProvinceLookupRows);
+
         return [
             'accounts' => $accountRows,
             'products' => $products,
             'statuses' => $statuses,
             'domiciles' => ['Dalam Kota', 'Luar Kota'],
+            'city_province_rows' => $cityProvinceRows,
+            'city_province_lookup_rows' => $cityProvinceLookupRows,
+            'city_domicile_lookup_rows' => $cityDomicileLookupRows,
             'sequences' => $sequences,
         ];
+    }
+
+    private function cityProvinceLookupRows(array $cityProvinceRows): array
+    {
+        $shortAliases = [
+            'Jakarta Barat' => 'Jakbar',
+            'Jakarta Pusat' => 'Jakpus',
+            'Jakarta Selatan' => 'Jaksel',
+            'Jakarta Timur' => 'Jaktim',
+            'Jakarta Utara' => 'Jakut',
+            'Bandung Barat' => 'KBB',
+            'Tangerang Selatan' => 'Tangsel',
+        ];
+
+        return collect($cityProvinceRows)
+            ->flatMap(function (array $row) use ($shortAliases) {
+                $city = (string) $row['city'];
+                $province = (string) $row['province'];
+                $plainCity = preg_replace('/^(Kota Administrasi|Kabupaten Administrasi|Kota|Kabupaten|Kab\.)\s+/u', '', $city);
+                $longCity = $this->fullCityName($city);
+                $names = collect([$city, $plainCity]);
+
+                if (str_starts_with($city, 'Kab. ')) {
+                    $names->push(str_replace('Kab. ', 'Kab ', $city));
+                }
+
+                if ($longCity !== $city) {
+                    $names->push($longCity);
+                }
+
+                if (isset($shortAliases[$plainCity])) {
+                    $names->push($shortAliases[$plainCity]);
+                }
+
+                return $names
+                    ->filter()
+                    ->unique()
+                    ->map(fn (string $name) => [
+                        'city' => $name,
+                        'province' => $province,
+                    ]);
+            })
+            ->unique(fn (array $row) => mb_strtolower($row['city']))
+            ->sortBy([
+                ['province', 'asc'],
+                ['city', 'asc'],
+            ], SORT_NATURAL | SORT_FLAG_CASE)
+            ->values()
+            ->all();
+    }
+
+    private function cityDomicileLookupRows(array $cityProvinceLookupRows): array
+    {
+        return collect($cityProvinceLookupRows)
+            ->map(fn (array $row) => [
+                'city' => (string) $row['city'],
+                'domicile' => $this->isInsideBandungArea((string) $row['city']) ? 'Dalam Kota' : 'Luar Kota',
+            ])
+            ->unique(fn (array $row) => mb_strtolower($row['city']))
+            ->sortBy('city', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values()
+            ->all();
+    }
+
+    private function isInsideBandungArea(string $city): bool
+    {
+        $normalized = str($city)
+            ->lower()
+            ->replace(['.', '-', '_'], ' ')
+            ->squish()
+            ->toString();
+
+        return in_array($normalized, [
+            'bandung',
+            'kota bandung',
+            'kab bandung',
+            'kabupaten bandung',
+            'bandung barat',
+            'kab bandung barat',
+            'kabupaten bandung barat',
+            'kbb',
+            'cimahi',
+            'kota cimahi',
+        ], true);
+    }
+
+    private function excelCityName(?string $city): string
+    {
+        $city = trim((string) $city);
+        $city = preg_replace('/^Kota Administrasi\s+/u', '', $city) ?? $city;
+        $city = preg_replace('/^Kabupaten Administrasi\s+/u', '', $city) ?? $city;
+
+        return preg_replace('/^Kabupaten\s+/u', 'Kab. ', $city) ?? $city;
+    }
+
+    private function fullCityName(string $city): string
+    {
+        return preg_replace('/^Kab\.\s+/u', 'Kabupaten ', $city) ?? $city;
     }
 
     private function dataLeadsValidations(int $rowCount, array $options): array
@@ -618,7 +776,7 @@ class LeadsExcelExporter
 
         return [
             ['range' => "R5C4:R{$lastRow}C4", 'value' => '=AccountOptions'],
-            ['range' => "R5C7:R{$lastRow}C7", 'value' => '=DomicileOptions'],
+            ['range' => "R5C9:R{$lastRow}C9", 'value' => '=CityOptions'],
             ['range' => "R5C10:R{$lastRow}C10", 'value' => '=ProductOptions'],
             ['range' => "R5C13:R{$lastRow}C13", 'value' => '=StatusOptions'],
         ];
@@ -653,6 +811,16 @@ class LeadsExcelExporter
     private function rowNumberFormula(): string
     {
         return '=IF(OR(RC[4]="",RC[5]=""),"",COUNTA(R5C5:RC[4]))';
+    }
+
+    private function provinceByCityFormula(): string
+    {
+        return '=IF(RC[1]="","",IFERROR(VLOOKUP(RC[1],CityProvinceLookup,2,FALSE),""))';
+    }
+
+    private function domicileByCityFormula(): string
+    {
+        return '=IF(RC[2]="","",IFERROR(VLOOKUP(RC[2],CityDomicileLookup,2,FALSE),"Luar Kota"))';
     }
 
     private function currentMonthKeyFormula(): string
@@ -910,10 +1078,12 @@ class LeadsExcelExporter
             . $this->style('dataLeadHeader', '#A8D08E', '#000000', true, 12, 'Center', 'Center', borderWeight: 2)
             . $this->style('dataLeadHeaderBlue', '#6699FF', '#000000', true, 12, 'Center', 'Center', borderWeight: 2)
             . $this->style('dataLeadAuto', '#FFC000', '#000000', true, 11, 'Center', 'Center')
+            . $this->style('dataLeadAutoWrap', '#FFC000', '#000000', true, 11, 'Center', 'Center', true)
             . $this->style('dataLeadBody', '#FFFFFF', '#000000', true, 11, 'Center', 'Center')
             . $this->style('dataLeadBodyWrap', '#FFFFFF', '#000000', true, 11, 'Center', 'Center', true)
             . $this->style('dataLeadPhone', '#FFFFFF', '#000000', true, 11, 'Center', 'Center', numberFormat: '@')
             . $this->style('dataLeadBlue', '#6699FF', '#000000', true, 11, 'Center', 'Center')
+            . $this->style('dataLeadBlueWrap', '#6699FF', '#000000', true, 11, 'Center', 'Center', true)
             . $this->style('dataLeadDate', '#FFFFFF', '#000000', true, 11, 'Center', 'Center', numberFormat: 'dd/mm/yyyy')
             . $this->style('analysisTitle', '#FFFFFF', '#000000', true, 14, 'Left', 'Center', border: false)
             . $this->style('analysisMetaLabel', '#FFFFFF', '#000000', true, 14, 'Left', 'Center', border: false)

@@ -21,7 +21,12 @@ class AccountRequest extends FormRequest
         $this->merge([
             'name' => $cleanText($this->input('name')),
             'description' => $cleanText($this->input('description')),
+            'remove_logo' => $this->boolean('remove_logo') ? '1' : '0',
         ]);
+
+        if ($this->hasFile('logo') && !$this->file('logo')->isValid()) {
+            $this->merge(['logo' => null]);
+        }
     }
 
     public function rules(): array
@@ -39,6 +44,7 @@ class AccountRequest extends FormRequest
             'description' => ['nullable', 'string', 'max:120'],
             'target_leads' => ['nullable', 'integer', 'min:1', 'max:1000000'],
             'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
+            'remove_logo' => ['nullable', 'boolean'],
         ];
     }
 
