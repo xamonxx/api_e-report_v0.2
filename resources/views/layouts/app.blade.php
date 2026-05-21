@@ -28,7 +28,7 @@
         })();
     </script>
     @stack('head')
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @vite(['resources/css/app.css', 'resources/js/app.js', 'frontend/src/main.tsx'])
 </head>
 @php $isSidebarOpen = request()->cookie('sidebar_open', 'false') === 'true'; @endphp
 <body class="bg-surface text-on-surface selection:bg-primary-container selection:text-primary overflow-x-hidden"

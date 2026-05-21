@@ -420,11 +420,6 @@
                                  x-transition:enter-start="opacity-0 -translate-y-1"
                                  x-transition:enter-end="opacity-100 translate-y-0"
                                 class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
-                                <div class="border-b border-surface-container-low p-3">
-                                    <input x-ref="searchInput" type="text" x-model="search"
-                                           class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
-                                           placeholder="Cari status..." autocomplete="off">
-                                </div>
                                 <div class="max-h-60 overflow-y-auto p-1.5">
                                     <template x-if="filteredOptions().length === 0">
                                         <div class="px-4 py-3 text-sm text-outline-variant">Status tidak ditemukan.</div>
@@ -445,7 +440,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="space-y-2">
                     <label for="consultation_date" class="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-1">Tanggal Konsultasi</label>
-                    <input type="date" id="consultation_date" name="consultation_date" value="{{ old('consultation_date', $consultation->consultation_date?->format('Y-m-d')) }}"
+                    <input type="text" data-datepicker data-datepicker-placeholder="Pilih tanggal" id="consultation_date" name="consultation_date" value="{{ old('consultation_date', $consultation->consultation_date?->format('Y-m-d')) }}"
                            class="w-full bg-surface-container-low border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 shadow-inner font-medium" />
                 </div>
             </div>

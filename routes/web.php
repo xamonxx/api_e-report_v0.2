@@ -48,6 +48,7 @@ Route::middleware('auth')->group(function () {
     // Consultations (Leads)
     Route::post('/consultations/import', [ConsultationController::class, 'importCsv'])->name('consultations.import');
     Route::get('/consultations/import/template', [ConsultationController::class, 'downloadTemplate'])->name('consultations.template');
+    Route::patch('/consultations/{consultation}/status', [ConsultationController::class, 'updateStatus'])->name('consultations.update-status');
     Route::resource('consultations', ConsultationController::class);
 
     // Audit Logs

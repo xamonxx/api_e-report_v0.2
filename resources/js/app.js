@@ -531,6 +531,63 @@ window.consultationsPage = function consultationsPage(config) {
         showCreateModal: config.showCreateModal,
         createUrl: config.createUrl,
         showEditModal: false,
+        currentView: localStorage.getItem('leads_view') || 'table',
+        setView(view) {
+            this.currentView = view;
+            localStorage.setItem('leads_view', view);
+        },
+        draggedLeadId: null,
+        dragStart(event, leadId) {
+            this.draggedLeadId = leadId;
+            event.dataTransfer.setData('text/plain', leadId);
+            event.dataTransfer.effectAllowed = 'move';
+        },
+        async dropLead(event, statusId) {
+            const leadId = event.dataTransfer.getData('text/plain') || this.draggedLeadId;
+            if (!leadId) return;
+            await this.updateLeadStatus(leadId, statusId);
+            this.draggedLeadId = null;
+        },
+        async updateLeadStatus(leadId, statusId) {
+            const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            try {
+                const response = await fetch(`/consultations/${leadId}/status`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': token
+                    },
+                    body: JSON.stringify({ status_category_id: statusId })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    window.withSwal((Swal) => {
+                        Swal.fire({
+                            toast: true,
+                            position: 'top-end',
+                            icon: 'success',
+                            title: data.message || 'Status berhasil diperbarui',
+                            showConfirmButton: false,
+                            timer: 1500
+                        }).then(() => {
+                            window.location.reload();
+                        });
+                    });
+                } else {
+                    throw new Error(data.message || 'Gagal memperbarui status');
+                }
+            } catch (error) {
+                window.withSwal((Swal) => {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Oops...',
+                        text: error.message || 'Terjadi kesalahan saat memperbarui status.',
+                    });
+                });
+            }
+        },
         editData: {
             id: '',
             consultation_id: '',
