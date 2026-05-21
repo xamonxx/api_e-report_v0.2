@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /app)",
+      "Read(//app/**)",
+      "Bash(npm --version)",
+      "Bash(php --version)",
+      "Bash(composer --version)",
+      "Bash(mkdir -p /c/laragon/www/E-report/app/Http/Controllers/Api)",
+      "Bash(mkdir -p /c/laragon/www/E-report/app/Http/Resources)",
+      "Bash(mkdir -p /c/laragon/www/E-report/app/Services)",
+      "Bash(mkdir -p /c/laragon/www/E-report/routes)",
+      "Bash(composer require *)",
+      "Bash(npm install *)",
+      "Bash(php artisan *)"
+    ]
+  }
+}

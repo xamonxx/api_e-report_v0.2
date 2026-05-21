@@ -530,11 +530,6 @@
                                              x-transition:enter-start="opacity-0 -translate-y-1"
                                              x-transition:enter-end="opacity-100 translate-y-0"
                                              class="app-select-panel absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
-                                            <div class="border-b border-surface-container-low p-3">
-                                                <input x-ref="searchInput" type="text" x-model="search"
-                                                       class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
-                                                       placeholder="Cari status..." autocomplete="off">
-                                            </div>
                                             <div class="max-h-60 overflow-y-auto p-1.5">
                                                 <template x-if="filteredOptions().length === 0">
                                                     <div class="px-4 py-3 text-sm text-outline-variant">Status tidak ditemukan.</div>
@@ -1011,11 +1006,6 @@
                                              x-transition:enter-start="opacity-0 -translate-y-1"
                                              x-transition:enter-end="opacity-100 translate-y-0"
                                              class="app-select-panel absolute left-0 right-0 top-full z-[70] mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
-                                            <div class="border-b border-surface-container-low p-3">
-                                                <input x-ref="searchInput" type="text" x-model="search"
-                                                       class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
-                                                       placeholder="Cari status..." autocomplete="off">
-                                            </div>
                                             <div class="max-h-60 overflow-y-auto p-1.5">
                                                 <template x-if="filteredOptions().length === 0">
                                                     <div class="px-4 py-3 text-sm text-outline-variant">Status tidak ditemukan.</div>
@@ -1123,7 +1113,7 @@
             this.manualMobilePreference = this.filterOpen;
         }
     }"
-    class="w-full max-w-[1020px] bg-surface-container-lowest p-4 sm:p-5 rounded-2xl shadow-sm mb-6 no-print border border-surface-container-low">
+    class="w-full bg-surface-container-lowest p-4 sm:p-5 rounded-2xl shadow-sm mb-6 no-print border border-surface-container-low">
     <div class="xl:hidden rounded-2xl border border-surface-container-low bg-surface-container-low/40 px-3.5 py-3 shadow-inner">
         <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -1150,7 +1140,7 @@
          x-transition:leave-end="opacity-0 -translate-y-2"
          class="mt-4 xl:mt-0">
     <form method="GET" action="{{ route('consultations.index') }}" class="space-y-4">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 {{ auth()->user()->isSuperAdmin() ? '2xl:grid-cols-4' : '' }} gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
             {{-- Search --}}
             <div class="xl:col-span-1">
                 <label class="block text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest mb-1.5 px-1 opacity-70">Search</label>
@@ -1294,11 +1284,6 @@
                          x-transition:enter-start="opacity-0 -translate-y-1"
                          x-transition:enter-end="opacity-100 translate-y-0"
                         class="app-select-panel absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-surface-container-low bg-surface-container-lowest shadow-2xl">
-                        <div class="border-b border-surface-container-low p-3">
-                            <input x-ref="searchInput" type="text" x-model="search"
-                                   class="w-full rounded-xl border-0 bg-surface-container-low px-4 py-3 text-sm shadow-inner focus:ring-2 focus:ring-primary/20"
-                                   placeholder="Cari status..." autocomplete="off">
-                        </div>
                         <div class="max-h-60 overflow-y-auto p-1.5">
                             <template x-if="filteredOptions().length === 0">
                                 <div class="px-4 py-3 text-sm text-outline-variant">Status tidak ditemukan.</div>

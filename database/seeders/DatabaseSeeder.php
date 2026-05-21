@@ -111,6 +111,7 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Kendala Anggaran', 'color' => '#9f403d', 'css_class' => 'chip-kendala-anggaran', 'sort_order' => 3],
             ['name' => 'Tidak Ada Respon', 'color' => '#737c7f', 'css_class' => 'chip-tidak-ada-respon', 'sort_order' => 4],
             ['name' => 'Selesai/Deal', 'color' => '#006d4a', 'css_class' => 'chip-selesai-deal', 'sort_order' => 5],
+            ['name' => 'Masih konsultasi', 'color' => '#2563eb', 'css_class' => 'chip-masih-konsultasi', 'sort_order' => 6],
         ];
 
         foreach ($statuses as $status) {

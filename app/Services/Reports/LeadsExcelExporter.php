@@ -355,6 +355,7 @@ class LeadsExcelExporter
             'rows' => $rows,
             'freeze_rows' => 4,
             'validations' => $this->dataLeadsValidations($minimumRows, $options),
+            'conditional_formats' => $this->dataLeadsConditionalFormats($minimumRows),
         ];
     }
 

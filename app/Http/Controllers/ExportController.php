@@ -8,6 +8,7 @@ use App\Services\Reports\AnalyticsExcelExporter;
 use App\Services\Reports\AnalyticsReportService;
 use App\Services\Reports\LeadsExcelExporter;
 use App\Services\Reports\LeadsReportService;
+use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -111,7 +112,9 @@ class ExportController extends Controller
             [
                 'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
                 'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-                'Cache-Control' => 'max-age=0',
+                'Pragma' => 'no-cache',
+                'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+                'Expires' => '0',
             ]
         );
     }
@@ -130,20 +133,21 @@ class ExportController extends Controller
     public function exportAnalyticsExcel(
         AnalyticsReportRequest $request,
         AnalyticsReportService $reportService,
-        AnalyticsExcelExporter $excelExporter
+        AnalyticsExcelExporter $excelExporter,
+        SpreadsheetXmlToXlsxConverter $xlsxConverter
     ): Response {
         $report = $reportService->buildForUser(
             $request->user(),
             $request->validated(),
             ['includeRawRows' => true]
         );
-        $filename = $this->analyticsFilename('xls', $report);
+        $filename = $this->analyticsFilename('xlsx', $report);
 
         return response(
-            $excelExporter->buildWorkbook($report),
+            $xlsxConverter->convert($excelExporter->buildWorkbook($report)),
             200,
             [
-                'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'Content-Disposition' => 'attachment; filename="' . $filename . '"',
                 'Cache-Control' => 'max-age=0',
             ]

@@ -8,6 +8,7 @@ use App\Models\ReportAttendance;
 use Carbon\Carbon;
 use App\Models\User;
 use App\Services\Reports\AdminReportAttendanceExcelExporter;
+use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -118,7 +119,11 @@ class ReportAttendanceController extends Controller
         return back()->with('success', 'Status absensi admin berhasil diperbarui.');
     }
 
-    public function export(Request $request, AdminReportAttendanceExcelExporter $excelExporter): Response
+    public function export(
+        Request $request,
+        AdminReportAttendanceExcelExporter $excelExporter,
+        SpreadsheetXmlToXlsxConverter $xlsxConverter
+    ): Response
     {
         $user = auth()->user();
         if (!$user->isSuperAdmin()) {
@@ -132,10 +137,10 @@ class ReportAttendanceController extends Controller
 
         $date = Carbon::parse($validated['date'] ?? Carbon::today()->format('Y-m-d'));
         $accountGroup = $validated['account_group'];
-        $filename = sprintf('rekap-laporan-admin-%s-%s.xls', strtolower($accountGroup), $date->format('Y-m'));
+        $filename = sprintf('rekap-laporan-admin-%s-%s.xlsx', strtolower($accountGroup), $date->format('Y-m'));
 
-        return response($excelExporter->buildWorkbook($date, $accountGroup), 200, [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+        return response($xlsxConverter->convert($excelExporter->buildWorkbook($date, $accountGroup)), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             'Cache-Control' => 'max-age=0',
         ]);

@@ -336,6 +336,34 @@ class ConsultationController extends Controller
         return response()->json(['id' => $previewId]);
     }
 
+    /**
+     * API: Update status category of a consultation.
+     */
+    public function updateStatus(Request $request, Consultation $consultation)
+    {
+        $this->authorize('update', $consultation);
+
+        $validated = $request->validate([
+            'status_category_id' => ['required', 'integer', 'exists:status_categories,id'],
+        ]);
+
+        $previousStatusId = $consultation->status_category_id;
+
+        $consultation->update([
+            'status_category_id' => $validated['status_category_id'],
+        ]);
+
+        $this->flushDashboardCache([(int) $consultation->account_id]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status lead berhasil diperbarui!',
+            'client_name' => $consultation->client_name,
+            'old_status_id' => $previousStatusId,
+            'new_status_id' => $consultation->status_category_id,
+        ]);
+    }
+
     private function flushDashboardCache(array $accountIds = []): void
     {
         Cache::forget('dashboard:super_admin');
@@ -345,3 +373,4 @@ class ConsultationController extends Controller
         }
     }
 }
+

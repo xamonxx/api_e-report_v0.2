@@ -12,7 +12,7 @@
     <div class="login-stage relative z-10 mx-auto flex flex-col h-full min-h-screen w-full max-w-[1360px] items-center justify-center px-4 sm:px-6 lg:px-8 py-10 lg:py-12 2xl:py-16">
         
         {{-- Mobile & Tablet Header (< xl) --}}
-        <div class="w-full flex items-center justify-between mb-8 xl:hidden animate-fade-in">
+        <div class="w-full flex items-center justify-between mb-8 xl:hidden ">
             <img src="{{ asset('images/putra_corporation_exact_512.png') }}" 
                  alt="Putra Corporation Logo" 
                  width="512"
@@ -55,7 +55,7 @@
                     </div>
                     
                     {{-- Unified Header (Logo + Toggle) INSIDE the slider panel --}}
-                    <div class="relative z-50 flex items-center justify-between px-8 pt-3 w-full animate-fade-in">
+                    <div class="relative z-50 flex items-center justify-between px-8 pt-3 w-full ">
                         <img src="{{ asset('images/putra_corporation_exact_512.png') }}" 
                              alt="Putra Corporation Logo" 
                              width="512"
@@ -328,7 +328,7 @@
 
             {{-- Right Side: Login Form --}}
             <div class="login-form-column flex w-full items-center justify-center xl:justify-end xl:col-span-5 relative z-20 pt-2 sm:pt-4 xl:pt-0 mt-1 sm:mt-4 xl:mt-0">
-                <div class="login-panel relative w-full max-w-[420px] xl:max-w-[430px] 2xl:max-w-[440px] animate-fade-in rounded-[1.75rem] p-5 sm:p-6 lg:px-7 lg:py-6 bg-surface-container/60 sm:bg-surface-container/40 border border-outline-variant/30 backdrop-blur-xl shadow-2xl"
+                <div class="login-panel relative w-full max-w-md rounded-2xl p-6 sm:p-8 bg-surface-container-lowest border border-surface-container-low shadow-xl"
                      role="region"
                      aria-labelledby="login-heading">
                     
@@ -336,12 +336,12 @@
 
                     {{-- Header --}}
                     <div class="mb-6 sm:mb-7 text-center xl:text-left">
-                        <h1 id="login-heading" class="text-[1.95rem] sm:text-[2.1rem] lg:text-[2.2rem] font-extrabold leading-[1.05] mb-2 tracking-[-0.03em] text-on-surface">Selamat Datang</h1>
-                        <p class="text-on-surface-variant text-[14px] sm:text-[15px] font-medium leading-relaxed max-w-[360px] mx-auto xl:mx-0">Kelola laporan, prospek, dan aktivitas tim dari satu tempat yang terintegrasi.</p>
+                        <h1 id="login-heading" class="text-2xl sm:text-3xl font-bold tracking-tight mb-2 text-on-surface">Selamat Datang</h1>
+                        <p class="text-on-surface-variant text-sm sm:text-base max-w-[360px] mx-auto xl:mx-0">Kelola laporan, prospek, dan aktivitas tim dari satu tempat yang terintegrasi.</p>
                     </div>
 
                     @if($errors->any())
-                    <div class="bg-error/10 border border-error/20 text-error px-4 py-3.5 rounded-xl text-sm font-medium flex items-start gap-3 mb-5 sm:mb-6 shadow-inner animate-fade-in">
+                    <div class="bg-error/10 border border-error/20 text-error px-4 py-3.5 rounded-xl text-sm font-medium flex items-start gap-3 mb-5 sm:mb-6 shadow-inner ">
                         <x-icon name="error" class="w-5 h-5 shrink-0" />
                         <span>{{ $errors->first('email') ?: $errors->first('password') ?: 'Kredensial tidak cocok. Silakan periksa kembali email & sandi Anda.' }}</span>
                     </div>
@@ -352,26 +352,26 @@
 
                         {{-- Email Input --}}
                         <div class="space-y-2">
-                            <label for="email" class="text-[13px] font-bold text-on-surface-variant ml-1 uppercase tracking-wider">Email</label>
+                            <label for="email" class="text-xs font-semibold text-on-surface-variant ml-1 uppercase tracking-wider">Email</label>
                             <div class="relative group">
                                 <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                    <x-icon name="mail" class="w-[18px] h-[18px] text-on-surface-variant group-focus-within:text-primary transition-colors duration-300" />
+                                    <x-icon name="mail" class="w-5 h-5 text-on-surface-variant group-focus-within:text-primary transition-colors duration-200" />
                                 </div>
                                 <input type="email" id="email" name="email" value="{{ old('email') }}"
-                                       class="w-full min-h-[56px] rounded-xl pl-[42px] pr-4 py-3.5 bg-surface-container-highest border border-outline-variant/40 text-[15px] text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-300 hover:border-outline-variant"
+                                       class="w-full rounded-lg pl-10 pr-4 py-2.5 bg-surface-container-lowest border border-surface-container-low text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all hover:border-primary/50"
                                        placeholder="nama@perusahaan.com" autocomplete="email" required autofocus />
                             </div>
                         </div>
 
                         {{-- Password Input --}}
                         <div class="space-y-2" x-data="{ show: false }">
-                            <label for="password" class="text-[13px] font-bold text-on-surface-variant ml-1 uppercase tracking-wider">Kata Sandi</label>
+                            <label for="password" class="text-xs font-semibold text-on-surface-variant ml-1 uppercase tracking-wider">Kata Sandi</label>
                             <div class="relative group">
                                 <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                    <x-icon name="lock" class="w-[18px] h-[18px] text-on-surface-variant group-focus-within:text-primary transition-colors duration-300" />
+                                    <x-icon name="lock" class="w-5 h-5 text-on-surface-variant group-focus-within:text-primary transition-colors duration-200" />
                                 </div>
                                 <input :type="show ? 'text' : 'password'" id="password" name="password"
-                                       class="w-full min-h-[56px] rounded-xl pl-[42px] pr-12 py-3.5 bg-surface-container-highest border border-outline-variant/40 text-[15px] text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-300 hover:border-outline-variant"
+                                       class="w-full rounded-lg pl-10 pr-10 py-2.5 bg-surface-container-lowest border border-surface-container-low text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all hover:border-primary/50"
                                        placeholder="••••••••" autocomplete="current-password" required />
                                 <button type="button" @click="show = !show" class="absolute inset-y-0 right-0 pr-4 flex items-center text-on-surface-variant hover:text-on-surface transition-colors focus:outline-none" :aria-label="show ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'">
                                     <x-icon name="visibility" class="w-5 h-5" x-show="!show" x-cloak />
@@ -387,19 +387,19 @@
                                     <input type="checkbox" id="remember" name="remember" value="1" {{ old('remember') ? 'checked' : '' }} class="absolute w-full h-full opacity-0 cursor-pointer peer">
                                     <x-icon name="check" class="w-3.5 h-3.5 text-primary opacity-0 peer-checked:opacity-100 transition-opacity" />
                                 </div>
-                                <span class="text-[14px] font-medium text-on-surface-variant group-hover/chk:text-on-surface transition-colors">Ingat saya</span>
+                                <span class="text-sm font-medium text-on-surface-variant group-hover/chk:text-on-surface transition-colors">Ingat saya</span>
                             </label>
 
                             <button type="button"
                                     @click="showForgotPasswordModal = true"
-                                    class="text-left sm:text-right text-[14px] font-semibold text-primary hover:text-primary-dim transition-colors focus:outline-none focus:underline underline-offset-2">
+                                    class="text-left sm:text-right text-sm font-semibold text-primary hover:text-primary-dim transition-colors focus:outline-none focus:underline underline-offset-2">
                                 Lupa Password?
                             </button>
                         </div>
 
                         <button type="submit"
                                 :disabled="loading"
-                                class="w-full min-h-[58px] bg-primary hover:bg-primary-dim text-on-primary py-4 rounded-xl font-bold text-[15px] tracking-wide shadow-[0_4px_12px_rgba(255,160,0,0.25)] hover:shadow-[0_6px_20px_rgba(255,160,0,0.4)] hover:-translate-y-[1px] transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-primary/30 disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center gap-2.5">
+                                class="w-full bg-primary hover:bg-primary/90 text-on-primary py-3 rounded-lg font-semibold text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 active:scale-[0.98] disabled:opacity-75 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
                             <span x-show="!loading">Masuk Sekarang</span>
                             <span x-show="loading" x-cloak class="flex items-center gap-2.5">
                                 <svg class="animate-spin h-5 w-5 text-on-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -412,12 +412,12 @@
                     {{-- Support Separator --}}
                     <div class="mt-8 sm:mt-9 flex items-center justify-center gap-4">
                         <div class="h-px bg-gradient-to-r from-transparent via-outline-variant/60 to-transparent flex-1"></div>
-                        <span class="text-[11px] font-bold text-on-surface-variant uppercase tracking-[0.2em] whitespace-nowrap">Bantuan Aplikasi</span>
+                        <span class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Bantuan Aplikasi</span>
                         <div class="h-px bg-gradient-to-l from-transparent via-outline-variant/60 to-transparent flex-1"></div>
                     </div>
 
                     <div class="mt-5 sm:mt-6 text-center">
-                        <button type="button" @click="showBugModal = true" class="inline-flex items-center justify-center gap-2 w-full min-h-[56px] bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface border border-outline-variant/40 rounded-xl px-5 py-3.5 text-[14px] font-semibold transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-outline/50 hover:shadow-sm">
+                        <button type="button" @click="showBugModal = true" class="inline-flex items-center justify-center gap-2 w-full bg-surface-container-lowest hover:bg-surface-container-low text-on-surface-variant border border-surface-container-low rounded-lg px-4 py-2.5 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-surface-container-highest hover:shadow-sm">
                             <x-icon name="bug_report" class="w-5 h-5 opacity-80" />
                             Hubungi Developer (Lapor Bug)
                         </button>
@@ -427,7 +427,7 @@
                     <template x-teleport="body">
                         <div x-show="showBugModal" x-cloak class="login-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4"
                              x-transition.opacity.duration.400ms>
-                            <div @click.away="showBugModal = false" role="dialog" aria-modal="true" aria-labelledby="bug-report-title" aria-describedby="bug-report-description" class="login-modal modal-surface-glow w-full max-w-md rounded-[2rem] shadow-2xl animate-fade-in overflow-hidden mx-2">
+                            <div @click.away="showBugModal = false" role="dialog" aria-modal="true" aria-labelledby="bug-report-title" aria-describedby="bug-report-description" class="login-modal modal-surface-glow w-full max-w-md rounded-2xl shadow-2xl  overflow-hidden mx-2">
                                 <div class="bg-gradient-to-r from-error/10 to-transparent px-6 sm:px-8 py-5 sm:py-6 flex items-center justify-between border-b border-error/10">
                                     <div class="flex items-center gap-3 text-error">
                                         <div class="w-8 h-8 rounded-full bg-error/10 flex items-center justify-center">
@@ -441,14 +441,14 @@
                                 </div>
                                 
                                 <div class="p-6 sm:p-8">
-                                    <p id="bug-report-description" class="text-[14px] text-on-surface-variant mb-6 leading-relaxed">Punya laporan mengenai sistem yang error atau tidak berjalan semestinya? Jelaskan secara detail di bawah ini agar tim teknis kami bisa segera mengatasinya.</p>
+                                    <p id="bug-report-description" class="text-sm text-on-surface-variant mb-6 leading-relaxed">Punya laporan mengenai sistem yang error atau tidak berjalan semestinya? Jelaskan secara detail di bawah ini agar tim teknis kami bisa segera mengatasinya.</p>
                                     
                                     <div class="space-y-6">
                                         <label for="bug-report-message" class="sr-only">Pesan laporan kendala</label>
                                         <textarea x-model="bugMessage" rows="5" 
                                                   id="bug-report-message"
                                                   @input="bugError = ''"
-                                                  class="w-full rounded-xl px-5 py-4 bg-surface-container-highest border border-outline-variant/40 text-[14px] text-on-surface resize-none outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline-variant"
+                                                  class="w-full rounded-lg px-4 py-3 bg-surface-container-lowest border border-outline-variant/40 text-sm text-on-surface resize-none outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline-variant"
                                                   :class="bugError ? 'border-error/80 focus:border-error focus:ring-error/20 ring-2 ring-error/20' : ''"
                                                   placeholder="Contoh: Saya tidak bisa login, muncul pesan galat..."></textarea>
                                         <div x-show="bugError" x-cloak
@@ -462,7 +462,7 @@
                                                   
                                         <button type="button" 
                                                 @click="submitBugReport()"
-                                                class="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2.5 shadow-[0_4px_12px_rgba(37,211,102,0.25)] hover:shadow-[0_6px_20px_rgba(37,211,102,0.4)] transition-all duration-300 hover:-translate-y-[1px] focus:outline-none focus:ring-4 focus:ring-[#25D366]/30 text-base">
+                                                class="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2.5 shadow-sm transition-all duration-300 active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-[#25D366]/30 text-base">
                                             <x-icon name="chat" class="w-[20px] h-[20px]" />
                                             <span>Kirim Laporan via WhatsApp</span>
                                         </button>
@@ -476,7 +476,7 @@
                     <template x-teleport="body">
                         <div x-show="showForgotPasswordModal" x-cloak class="login-modal-backdrop login-modal-backdrop--forgot fixed inset-0 z-[100] flex items-center justify-center p-4"
                              x-transition.opacity.duration.400ms>
-                            <div @click.away="showForgotPasswordModal = false" role="dialog" aria-modal="true" aria-labelledby="forgot-password-title" aria-describedby="forgot-password-description" class="login-modal login-modal--forgot modal-surface-glow w-full max-w-md rounded-[2rem] shadow-2xl animate-fade-in overflow-hidden mx-2">
+                            <div @click.away="showForgotPasswordModal = false" role="dialog" aria-modal="true" aria-labelledby="forgot-password-title" aria-describedby="forgot-password-description" class="login-modal login-modal--forgot modal-surface-glow w-full max-w-md rounded-2xl shadow-2xl  overflow-hidden mx-2">
                                 <div class="login-modal--forgot__header bg-gradient-to-r from-primary/12 to-transparent px-6 sm:px-8 py-5 sm:py-6 flex items-center justify-between border-b border-primary/10">
                                     <div class="login-modal--forgot__title-wrap flex items-center gap-3 text-primary">
                                         <div class="login-modal--forgot__icon w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
@@ -490,27 +490,27 @@
                                 </div>
 
                                 <div class="login-modal--forgot__body p-6 sm:p-8">
-                                    <p id="forgot-password-description" class="login-modal--forgot__description text-[14px] text-on-surface-variant mb-6 leading-relaxed">Isi data admin dan akun yang Anda pegang. Permintaan akan langsung dikirim ke WhatsApp developer untuk bantuan reset password.</p>
+                                    <p id="forgot-password-description" class="login-modal--forgot__description text-sm text-on-surface-variant mb-6 leading-relaxed">Isi data admin dan akun yang Anda pegang. Permintaan akan langsung dikirim ke WhatsApp developer untuk bantuan reset password.</p>
 
                                     <div class="login-modal--forgot__form space-y-5">
                                         <div class="space-y-1.5">
-                                            <label for="forgot-admin-name" class="login-modal--forgot__label text-[13px] font-bold text-on-surface-variant ml-1 uppercase tracking-wider">Nama Admin</label>
+                                            <label for="forgot-admin-name" class="login-modal--forgot__label text-xs font-semibold text-on-surface-variant ml-1 uppercase tracking-wider">Nama Admin</label>
                                             <input id="forgot-admin-name"
                                                    type="text"
                                                    x-model="forgotPasswordAdminName"
                                                    @input="forgotPasswordError = ''"
-                                                   class="login-modal--forgot__input w-full rounded-xl px-5 py-4 bg-surface-container-highest border border-outline-variant/40 text-[14px] text-on-surface outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline-variant"
+                                                   class="login-modal--forgot__input w-full rounded-lg px-4 py-3 bg-surface-container-lowest border border-outline-variant/40 text-sm text-on-surface outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline-variant"
                                                    placeholder="Contoh: Steven"
                                             />
                                         </div>
 
                                         <div class="space-y-1.5">
-                                            <label for="forgot-account-name" class="login-modal--forgot__label text-[13px] font-bold text-on-surface-variant ml-1 uppercase tracking-wider">Nama Akun Yang Dipegang</label>
+                                            <label for="forgot-account-name" class="login-modal--forgot__label text-xs font-semibold text-on-surface-variant ml-1 uppercase tracking-wider">Nama Akun Yang Dipegang</label>
                                             <input id="forgot-account-name"
                                                    type="text"
                                                    x-model="forgotPasswordAccountName"
                                                    @input="forgotPasswordError = ''"
-                                                   class="login-modal--forgot__input w-full rounded-xl px-5 py-4 bg-surface-container-highest border border-outline-variant/40 text-[14px] text-on-surface outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline-variant"
+                                                   class="login-modal--forgot__input w-full rounded-lg px-4 py-3 bg-surface-container-lowest border border-outline-variant/40 text-sm text-on-surface outline-none transition-all duration-300 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline-variant"
                                                    placeholder="Contoh: Putra Interior"
                                             />
                                         </div>
@@ -526,7 +526,7 @@
 
                                         <button type="button"
                                                 @click="submitForgotPasswordRequest()"
-                                                class="login-modal--forgot__submit w-full bg-[#25D366] hover:bg-[#20bd5a] text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2.5 shadow-[0_4px_12px_rgba(37,211,102,0.25)] hover:shadow-[0_6px_20px_rgba(37,211,102,0.4)] transition-all duration-300 hover:-translate-y-[1px] focus:outline-none focus:ring-4 focus:ring-[#25D366]/30 text-base">
+                                                class="login-modal--forgot__submit w-full bg-[#25D366] hover:bg-[#20bd5a] text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2.5 shadow-sm transition-all duration-300 active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-[#25D366]/30 text-base">
                                             <x-icon name="chat" class="w-[20px] h-[20px]" />
                                             <span>Kirim Permintaan via WhatsApp</span>
                                         </button>

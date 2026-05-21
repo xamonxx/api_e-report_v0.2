@@ -2,6 +2,9 @@
 @section('title', $account->name)
 
 @section('content')
+{{-- React Dashboard Mount Point --}}
+<div id="dashboard-root" data-role="{{ auth()->user()->role->value }}" class="hidden"></div>
+
 {{-- Page Header --}}
 <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
     <div>
