@@ -27,12 +27,22 @@ trait CachesQueries
 
     public static function invalidateForUser(?int $userId, string $prefix): void
     {
-        $pattern = "query:{$prefix}:user:{$userId}*";
-        
+        // Clear the base key
         Cache::forget("query:{$prefix}:user:{$userId}");
-        
-        foreach (Cache::getStore() instanceof \Illuminate\Cache\RedisStore ? [] as $key) {
-            Cache::forget($key);
+
+        // If using Redis, scan and remove all keys matching the pattern
+        $store = Cache::getStore();
+        if ($store instanceof \Illuminate\Cache\RedisStore) {
+            $cachePrefix = config('cache.prefix', 'laravel_cache');
+            $pattern = "{$cachePrefix}:query:{$prefix}:user:{$userId}*";
+            $redis = $store->connection();
+            $cursor = null;
+            do {
+                [$cursor, $keys] = $redis->scan($cursor ?: 0, ['MATCH' => $pattern, 'COUNT' => 100]);
+                if (!empty($keys)) {
+                    $redis->del(...$keys);
+                }
+            } while ($cursor);
         }
     }
 

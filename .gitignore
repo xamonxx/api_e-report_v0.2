@@ -46,3 +46,13 @@ yarn-error.log
 
 # SQLite dev database
 database/database.sqlite
+
+# Next.js Frontend
+/e-report-frontend/
+
+# Temporary and generated documents
+*.docx
+composer.phar
+/storage/app/imports/
+/storage/app/public/accounts/*
+

@@ -49,7 +49,7 @@ class NotificationController extends Controller
                     'author_initial' => Str::upper(Str::substr($note->user?->name ?? 'TM', 0, 2)),
                     'body' => Str::limit((string) $note->body, 120),
                     'consultation_name' => $note->consultation?->client_name ?? '-',
-                    'consultation_url' => $note->consultation ? route('consultations.show', $note->consultation->id) : null,
+                    'consultation_url' => $note->consultation ? "/consultations/{$note->consultation->id}" : null,
                     'created_human' => $note->created_at?->diffForHumans(),
                 ];
             })->values(),
@@ -58,7 +58,7 @@ class NotificationController extends Controller
                     'id' => $reminder->id,
                     'message' => Str::limit((string) $reminder->message, 140),
                     'consultation_name' => $reminder->consultation?->client_name ?? '-',
-                    'consultation_url' => route('consultations.show', $reminder->consultation_id),
+                    'consultation_url' => "/consultations/{$reminder->consultation_id}",
                     'owner_name' => $reminder->user && $reminder->user->id !== $user->id ? $reminder->user->name : null,
                     'overdue' => $reminder->remind_at?->isPast() ?? false,
                     'remind_human' => $reminder->remind_at?->diffForHumans(),
