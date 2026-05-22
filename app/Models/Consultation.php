@@ -401,13 +401,14 @@ class Consultation extends Model
      * tetap atomik saat banyak request berjalan bersamaan.
      * Optimized: reduce lock time và handle high concurrency better.
      */
-    public static function generateConsultationId($accountId = null): string
+    public static function generateConsultationId($accountId = null, $date = null): string
     {
         $maxRetries = 3;
         $retryCount = 0;
         $normalizedAccountId = (int) ($accountId ?? 0);
         $accountPadded = str_pad((string) $normalizedAccountId, 2, '0', STR_PAD_LEFT);
-        $yearMonth = Carbon::now()->format('ym');
+        $carbonDate = $date ? Carbon::parse($date) : Carbon::now();
+        $yearMonth = $carbonDate->format('ym');
 
         while ($retryCount < $maxRetries) {
             try {

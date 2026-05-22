@@ -68,8 +68,7 @@ class DashboardService
                     'total_leads' => $totalLeads,
                     'pending_leads' => Consultation::where('account_id', $accountId)->where('status_category_id', $this->resolveStatusId('pending'))->count(),
                     'completed_this_month' => Consultation::where('account_id', $accountId)
-                        ->whereMonth('consultation_date', now()->month)
-                        ->whereYear('consultation_date', now()->year)
+                        ->whereBetween('consultation_date', [now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString()])
                         ->count(),
                     'cancelled_leads' => Consultation::where('account_id', $accountId)
                         ->where('status_category_id', $this->resolveStatusId('cancelled'))->count(),
@@ -96,12 +95,16 @@ class DashboardService
         $avgConversion = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
 
         $now = Carbon::now();
-        $thisMonth = Consultation::whereMonth('consultation_date', $now->month)
-            ->whereYear('consultation_date', $now->year)->count();
+        $thisMonth = Consultation::whereBetween('consultation_date', [
+            $now->copy()->startOfMonth()->toDateString(),
+            $now->copy()->endOfMonth()->toDateString(),
+        ])->count();
 
         $prev = $now->copy()->subMonth();
-        $lastMonth = Consultation::whereMonth('consultation_date', $prev->month)
-            ->whereYear('consultation_date', $prev->year)->count();
+        $lastMonth = Consultation::whereBetween('consultation_date', [
+            $prev->copy()->startOfMonth()->toDateString(),
+            $prev->copy()->endOfMonth()->toDateString(),
+        ])->count();
 
         $growthPercent = $lastMonth > 0
             ? max(-100, min(round((($thisMonth - $lastMonth) / $lastMonth) * 100, 1), 100))

@@ -12,6 +12,7 @@ use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use App\Jobs\ProcessConsultationImportJob;
 use RuntimeException;
 use SplFileObject;
 use Throwable;
@@ -31,13 +32,10 @@ class ConsultationImportService
             'status' => 'queued',
         ]);
 
-        try {
-            $this->process($import);
-        } catch (Throwable $exception) {
-            report($exception);
-        }
+        // Dispatch to queue worker instead of processing synchronously
+        ProcessConsultationImportJob::dispatch($import->id);
 
-        return $import->refresh();
+        return $import;
     }
 
     public function process(ConsultationImport $import): void

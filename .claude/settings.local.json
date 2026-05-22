@@ -12,7 +12,17 @@
       "Bash(mkdir -p /c/laragon/www/E-report/routes)",
       "Bash(composer require *)",
       "Bash(npm install *)",
-      "Bash(php artisan *)"
+      "Bash(php artisan *)",
+      "Bash(composer install *)",
+      "Bash(php *)",
+      "Bash(where composer *)",
+      "Bash(dir *)",
+      "Bash(del composer-setup.php)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(curl -s \"http://localhost:3000/_next/static/chunks/%5Broot-of-the-server%5D__091z4lx._.css\")",
+      "Bash(curl -s \"http://localhost:3000/dashboard\")",
+      "Bash(Get-ChildItem -Path \"C:\\\\laragon\\\\www\\\\E-report_v0.0.1\" -Directory)",
+      "Bash(Select-Object Name)"
     ]
   }
 }

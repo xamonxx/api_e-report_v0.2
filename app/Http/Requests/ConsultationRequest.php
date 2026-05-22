@@ -62,6 +62,52 @@ class ConsultationRequest extends FormRequest
         $province = $trimmed($this->input('province')) ?? PendingConfirmation::LABEL;
         $city = $trimmed($this->input('city')) ?? PendingConfirmation::LABEL;
         $district = $trimmed($this->input('district')) ?? PendingConfirmation::LABEL;
+
+        $none = PendingConfirmation::LABEL;
+        if ($province !== $none) {
+            $provinces = config('wilayah.provinces', []);
+            $provincesLower = array_map('strtolower', $provinces);
+            $provinceIdx = array_search(strtolower($province), $provincesLower);
+            if ($provinceIdx !== false) {
+                $province = $provinces[$provinceIdx];
+            }
+        }
+
+        if ($city !== $none) {
+            $cityMapping = config('wilayah_kota.mapping', []);
+            foreach ($cityMapping as $cName => $pName) {
+                if (strtolower($cName) === strtolower($city)) {
+                    if ($province === $none || strtolower($pName) === strtolower($province)) {
+                        $city = $cName;
+                        if ($province === $none) {
+                            $province = $pName;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ($district !== $none) {
+            $districtMapping = config('wilayah_kecamatan.mapping', []);
+            foreach ($districtMapping as $item) {
+                if (strtolower($item['district'] ?? '') === strtolower($district)) {
+                    if (
+                        ($city === $none || strtolower($item['city'] ?? '') === strtolower($city)) &&
+                        ($province === $none || strtolower($item['province'] ?? '') === strtolower($province))
+                    ) {
+                        $district = $item['district'];
+                        if ($city === $none) {
+                            $city = $item['city'] ?? '';
+                        }
+                        if ($province === $none) {
+                            $province = $item['province'] ?? '';
+                        }
+                        break;
+                    }
+                }
+            }
+        }
         $productDetails = $trimmed($this->input('product_details'));
         $phone = $this->formatIndonesiaPhone($trimmed($this->input('phone')));
 
@@ -154,6 +200,61 @@ class ConsultationRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            // Geolocation validation
+            $province = $this->input('province');
+            $city = $this->input('city');
+            $district = $this->input('district');
+            $none = \App\Support\PendingConfirmation::LABEL;
+
+            $hasProvince = ($province !== null && $province !== $none);
+            $hasCity = ($city !== null && $city !== $none);
+            $hasDistrict = ($district !== null && $district !== $none);
+
+            if ($hasProvince || $hasCity || $hasDistrict) {
+                if (! $hasProvince) {
+                    $validator->errors()->add('province', 'Provinsi wajib diisi jika data wilayah lainnya ditentukan.');
+                }
+                if (! $hasCity) {
+                    $validator->errors()->add('city', 'Kabupaten / Kota wajib diisi jika data wilayah lainnya ditentukan.');
+                }
+                if (! $hasDistrict) {
+                    $validator->errors()->add('district', 'Kecamatan wajib diisi jika data wilayah lainnya ditentukan.');
+                }
+
+                if ($hasProvince && $hasCity && $hasDistrict) {
+                    $provinces = config('wilayah.provinces', []);
+                    if (! in_array($province, $provinces, true)) {
+                        $validator->errors()->add('province', 'Provinsi tidak ditemukan dalam data wilayah Indonesia.');
+                    } else {
+                        $cityMapping = config('wilayah_kota.mapping', []);
+                        if (! isset($cityMapping[$city]) || $cityMapping[$city] !== $province) {
+                            $validator->errors()->add('city', 'Kabupaten / Kota tidak valid atau tidak sesuai dengan Provinsi.');
+                        } else {
+                            $districtMapping = config('wilayah_kecamatan.mapping', []);
+                            $districtValid = false;
+                            foreach ($districtMapping as $item) {
+                                if (
+                                    ($item['district'] ?? '') === $district &&
+                                    ($item['city'] ?? '') === $city &&
+                                    ($item['province'] ?? '') === $province
+                                ) {
+                                    $districtValid = true;
+                                    break;
+                                }
+                            }
+
+                            if (! $districtValid) {
+                                $validator->errors()->add('district', 'Kecamatan tidak valid atau tidak sesuai dengan Kota/Provinsi.');
+                            }
+                        }
+                    }
+                }
+            }
+
             if ($validator->errors()->isNotEmpty()) {
                 return;
             }
