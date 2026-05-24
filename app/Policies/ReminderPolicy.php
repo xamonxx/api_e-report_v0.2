@@ -42,7 +42,7 @@ class ReminderPolicy
             return false;
         }
 
-        // Hanya pemilik reminder yang bisa menghapus
-        return $reminder->user_id === $user->id;
+        // Pemilik reminder (assignee) atau pembuat (creator) yang bisa menghapus
+        return $reminder->creator_id === $user->id || $reminder->user_id === $user->id;
     }
 }

@@ -9,6 +9,9 @@ use App\Models\Reminder;
 use App\Services\NotificationSummaryService;
 use Illuminate\Http\JsonResponse;
 
+use App\Models\User;
+use App\Enums\UserRole;
+
 class ReminderController extends Controller
 {
     public function __construct(
@@ -25,16 +28,25 @@ class ReminderController extends Controller
         $user = auth()->user();
         $validated = $request->validated();
 
+        // Get SuperAdmin
+        $superAdmin = User::where('role', UserRole::SuperAdmin)->first();
+        // Fallback to current user if no SuperAdmin is found
+        $targetUserId = $superAdmin ? $superAdmin->id : $user->id;
+
         $reminder = $consultation->reminders()->create([
-            'user_id' => $user->id,
+            'user_id' => $targetUserId,
+            'creator_id' => $user->id,
             'message' => $validated['message'],
             'remind_at' => $validated['remind_at'],
         ]);
 
-        $this->notificationSummaryService->forgetForUser($user->id);
+        $this->notificationSummaryService->forgetForUser($targetUserId);
+        if ($targetUserId !== $user->id) {
+            $this->notificationSummaryService->forgetForUser($user->id);
+        }
 
         return response()->json([
-            'data' => $reminder->load('user'),
+            'data' => $reminder->load(['user', 'creator']),
             'message' => 'Pengingat berhasil dibuat.',
         ], 201);
     }
@@ -52,6 +64,12 @@ class ReminderController extends Controller
 
         $reminder->delete();
         $this->notificationSummaryService->forgetForUser((int) auth()->id());
+        if ($reminder->user_id && (int) $reminder->user_id !== (int) auth()->id()) {
+            $this->notificationSummaryService->forgetForUser((int) $reminder->user_id);
+        }
+        if ($reminder->creator_id && (int) $reminder->creator_id !== (int) auth()->id()) {
+            $this->notificationSummaryService->forgetForUser((int) $reminder->creator_id);
+        }
 
         return response()->json([
             'message' => 'Pengingat berhasil dihapus.',

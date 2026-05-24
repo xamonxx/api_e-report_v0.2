@@ -30,14 +30,22 @@ class Reminder extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'creator_id');
+    }
+
     /**
      * Scope query berdasarkan hak akses user.
-     * Admin hanya melihat pengingat miliknya, SuperAdmin melihat semua.
+     * Admin hanya melihat pengingat miliknya (atau yang dibuatnya), SuperAdmin melihat semua.
      */
     public function scopeForUser($query, $user)
     {
         if ($user->isAdmin()) {
-            $query->where('user_id', $user->id);
+            $query->where(function ($q) use ($user) {
+                $q->where('creator_id', $user->id)
+                  ->orWhere('user_id', $user->id);
+            });
         }
 
         return $query;

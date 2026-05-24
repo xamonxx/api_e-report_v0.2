@@ -108,7 +108,14 @@ class ConsultationController extends Controller
 
         $user = auth()->user();
         $consultation->load(array_merge(
-            ['account', 'statusCategory', 'timelineNotes.user', 'reminders.user'],
+            [
+                'account',
+                'statusCategory',
+                'timelineNotes.user',
+                'reminders' => function ($query) use ($user) {
+                    $query->forUser($user)->with(['user', 'creator']);
+                }
+            ],
             Consultation::productRelations()
         ));
 
