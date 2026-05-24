@@ -28,6 +28,7 @@ class User extends Authenticatable
         'primary_color',
         'last_login_at',
         'last_login_ip',
+        'last_seen_at',
     ];
 
     protected $hidden = [
@@ -40,6 +41,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'last_seen_at' => 'datetime',
             'role' => UserRole::class,
         ];
     }

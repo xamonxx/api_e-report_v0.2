@@ -54,6 +54,10 @@ Route::prefix('v1')->group(function () {
         Route::get('/audit-logs/{auditLog}', [App\Http\Controllers\Api\AuditLogController::class, 'show'])
             ->name('api.audit-logs.show');
 
+        // Online Users (realtime presence via last_seen_at polling)
+        Route::get('/online-users', [App\Http\Controllers\Api\AuditLogController::class, 'onlineUsers'])
+            ->name('api.online-users');
+
         // Accounts CRUD (Super Admin Only)
         Route::apiResource('accounts', App\Http\Controllers\Api\AccountController::class)
             ->names('api.accounts')

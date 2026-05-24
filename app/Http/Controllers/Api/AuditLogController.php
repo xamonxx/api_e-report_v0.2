@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -49,6 +50,32 @@ class AuditLogController extends Controller
         $logs = $query->latest()->paginate(25);
 
         return response()->json($logs);
+    }
+
+    /**
+     * GET /api/v1/online-users
+     * Returns users who made an API request within the last 5 minutes.
+     */
+    public function onlineUsers(): JsonResponse
+    {
+        $threshold = now()->subMinutes(5);
+
+        $users = User::whereNotNull('last_seen_at')
+            ->where('last_seen_at', '>=', $threshold)
+            ->orderByDesc('last_seen_at')
+            ->get(['id', 'name', 'role', 'last_seen_at'])
+            ->map(fn (User $user) => [
+                'id'          => $user->id,
+                'name'        => $user->name,
+                'role'        => $user->role->value,
+                'role_label'  => $user->role->label(),
+                'last_seen_at' => $user->last_seen_at,
+            ]);
+
+        return response()->json([
+            'data'  => $users,
+            'count' => $users->count(),
+        ]);
     }
 
     /**
