@@ -1,0 +1,136 @@
+name: Deploy to interiorcustom.id
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammaths/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: dom, curl, mbstring, zip, pdo, pdo_mysql
+
+      - name: Install SSH key
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.INTERIORCUSTOM_SSH_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          echo "Host ${{ secrets.INTERIORCUSTOM_SSH_HOST }}
+            HostName ${{ secrets.INTERIORCUSTOM_SSH_HOST }}
+            Port ${{ secrets.INTERIORCUSTOM_SSH_PORT }}
+            User ${{ secrets.INTERIORCUSTOM_SSH_USER }}
+            StrictHostKeyChecking no" > ~/.ssh/config
+
+      - name: Deploy via SSH
+        env:
+          DB_DATABASE: ${{ secrets.INTERIORCUSTOM_DB_NAME }}
+          DB_USERNAME: ${{ secrets.INTERIORCUSTOM_DB_USER }}
+          DB_PASSWORD: ${{ secrets.INTERIORCUSTOM_DB_PASS }}
+          APP_URL: ${{ secrets.INTERIORCUSTOM_APP_URL }}
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+            -p ${{ secrets.INTERIORCUSTOM_SSH_PORT }} \
+            ${{ secrets.INTERIORCUSTOM_SSH_USER }}@${{ secrets.INTERIORCUSTOM_SSH_HOST }} << 'SSHEOF'
+            set -e
+
+            PROJECT_DIR="/home/u603012205/domains/interiorcustom.id/public_html/api"
+            REPO_URL="https://github.com/xamonxx/api_e-report_v0.2.git"
+            BRANCH="master"
+
+            echo "=== Starting Deploy to interiorcustom.id ==="
+
+            # Clone or pull
+            if [ ! -d "$PROJECT_DIR" ]; then
+              echo "Cloning repository..."
+              mkdir -p "$(dirname "$PROJECT_DIR")"
+              git clone -b $BRANCH $REPO_URL "$PROJECT_DIR"
+            else
+              echo "Pulling latest code..."
+              cd "$PROJECT_DIR"
+              git fetch origin $BRANCH
+              git reset --hard "origin/$BRANCH"
+            fi
+
+            cd "$PROJECT_DIR"
+
+            # .env
+            if [ ! -f ".env" ]; then
+              echo "ERROR: .env not found! Create it first (see setup guide)."
+              exit 1
+            fi
+
+            # Update .env from secrets
+            if [ -n "$DB_DATABASE" ]; then
+              sed -i "s/DB_DATABASE=.*/DB_DATABASE=$DB_DATABASE/" .env
+            fi
+            if [ -n "$DB_USERNAME" ]; then
+              sed -i "s/DB_USERNAME=.*/DB_USERNAME=$DB_USERNAME/" .env
+            fi
+            if [ -n "$DB_PASSWORD" ]; then
+              sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" .env
+            fi
+            if [ -n "$APP_URL" ]; then
+              sed -i "s|APP_URL=.*|APP_URL=$APP_URL|" .env
+            fi
+            sed -i "s/APP_ENV=.*/APP_ENV=production/" .env
+            sed -i "s/APP_DEBUG=.*/APP_DEBUG=false/" .env
+
+            # Composer
+            echo "Installing composer dependencies..."
+            composer install --no-dev --optimize-autoloader --no-interaction
+
+            # Laravel setup
+            echo "Running migrations..."
+            php artisan migrate --force --no-interaction
+
+            echo "Clearing and caching..."
+            php artisan config:clear
+            php artisan cache:clear
+            php artisan route:clear
+            php artisan view:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+            php artisan optimize
+
+            # Permissions
+            chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+
+            # Storage link
+            php artisan storage:link 2>/dev/null || true
+
+            echo "=== Deploy Complete ==="
+            date
+SSHEOF
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.INTERIORCUSTOM_APP_URL }} || echo "failed")
+          echo "HTTP Status: $HTTP_CODE"
+          if [ "$HTTP_CODE" = "failed" ] || [ "$HTTP_CODE" -ge 500 ]; then
+            echo "Deployment may have issues"
+          fi
+
+      - name: Deployment status
+        if: success()
+        run: echo "Deploy to interiorcustom.id berhasil!"
+
+      - name: Deployment failed
+        if: failure()
+        run: echo "Deploy gagal. Cek log di atas."
