@@ -28,6 +28,7 @@ class DashboardResource extends JsonResource
             'id' => $item->id ?? null,
             'name' => $item->name ?? '',
             'count' => $item->consultations_count ?? 0,
+            'color' => $item->color ?? null,
             'css_class' => $item->css_class ?? null,
         ])->toArray();
     }

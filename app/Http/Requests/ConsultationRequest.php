@@ -323,11 +323,14 @@ class ConsultationRequest extends FormRequest
 
     private function resolveNeedsCategoryId(string $name): ?int
     {
-        $id = NeedsCategory::query()
-            ->where('name', $name)
-            ->value('id');
+        static $cache = [];
 
-        return $id ? (int) $id : null;
+        if (! array_key_exists($name, $cache)) {
+            $id = NeedsCategory::query()->where('name', $name)->value('id');
+            $cache[$name] = $id ? (int) $id : null;
+        }
+
+        return $cache[$name];
     }
 
     private function duplicateCheckPayload(): array

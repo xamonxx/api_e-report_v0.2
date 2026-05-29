@@ -5,6 +5,7 @@ namespace App\Services\Reports;
 use App\Enums\UserRole;
 use App\Models\Account;
 use App\Models\Consultation;
+use App\Models\ConsultationStatusHistory;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Models\User;
@@ -104,6 +105,8 @@ class AnalyticsReportService
             'dataQuality' => $dataQuality,
             'pendingConfirmationStats' => $pendingConfirmationStats,
             'funnel' => $funnel,
+            'cohortConversion' => $this->buildCohortConversion($user, $selectedAccount, $period),
+            'stageVelocity' => $this->buildStageVelocity($user, $selectedAccount, $period),
             'topPerformers' => $topPerformers,
             'summaryStats' => $summaryStats,
             'comparisonMatrix' => $this->buildComparisonMatrix($user, $selectedAccount, $period),
@@ -198,12 +201,20 @@ class AnalyticsReportService
 
     private function buildLocationDistribution(Builder $query, string $column, int $limit = 10): Collection
     {
-        $items = (clone $query)
-            ->whereNotNull($column)
-            ->pluck($column);
+        $qualifiedColumn = $this->consultationColumn($column);
+        $pendingLabel = mb_strtolower(PendingConfirmation::LABEL);
 
-        $distribution = $items->reduce(function (array $carry, $value) {
-            $label = $this->cleanLocationLabel($value);
+        $rows = (clone $query)
+            ->whereNotNull($qualifiedColumn)
+            ->whereRaw("LOWER(TRIM({$qualifiedColumn})) != ?", [$pendingLabel])
+            ->selectRaw("{$qualifiedColumn} as location_value, COUNT(*) as count")
+            ->groupBy($qualifiedColumn)
+            ->orderByDesc('count')
+            ->limit($limit * 3)
+            ->get();
+
+        $distribution = $rows->reduce(function (array $carry, $row) {
+            $label = $this->cleanLocationLabel($row->location_value);
 
             if ($label === null || $this->isPendingConfirmationValue($label)) {
                 return $carry;
@@ -212,13 +223,10 @@ class AnalyticsReportService
             $key = $this->normalizeLocation($label);
 
             if (! isset($carry[$key])) {
-                $carry[$key] = [
-                    'name' => $label,
-                    'count' => 0,
-                ];
+                $carry[$key] = ['name' => $label, 'count' => 0];
             }
 
-            $carry[$key]['count']++;
+            $carry[$key]['count'] += (int) $row->count;
 
             return $carry;
         }, []);
@@ -246,7 +254,13 @@ class AnalyticsReportService
             ]
         );
 
-        $rows = (clone $query)->get(['province', 'city']);
+        $pc = $this->consultationColumn('province');
+        $cc = $this->consultationColumn('city');
+
+        $rows = (clone $query)
+            ->selectRaw("{$pc} as province, {$cc} as city, COUNT(*) as count")
+            ->groupBy($pc, $cc)
+            ->get();
 
         foreach ($rows as $row) {
             $province = $this->normalizeLocation($row->province);
@@ -258,7 +272,7 @@ class AnalyticsReportService
 
             $segmentName = $this->resolveWestJavaSegment($city) ?? 'Lainnya Jawa Barat';
             $segment = $segments->get($segmentName);
-            $segment['count']++;
+            $segment['count'] += (int) $row->count;
             $segments->put($segmentName, $segment);
         }
 
@@ -354,11 +368,12 @@ class AnalyticsReportService
             ->values();
     }
 
-    private function buildRawRows(Builder $query): Collection
+    private function buildRawRows(Builder $query, int $limit = 5000): Collection
     {
         return (clone $query)
             ->with(array_merge(['account', 'statusCategory', 'creator'], Consultation::productRelations()))
             ->orderBy('consultation_date', 'desc')
+            ->limit($limit)
             ->get()
             ->map(function ($consultation) {
                 $consultationDate = $consultation->consultation_date ? Carbon::parse($consultation->consultation_date) : null;
@@ -466,51 +481,50 @@ class AnalyticsReportService
 
     private function buildDataQuality(Builder $query, array $period, int $totalLeads): array
     {
-        $rows = (clone $query)->get(['province', 'city', 'notes', 'phone', 'created_by', 'consultation_date', 'updated_at']);
+        $pendingLabel = mb_strtolower(PendingConfirmation::LABEL);
+        $pc = $this->consultationColumn('province');
+        $cc = $this->consultationColumn('city');
+        $nc = $this->consultationColumn('notes');
+        $cbc = $this->consultationColumn('created_by');
+        $cdc = $this->consultationColumn('consultation_date');
+        $uac = $this->consultationColumn('updated_at');
+        $phonec = $this->consultationColumn('phone');
 
-        $provinceFilled = $rows->filter(fn ($row) => $this->isConfirmedLocationValue($row->province))->count();
-        $cityFilled = $rows->filter(fn ($row) => $this->isConfirmedLocationValue($row->city))->count();
-        $notesFilled = $rows->filter(fn ($row) => filled(trim((string) $row->notes)))->count();
-        $locationComplete = $rows->filter(
-            fn ($row) => $this->isConfirmedLocationValue($row->province) && $this->isConfirmedLocationValue($row->city)
-        )->count();
-        $uniqueProvinces = $rows->pluck('province')
-            ->map(fn ($value) => $this->cleanLocationLabel($value))
-            ->filter(fn ($value) => $value !== null && ! $this->isPendingConfirmationValue($value))
-            ->unique(fn ($value) => $this->normalizeLocation($value))
-            ->count();
-        $uniqueCities = $rows->pluck('city')
-            ->map(fn ($value) => $this->cleanLocationLabel($value))
-            ->filter(fn ($value) => $value !== null && ! $this->isPendingConfirmationValue($value))
-            ->unique(fn ($value) => $this->normalizeLocation($value))
-            ->count();
-        $activeAdmins = $rows->pluck('created_by')->filter()->unique()->count();
-        $activeDays = $rows->pluck('consultation_date')->filter()->map(fn ($value) => Carbon::parse($value)->toDateString())->unique()->count();
-        $duplicatePhones = $rows->pluck('phone')
-            ->filter()
-            ->map(fn ($value) => preg_replace('/\D+/', '', (string) $value))
-            ->filter()
-            ->countBy()
-            ->filter(fn ($count) => $count > 1)
-            ->sum();
+        $stats = (clone $query)->selectRaw("
+            SUM(CASE WHEN {$pc} IS NOT NULL AND LOWER(TRIM({$pc})) != ? THEN 1 ELSE 0 END) as province_filled,
+            SUM(CASE WHEN {$cc} IS NOT NULL AND LOWER(TRIM({$cc})) != ? THEN 1 ELSE 0 END) as city_filled,
+            SUM(CASE WHEN {$nc} IS NOT NULL AND TRIM({$nc}) != '' THEN 1 ELSE 0 END) as notes_filled,
+            SUM(CASE WHEN {$pc} IS NOT NULL AND LOWER(TRIM({$pc})) != ? AND {$cc} IS NOT NULL AND LOWER(TRIM({$cc})) != ? THEN 1 ELSE 0 END) as location_complete,
+            COUNT(DISTINCT CASE WHEN {$pc} IS NOT NULL AND LOWER(TRIM({$pc})) != ? THEN LOWER(TRIM({$pc})) END) as unique_provinces,
+            COUNT(DISTINCT CASE WHEN {$cc} IS NOT NULL AND LOWER(TRIM({$cc})) != ? THEN LOWER(TRIM({$cc})) END) as unique_cities,
+            COUNT(DISTINCT {$cbc}) as active_admins,
+            COUNT(DISTINCT DATE({$cdc})) as active_days,
+            MAX({$uac}) as latest_update
+        ", [$pendingLabel, $pendingLabel, $pendingLabel, $pendingLabel, $pendingLabel, $pendingLabel])->first();
 
-        $latestUpdate = $rows->pluck('updated_at')->filter()->max();
+        $duplicatePhones = (int) (clone $query)
+            ->whereNotNull($phonec)
+            ->selectRaw("{$phonec} as phone_val, COUNT(*) as phone_count")
+            ->groupBy($phonec)
+            ->havingRaw('phone_count > 1')
+            ->get()
+            ->sum('phone_count');
 
         return [
-            'province_completion_rate' => $this->toRate($provinceFilled, $totalLeads),
-            'city_completion_rate' => $this->toRate($cityFilled, $totalLeads),
-            'notes_completion_rate' => $this->toRate($notesFilled, $totalLeads),
-            'location_completion_rate' => $this->toRate($locationComplete, $totalLeads),
-            'province_filled' => $provinceFilled,
-            'city_filled' => $cityFilled,
-            'notes_filled' => $notesFilled,
-            'location_complete' => $locationComplete,
-            'unique_provinces' => $uniqueProvinces,
-            'unique_cities' => $uniqueCities,
-            'active_admins' => $activeAdmins,
-            'active_days' => $activeDays,
+            'province_completion_rate' => $this->toRate((int) ($stats->province_filled ?? 0), $totalLeads),
+            'city_completion_rate' => $this->toRate((int) ($stats->city_filled ?? 0), $totalLeads),
+            'notes_completion_rate' => $this->toRate((int) ($stats->notes_filled ?? 0), $totalLeads),
+            'location_completion_rate' => $this->toRate((int) ($stats->location_complete ?? 0), $totalLeads),
+            'province_filled' => (int) ($stats->province_filled ?? 0),
+            'city_filled' => (int) ($stats->city_filled ?? 0),
+            'notes_filled' => (int) ($stats->notes_filled ?? 0),
+            'location_complete' => (int) ($stats->location_complete ?? 0),
+            'unique_provinces' => (int) ($stats->unique_provinces ?? 0),
+            'unique_cities' => (int) ($stats->unique_cities ?? 0),
+            'active_admins' => (int) ($stats->active_admins ?? 0),
+            'active_days' => (int) ($stats->active_days ?? 0),
             'duplicate_phone_rows' => $duplicatePhones,
-            'latest_update' => $latestUpdate ? Carbon::parse($latestUpdate)->format('d/m/Y H:i') : '-',
+            'latest_update' => $stats->latest_update ? Carbon::parse($stats->latest_update)->format('d/m/Y H:i') : '-',
             'period_days' => $period['start']->diffInDays($period['end']) + 1,
         ];
     }
@@ -645,6 +659,179 @@ class AnalyticsReportService
             'deal_rate' => $this->toRate($totalDeals, $totalLeads),
             'deal_from_survey_rate' => $this->toRate($totalDeals, $totalSurveys),
         ];
+    }
+
+    /**
+     * Cohort Conversion — kelompokkan lead per bulan masuk (consultation_date)
+     * dalam tahun terpilih, lalu hitung konversi survey & deal per cohort.
+     */
+    private function buildCohortConversion(User $user, ?int $selectedAccount, array $period): Collection
+    {
+        $year = (int) ($period['year'] ?? now()->year);
+        $column = $this->consultationColumn('consultation_date');
+        $statusColumn = $this->consultationColumn('status_category_id');
+
+        $surveyIds = $this->resolveStatusIds($this->surveyStatusAliases());
+        $dealIds = $this->resolveStatusIds($this->dealStatusAliases());
+        $surveyList = $surveyIds->isNotEmpty() ? $surveyIds->implode(',') : '0';
+        $dealList = $dealIds->isNotEmpty() ? $dealIds->implode(',') : '0';
+
+        $rows = $this->baseScopeQuery($user, $selectedAccount)
+            ->whereNotNull($column)
+            ->whereYear($column, $year)
+            ->selectRaw('MONTH(' . $column . ') as month_no')
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw('SUM(CASE WHEN ' . $statusColumn . ' IN (' . $surveyList . ') THEN 1 ELSE 0 END) as surveys')
+            ->selectRaw('SUM(CASE WHEN ' . $statusColumn . ' IN (' . $dealList . ') THEN 1 ELSE 0 END) as deals')
+            ->groupBy('month_no')
+            ->get()
+            ->keyBy('month_no');
+
+        $monthLabels = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+        // Rentang cohort mengikuti filter periode: bulan terpilih (bulanan),
+        // bulan dari tanggal acuan (mingguan), atau penuh setahun (tahunan).
+        $now = now();
+        $type = $period['type'] ?? 'monthly';
+
+        if ($type === 'yearly') {
+            $endMonth = 12;
+        } elseif ($type === 'weekly') {
+            $anchor = ! empty($period['anchor_date']) ? Carbon::parse($period['anchor_date']) : $now;
+            $endMonth = (int) $anchor->month;
+        } else {
+            $endMonth = (int) ($period['month'] ?? $now->month);
+        }
+
+        // Jangan tampilkan bulan masa depan pada tahun berjalan.
+        if ($year === (int) $now->year) {
+            $endMonth = min($endMonth, (int) $now->month);
+        }
+
+        $maxMonth = max(1, min(12, $endMonth));
+
+        return collect(range(1, $maxMonth))->map(function (int $m) use ($rows, $year, $monthLabels) {
+            $row = $rows->get($m);
+            $total = (int) ($row->total ?? 0);
+            $surveys = (int) ($row->surveys ?? 0);
+            $deals = (int) ($row->deals ?? 0);
+
+            return [
+                'month' => sprintf('%04d-%02d', $year, $m),
+                'label' => $monthLabels[$m],
+                'total' => $total,
+                'surveys' => $surveys,
+                'deals' => $deals,
+                'survey_rate' => $this->toRate($surveys, $total),
+                'conversion_rate' => $this->toRate($deals, $total),
+            ];
+        })->values();
+    }
+
+    /**
+     * Sales Cycle & Time-in-Stage — dihitung dari consultation_status_histories.
+     * Data terkumpul sejak fitur pelacakan transisi aktif; saat kosong
+     * mengembalikan collecting=true.
+     */
+    private function buildStageVelocity(User $user, ?int $selectedAccount, array $period): array
+    {
+        $periodStart = $period['start']->copy()->startOfDay();
+        $periodEnd = $period['end']->copy()->endOfDay();
+
+        $query = ConsultationStatusHistory::query()
+            ->orderBy('consultation_id')
+            ->orderBy('created_at')
+            ->orderBy('id');
+
+        if ($user->isAdmin()) {
+            $query->where('account_id', $user->account_id);
+        } elseif ($selectedAccount) {
+            $query->where('account_id', $selectedAccount);
+        }
+
+        $histories = $query->get(['id', 'consultation_id', 'from_status_id', 'to_status_id', 'created_at']);
+
+        $dealIds = $this->resolveStatusIds($this->dealStatusAliases())->all();
+
+        $cycleDays = [];
+        $stageAgg = [];
+        $transitionsInPeriod = 0;
+
+        foreach ($histories->groupBy('consultation_id') as $entries) {
+            $entries = $entries->values();
+            $cycleStart = $entries->first()?->created_at;
+            $count = $entries->count();
+
+            for ($i = 0; $i < $count; $i++) {
+                $entry = $entries[$i];
+                $next = $entries[$i + 1] ?? null;
+                $inPeriod = $entry->created_at->gte($periodStart) && $entry->created_at->lte($periodEnd);
+
+                if ($inPeriod) {
+                    $transitionsInPeriod++;
+                }
+
+                if ($next && $entry->to_status_id) {
+                    $exitAt = $next->created_at;
+                    if ($exitAt->gte($periodStart) && $exitAt->lte($periodEnd)) {
+                        $sid = (int) $entry->to_status_id;
+                        $stageAgg[$sid] ??= ['sum' => 0.0, 'count' => 0];
+                        $stageAgg[$sid]['sum'] += $entry->created_at->floatDiffInDays($exitAt);
+                        $stageAgg[$sid]['count']++;
+                    }
+                }
+
+                if ($cycleStart && $entry->to_status_id && in_array((int) $entry->to_status_id, $dealIds, true) && $inPeriod) {
+                    $cycleDays[] = $cycleStart->floatDiffInDays($entry->created_at);
+                }
+            }
+        }
+
+        $stages = StatusCategory::orderBy('sort_order')->get()
+            ->map(function (StatusCategory $status) use ($stageAgg) {
+                $agg = $stageAgg[$status->id] ?? null;
+
+                return [
+                    'status_id' => $status->id,
+                    'name' => $status->name,
+                    'color' => $status->color,
+                    'avg_days' => $agg ? round($agg['sum'] / max($agg['count'], 1), 1) : null,
+                    'sample' => $agg['count'] ?? 0,
+                ];
+            })
+            ->filter(fn (array $row) => $row['sample'] > 0)
+            ->values();
+
+        sort($cycleDays);
+        $sampleSize = count($cycleDays);
+
+        return [
+            'collecting' => $transitionsInPeriod === 0,
+            'transitions' => $transitionsInPeriod,
+            'sales_cycle' => [
+                'sample' => $sampleSize,
+                'avg_days' => $sampleSize > 0 ? round(array_sum($cycleDays) / $sampleSize, 1) : null,
+                'median_days' => $sampleSize > 0 ? round($this->medianOfSorted($cycleDays), 1) : null,
+                'fastest_days' => $sampleSize > 0 ? round($cycleDays[0], 1) : null,
+                'slowest_days' => $sampleSize > 0 ? round($cycleDays[$sampleSize - 1], 1) : null,
+            ],
+            'stages' => $stages,
+        ];
+    }
+
+    private function medianOfSorted(array $sorted): float
+    {
+        $n = count($sorted);
+
+        if ($n === 0) {
+            return 0.0;
+        }
+
+        $mid = intdiv($n, 2);
+
+        return $n % 2 === 0
+            ? ($sorted[$mid - 1] + $sorted[$mid]) / 2
+            : $sorted[$mid];
     }
 
     private function buildMetricSnapshot(User $user, ?int $selectedAccount, Carbon $start, Carbon $end): array
@@ -969,18 +1156,22 @@ class AnalyticsReportService
             return $this->emptyOnlyInquiryAnalysis();
         }
 
-        $rows = $this->baseQuery($user, $selectedAccount, $period['start'], $period['end'])
-            ->where($this->consultationColumn('status_category_id'), $statusId)
-            ->orderByDesc('updated_at')
-            ->get(['consultation_id', 'client_name', 'notes', 'consultation_date', 'updated_at']);
+        $baseStatusQuery = $this->baseQuery($user, $selectedAccount, $period['start'], $period['end'])
+            ->where($this->consultationColumn('status_category_id'), $statusId);
 
-        $totalOnlyInquiry = $rows->count();
-        $filledNotes = $rows->filter(fn ($row) => filled(trim((string) $row->notes)))->values();
-        $notesFilledCount = $filledNotes->count();
+        $totalOnlyInquiry = (clone $baseStatusQuery)->count();
 
         if ($totalOnlyInquiry === 0) {
             return $this->emptyOnlyInquiryAnalysis();
         }
+
+        $rows = (clone $baseStatusQuery)
+            ->orderByDesc($this->consultationColumn('updated_at'))
+            ->limit(2000)
+            ->get(['consultation_id', 'client_name', 'notes', 'consultation_date', 'updated_at']);
+
+        $filledNotes = $rows->filter(fn ($row) => filled(trim((string) $row->notes)))->values();
+        $notesFilledCount = $filledNotes->count();
 
         $topicDefinitions = $this->onlyInquiryTopicDefinitions();
         $topicStats = collect($topicDefinitions)->mapWithKeys(function (array $topic) {
@@ -1471,6 +1662,12 @@ class AnalyticsReportService
 
     private function resolveStatusIds(array $aliases): Collection
     {
+        static $allStatuses = null;
+
+        if ($allStatuses === null) {
+            $allStatuses = StatusCategory::query()->get(['id', 'name']);
+        }
+
         $normalizedAliases = collect($aliases)
             ->filter()
             ->map(fn (string $alias) => $this->normalizeStatusName($alias))
@@ -1481,8 +1678,7 @@ class AnalyticsReportService
             return collect();
         }
 
-        return StatusCategory::query()
-            ->get(['id', 'name'])
+        return $allStatuses
             ->filter(fn (StatusCategory $status) => $normalizedAliases->contains($this->normalizeStatusName($status->name)))
             ->pluck('id')
             ->map(fn ($id) => (int) $id)

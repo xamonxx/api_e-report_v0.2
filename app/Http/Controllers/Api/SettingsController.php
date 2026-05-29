@@ -19,7 +19,7 @@ class SettingsController extends Controller
         $user = auth()->user();
 
         $validatedProfile = $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => ['required', 'string', 'max:255', 'regex:/^[^\<\>]+$/'],
             'email' => 'required|email|unique:users,email,' . $user->id,
         ]);
 

@@ -97,6 +97,11 @@ class Consultation extends Model
         return $this->hasMany(Reminder::class)->latest();
     }
 
+    public function statusHistories()
+    {
+        return $this->hasMany(ConsultationStatusHistory::class)->oldest();
+    }
+
     public function productCategories(): Collection
     {
         if ($this->relationLoaded('needsCategories') && $this->needsCategories->isNotEmpty()) {

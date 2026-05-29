@@ -9,9 +9,6 @@ use App\Models\Reminder;
 use App\Services\NotificationSummaryService;
 use Illuminate\Http\JsonResponse;
 
-use App\Models\User;
-use App\Enums\UserRole;
-
 class ReminderController extends Controller
 {
     public function __construct(
@@ -28,22 +25,14 @@ class ReminderController extends Controller
         $user = auth()->user();
         $validated = $request->validated();
 
-        // Get SuperAdmin
-        $superAdmin = User::where('role', UserRole::SuperAdmin)->first();
-        // Fallback to current user if no SuperAdmin is found
-        $targetUserId = $superAdmin ? $superAdmin->id : $user->id;
-
         $reminder = $consultation->reminders()->create([
-            'user_id' => $targetUserId,
+            'user_id' => $user->id,
             'creator_id' => $user->id,
             'message' => $validated['message'],
             'remind_at' => $validated['remind_at'],
         ]);
 
-        $this->notificationSummaryService->forgetForUser($targetUserId);
-        if ($targetUserId !== $user->id) {
-            $this->notificationSummaryService->forgetForUser($user->id);
-        }
+        $this->notificationSummaryService->forgetForUser($user->id);
 
         return response()->json([
             'data' => $reminder->load(['user', 'creator']),

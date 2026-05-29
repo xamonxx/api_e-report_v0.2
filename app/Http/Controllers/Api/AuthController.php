@@ -22,11 +22,22 @@ class AuthController extends Controller
         $userAgent = $request->userAgent();
 
         // ── Brute Force Protection ───────────────────────────────
+        // Layer 1 (per email+IP): blocks 5 failures in 15 min from the same IP
         if (LoginAttempt::isTooManyAttempts($email, $ip, maxAttempts: 5, minutes: 15)) {
             LoginAttempt::record($email, $ip, $userAgent, false);
 
             return response()->json([
                 'message' => 'Terlalu banyak percobaan login. Coba lagi dalam 15 menit.',
+            ], 429);
+        }
+
+        // F-012 Layer 2 (per email, any IP): blocks distributed/credential stuffing
+        // attacks where the attacker rotates IPs to bypass per-IP checks.
+        if (LoginAttempt::isTooManyAttemptsByEmail($email, maxAttempts: 20, minutes: 60)) {
+            LoginAttempt::record($email, $ip, $userAgent, false);
+
+            return response()->json([
+                'message' => 'Terlalu banyak percobaan login. Coba lagi dalam 1 jam.',
             ], 429);
         }
 

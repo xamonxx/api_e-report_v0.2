@@ -1,0 +1,15 @@
+DirectoryIndex public/index.php
+Options -Indexes
+
+<FilesMatch "^(\.env|\.env\..*|artisan|composer\.(json|lock)|composer\.phar|.*\.sql)$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteRule ^(app|bootstrap|config|database|resources|routes|storage|vendor)(/|$) - [F,L]
+
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>

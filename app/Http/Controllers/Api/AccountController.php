@@ -122,10 +122,10 @@ class AccountController extends Controller
      */
     public function destroy(Account $account): JsonResponse
     {
-        $activeConsultations = $account->consultations()->count();
-        if ($activeConsultations > 0) {
+        $totalConsultations = $account->consultations()->withTrashed()->count();
+        if ($totalConsultations > 0) {
             return response()->json([
-                'message' => "Tidak dapat menghapus akun yang masih memiliki {$activeConsultations} data lead. Hapus atau pindahkan seluruh lead terlebih dahulu.",
+                'message' => "Tidak dapat menghapus akun yang masih memiliki {$totalConsultations} data lead (termasuk yang sudah dihapus). Hapus permanen atau pindahkan seluruh lead terlebih dahulu.",
             ], 422);
         }
 

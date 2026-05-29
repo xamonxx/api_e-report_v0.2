@@ -396,8 +396,8 @@ class ConsultationImportService
             return null;
         }
 
-        $clientName = preg_replace('/^[=+\-\@\t\r\n]/', '', trim((string) ($row[0] ?? '')));
-        $phone = $this->formatIndonesiaPhone(preg_replace('/^[=+\-\@\t\r\n]/', '', trim((string) ($row[1] ?? ''))));
+        $clientName = $this->stripCsvInjection($row[0] ?? '');
+        $phone = $this->formatIndonesiaPhone($this->stripCsvInjection($row[1] ?? ''));
 
         if ($clientName === '' || $phone === '') {
             return "Baris {$rowNumber}: nama klien atau telepon kosong.";
@@ -604,5 +604,15 @@ class ConsultationImportService
         }
 
         return collect($errors)->take(10)->implode("\n");
+    }
+
+    /**
+     * F-016: Strip CSV injection characters from the start of a cell value.
+     * Characters =, +, -, @, tab, CR, LF at the start of a cell are interpreted
+     * as formula prefixes by spreadsheet apps like Excel, enabling CSV injection.
+     */
+    private function stripCsvInjection(mixed $value): string
+    {
+        return preg_replace('/^[=+\-\@\t\r\n]/', '', trim((string) ($value ?? '')));
     }
 }

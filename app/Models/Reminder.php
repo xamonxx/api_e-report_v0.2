@@ -13,7 +13,16 @@ class Reminder extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $guarded = ['id'];
+    // F-015: Explicit $fillable instead of $guarded=['id'] to prevent accidental
+    // mass-assignment of unintended columns if new columns are added to the table.
+    protected $fillable = [
+        'consultation_id',
+        'user_id',
+        'creator_id',
+        'remind_at',
+        'message',
+        'is_read',
+    ];
 
     protected $casts = [
         'remind_at' => 'datetime',

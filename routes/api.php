@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| API Routes — /api/v1/*
+| API Routes – /api/v1/*
 |--------------------------------------------------------------------------
 | Sanctum SPA cookie-based auth. Next.js must call:
 |   1. GET  /sanctum/csrf-cookie   (sets XSRF-TOKEN cookie)
@@ -21,12 +21,14 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
 
-    // ── Public (guest only) ──────────────────────────────────────
-    Route::post('/auth/login', [AuthController::class, 'login'])
-        ->middleware('throttle:10,1')
-        ->name('api.auth.login');
+    // ── Public (guest only) ──────────────────────────────────────────────────
+    Route::middleware('web')->group(function () {
+        Route::post('/auth/login', [AuthController::class, 'login'])
+            ->middleware('throttle:10,1')
+            ->name('api.auth.login');
+    });
 
-    // ── Authenticated ────────────────────────────────────────────
+    // ── Authenticated ──────────────────────────────────────────────────────────
     Route::middleware(['web', 'auth'])->group(function () {
 
         // Auth
@@ -102,8 +104,9 @@ Route::prefix('v1')->group(function () {
         Route::delete('/consultations/{consultation}/reminders/{reminder}', [App\Http\Controllers\Api\ReminderController::class, 'destroy'])
             ->name('api.consultations.reminders.destroy');
 
-        // Debug & Testing
-        Route::prefix('debug')->group(function () {
+        // Debug & Testing — Security: restricted to super_admin only (F-005)
+        // These endpoints perform destructive data operations and expose internal metrics.
+        Route::prefix('debug')->middleware('role:super_admin')->group(function () {
             Route::get('/stats', [DebugController::class, 'stats'])->name('api.debug.stats');
             Route::post('/generate-dummy', [DebugController::class, 'generateDummy'])->name('api.debug.generate-dummy');
             Route::post('/clear-dummy', [DebugController::class, 'clearDummy'])->name('api.debug.clear-dummy');
@@ -118,23 +121,30 @@ Route::prefix('v1')->group(function () {
         Route::get('/master-data/accounts', [MasterDataController::class, 'accounts'])
             ->name('api.master-data.accounts');
 
-        // Master Data CRUD (Super Admin Only)
+        // Master Data CRUD — F-008: write operations restricted to super_admin at route level.
+        // GET /categories/list and GET /statuses/list are accessible to all authenticated users
+        // (needed by consultation forms). GET/write /users is super_admin only.
         Route::prefix('master-data')->name('api.master-data.')->group(function () {
+            // Read-only: all authenticated users may list categories & statuses (used in forms)
             Route::get('/categories/list', [MasterDataController::class, 'listCategories'])->name('categories.list');
-            Route::post('/categories', [MasterDataController::class, 'storeCategory'])->name('categories.store');
-            Route::put('/categories/{category}', [MasterDataController::class, 'updateCategory'])->name('categories.update');
-            Route::delete('/categories/{category}', [MasterDataController::class, 'destroyCategory'])->name('categories.destroy');
-
             Route::get('/statuses/list', [MasterDataController::class, 'listStatuses'])->name('statuses.list');
-            Route::post('/statuses', [MasterDataController::class, 'storeStatus'])->name('statuses.store');
-            Route::put('/statuses/{status}', [MasterDataController::class, 'updateStatus'])->name('statuses.update');
-            Route::delete('/statuses/{status}', [MasterDataController::class, 'destroyStatus'])->name('statuses.destroy');
 
-            Route::get('/users', [MasterDataController::class, 'listUsers'])->name('users.index');
-            Route::post('/users', [MasterDataController::class, 'storeUser'])->name('users.store');
-            Route::put('/users/{user}', [MasterDataController::class, 'updateUser'])->name('users.update');
-            Route::delete('/users/{user}', [MasterDataController::class, 'destroyUser'])->name('users.destroy');
-            Route::post('/users/{user}/reset-password', [MasterDataController::class, 'resetUserPassword'])->name('users.reset-password');
+            // All mutating operations + user management: super_admin only (F-008)
+            Route::middleware('role:super_admin')->group(function () {
+                Route::post('/categories', [MasterDataController::class, 'storeCategory'])->name('categories.store');
+                Route::put('/categories/{category}', [MasterDataController::class, 'updateCategory'])->name('categories.update');
+                Route::delete('/categories/{category}', [MasterDataController::class, 'destroyCategory'])->name('categories.destroy');
+
+                Route::post('/statuses', [MasterDataController::class, 'storeStatus'])->name('statuses.store');
+                Route::put('/statuses/{status}', [MasterDataController::class, 'updateStatus'])->name('statuses.update');
+                Route::delete('/statuses/{status}', [MasterDataController::class, 'destroyStatus'])->name('statuses.destroy');
+
+                Route::get('/users', [MasterDataController::class, 'listUsers'])->name('users.index');
+                Route::post('/users', [MasterDataController::class, 'storeUser'])->name('users.store');
+                Route::put('/users/{user}', [MasterDataController::class, 'updateUser'])->name('users.update');
+                Route::delete('/users/{user}', [MasterDataController::class, 'destroyUser'])->name('users.destroy');
+                Route::post('/users/{user}/reset-password', [MasterDataController::class, 'resetUserPassword'])->name('users.reset-password');
+            });
         });
 
         // Wilayah (geographic hierarchy)

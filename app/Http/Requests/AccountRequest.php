@@ -43,7 +43,8 @@ class AccountRequest extends FormRequest
             ],
             'description' => ['nullable', 'string', 'max:120'],
             'target_leads' => ['nullable', 'integer', 'min:1', 'max:1000000'],
-            'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
+            // F-009: SVG removed — SVG files can contain embedded <script> tags (stored XSS).
+            'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:2048'],
             'remove_logo' => ['nullable', 'boolean'],
         ];
     }
@@ -60,7 +61,7 @@ class AccountRequest extends FormRequest
             'target_leads.min' => 'Target leads minimal 1.',
             'target_leads.max' => 'Target leads terlalu besar (maksimal 1.000.000).',
             'logo.image' => 'Logo harus berupa file gambar.',
-            'logo.mimes' => 'Logo harus berformat jpeg, png, jpg, gif, svg, atau webp.',
+            'logo.mimes' => 'Logo harus berformat jpeg, png, jpg, gif, atau webp.',
             'logo.max' => 'Ukuran logo maksimal 2MB.',
         ];
     }

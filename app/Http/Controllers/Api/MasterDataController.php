@@ -287,13 +287,16 @@ class MasterDataController extends Controller
 
         try {
             $user = DB::transaction(function () use ($validated, $role) {
+                // F-014: role assigned explicitly (not via mass-assignment) to prevent
+                // privilege escalation if $fillable is ever inadvertently relaxed.
                 $createdUser = User::create([
                     'name' => trim($validated['name']),
                     'email' => mb_strtolower(trim($validated['email'])),
                     'password' => Hash::make($validated['password']),
-                    'role' => $role,
                     'account_id' => $role === UserRole::SuperAdmin ? null : $validated['account_id'],
                 ]);
+                $createdUser->role = $role;
+                $createdUser->save();
 
                 $createdUser->loadMissing('account');
 
@@ -367,12 +370,15 @@ class MasterDataController extends Controller
                     'account_id' => $user->account_id,
                 ];
 
+                // F-014: role assigned explicitly (not via mass-assignment) to prevent
+                // privilege escalation if $fillable is ever inadvertently relaxed.
                 $user->update([
                     'name' => trim($validated['name']),
                     'email' => mb_strtolower(trim($validated['email'])),
-                    'role' => $role,
                     'account_id' => $role === UserRole::SuperAdmin ? null : $validated['account_id'],
                 ]);
+                $user->role = $role;
+                $user->save();
 
                 $user->refresh()->loadMissing('account');
 
@@ -472,8 +478,6 @@ class MasterDataController extends Controller
 
     private function ensureSuperAdmin(): void
     {
-        if (!auth()->user()?->isSuperAdmin()) {
-            abort(response()->json(['message' => 'Unauthorized. Super Admin role required.'], 403));
-        }
+        abort_if(! auth()->user()?->isSuperAdmin(), 403, 'Unauthorized. Super Admin role required.');
     }
 }
