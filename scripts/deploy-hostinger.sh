@@ -80,6 +80,12 @@ main() {
     $COMPOSER_CMD install --no-dev --optimize-autoloader --no-interaction
     log_success "Composer dependencies installed"
 
+    if ! grep -q '^APP_KEY=base64:' .env; then
+        log "Generating Laravel APP_KEY..."
+        php artisan key:generate --force --no-interaction
+        log_success "APP_KEY generated"
+    fi
+
     # 4. Laravel Migration
     log "Running database migrations..."
     php artisan migrate --force --no-interaction
