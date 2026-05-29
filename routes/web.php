@@ -3,9 +3,5 @@
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return response()->json([
-        'status' => 'success',
-        'message' => 'E-Report API Service is running'
-    ]);
+    return response()->json(['message' => 'API is running']);
 });
-

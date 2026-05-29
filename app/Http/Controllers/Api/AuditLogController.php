@@ -27,7 +27,7 @@ class AuditLogController extends Controller
             $query->where('action', $request->action);
         }
 
-        if ($request->filled('user_id')) {
+        if ($request->filled('user_id') && $user->isSuperAdmin()) {
             $query->where('user_id', $request->user_id);
         }
 

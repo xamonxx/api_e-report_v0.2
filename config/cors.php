@@ -14,7 +14,9 @@ return [
 
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
-    'allowed_methods' => ['*'],
+    // F-010: Restrict to only the HTTP methods actually used by this API.
+    // Using ['*'] is overly permissive and exposes unnecessary attack surface.
+    'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 
     'allowed_origins' => array_values(array_filter(array_map(
         'trim',
@@ -23,7 +25,9 @@ return [
 
     'allowed_origins_patterns' => [],
 
-    'allowed_headers' => ['*'],
+    // F-010: Restrict to only headers actually sent by the Next.js SPA.
+    // Using ['*'] is overly permissive.
+    'allowed_headers' => ['Content-Type', 'X-XSRF-TOKEN', 'Accept', 'Authorization', 'X-Requested-With'],
 
     'exposed_headers' => [],
 

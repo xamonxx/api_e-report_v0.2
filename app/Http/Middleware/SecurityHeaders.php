@@ -10,11 +10,12 @@ use Symfony\Component\HttpFoundation\Response;
  * Add security-related HTTP headers to all responses.
  *
  * Addresses:
- * - XSS protection
+ * - XSS protection (CSP + legacy X-XSS-Protection)
  * - Clickjacking prevention
  * - MIME type sniffing
  * - Cache control after logout
  * - Referrer policy
+ * - HSTS (production + HTTPS only)
  */
 class SecurityHeaders
 {
@@ -25,7 +26,7 @@ class SecurityHeaders
         // Prevent MIME type sniffing
         $response->headers->set('X-Content-Type-Options', 'nosniff');
 
-        // Enable XSS filter in older browsers
+        // Enable XSS filter in older browsers (deprecated but harmless)
         $response->headers->set('X-XSS-Protection', '1; mode=block');
 
         // Prevent clickjacking
@@ -33,6 +34,22 @@ class SecurityHeaders
 
         // Control referrer information
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+        // F-006: Content-Security-Policy — pure JSON API, no inline scripts needed.
+        // frame-ancestors 'none' provides clickjacking defense at CSP level.
+        $response->headers->set(
+            'Content-Security-Policy',
+            "default-src 'none'; frame-ancestors 'none'"
+        );
+
+        // F-007: HSTS — only enabled in production over HTTPS to avoid breaking
+        // local HTTP development. Never set Secure-related headers over plain HTTP.
+        if (app()->environment('production') && $request->isSecure()) {
+            $response->headers->set(
+                'Strict-Transport-Security',
+                'max-age=31536000'
+            );
+        }
 
         // Prevent caching of authenticated pages
         if ($request->user()) {

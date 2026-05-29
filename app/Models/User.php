@@ -15,15 +15,13 @@ class User extends Authenticatable
 
     /**
      * Whitelist: Only these fields can be mass-assigned.
-     * SECURITY: 'role' is intentionally included because it's always set
-     * explicitly from validated + enum-checked data in controllers,
-     * never from raw user input.
+     * F-014: 'role' is intentionally NOT in $fillable to prevent privilege escalation
+     * via mass-assignment. Role must be assigned explicitly: $user->role = UserRole::X;
      */
     protected $fillable = [
         'name',
         'email',
         'password',
-        'role',
         'account_id',
         'primary_color',
         'last_login_at',

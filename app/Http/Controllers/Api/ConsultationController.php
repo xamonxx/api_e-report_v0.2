@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ConsultationRequest;
 use App\Models\Account;
 use App\Models\Consultation;
+use App\Models\ConsultationStatusHistory;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Services\ConsultationImportService;
@@ -176,6 +177,10 @@ class ConsultationController extends Controller
                 $consultation->needsCategories()->sync($productIds->all());
             }
 
+            if ($consultation->status_category_id) {
+                ConsultationStatusHistory::record($consultation, null, (int) $consultation->status_category_id);
+            }
+
             return $consultation;
         });
 
@@ -219,13 +224,16 @@ class ConsultationController extends Controller
 
         $validated['needs_category_id'] = $productIds->first();
         $previousAccountId = (int) $consultation->account_id;
+        $previousStatusId = $consultation->status_category_id;
 
-        DB::transaction(function () use ($consultation, $validated, $productIds) {
+        DB::transaction(function () use ($consultation, $validated, $productIds, $previousStatusId) {
             $consultation->update(Arr::except($validated, ['needs_category_ids']));
 
             if (Consultation::hasNeedsCategoryPivot()) {
                 $consultation->needsCategories()->sync($productIds->all());
             }
+
+            ConsultationStatusHistory::record($consultation, $previousStatusId, (int) $consultation->status_category_id);
         });
 
         $this->flushDashboardCache([
@@ -307,6 +315,8 @@ class ConsultationController extends Controller
 
         $previousStatusId = $consultation->status_category_id;
         $consultation->update(['status_category_id' => $validated['status_category_id']]);
+
+        ConsultationStatusHistory::record($consultation, $previousStatusId, (int) $consultation->status_category_id);
 
         $this->flushDashboardCache([(int) $consultation->account_id]);
 

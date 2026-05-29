@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================
 # Auto Deploy Script untuk Hostinger
-# Repository: https://github.com/xamonxx/webHPI.git
+# Repository: https://github.com/xamonxx/api_e-report_v0.2.git
 # ============================================
 
 set -e
@@ -9,9 +9,9 @@ set -e
 # ============================================
 # KONFIGURASI - Isi sesuai environment server
 # ============================================
-PROJECT_DIR="$HOME/domains/homeputrainterior.com/webHPI"
-REPO_URL="https://github.com/xamonxx/webHPI.git"
-BRANCH="main"
+PROJECT_DIR="${PROJECT_DIR:-$HOME/domains/interiorcustom.id/public_html/api-ereport}"
+REPO_URL="${REPO_URL:-https://github.com/xamonxx/api_e-report_v0.2.git}"
+BRANCH="${BRANCH:-master}"
 
 # ============================================
 # FUNGSI LOG
@@ -65,28 +65,26 @@ main() {
 
     # 3. Install Composer Dependencies
     if command -v composer >/dev/null 2>&1; then
-        log "Installing PHP dependencies..."
-        composer install --no-dev --optimize-autoloader --no-interaction
-        log_success "Composer dependencies installed"
+        COMPOSER_CMD="composer"
+    elif [ -f "composer.phar" ]; then
+        COMPOSER_CMD="php composer.phar"
     else
-        log_warning "Composer not found. Make sure vendor folder exists."
+        log "Composer not found. Installing local composer.phar..."
+        php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+        php composer-setup.php --quiet
+        rm -f composer-setup.php
+        COMPOSER_CMD="php composer.phar"
     fi
 
-    # 4. Install NPM and Build
-    if command -v npm >/dev/null 2>&1; then
-        log "Installing and building frontend..."
-        npm ci --legacy-peer-deps || npm install --legacy-peer-deps
-        npm run build
-        log_success "Frontend built successfully"
-    else
-        log_warning "NPM not found. Skipping frontend build."
-    fi
+    log "Installing PHP dependencies..."
+    $COMPOSER_CMD install --no-dev --optimize-autoloader --no-interaction
+    log_success "Composer dependencies installed"
 
-    # 5. Laravel Migration
+    # 4. Laravel Migration
     log "Running database migrations..."
-    php artisan migrate --force --no-interaction || log_warning "Migration completed with warnings"
+    php artisan migrate --force --no-interaction
 
-    # 6. Clear and Cache
+    # 5. Clear and Cache
     log "Clearing and caching Laravel..."
     php artisan config:clear
     php artisan cache:clear
@@ -98,15 +96,14 @@ main() {
     php artisan optimize
     log_success "Cache cleared and optimized"
 
-    # 7. Set Permissions
+    # 6. Set Permissions
     log "Setting permissions..."
-    chmod -R 775 storage bootstrap/cache 2>/dev/null || true
     chmod -R 755 storage bootstrap 2>/dev/null || true
 
-    # 8. Storage Link
+    # 7. Storage Link
     php artisan storage:link 2>/dev/null || true
 
-    # 9. Final Verification
+    # 8. Final Verification
     log "Verifying deployment..."
     if [ -f "artisan" ] && [ -d "vendor" ]; then
         log_success "Deployment verified successfully!"

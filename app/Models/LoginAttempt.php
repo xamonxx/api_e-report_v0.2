@@ -51,11 +51,34 @@ class LoginAttempt extends Model
     }
 
     /**
-     * Check if too many failed attempts (brute force protection).
+     * F-012: Count failed attempts by email only (any IP).
+     * Defends against distributed brute-force / credential stuffing attacks
+     * where the attacker rotates IP addresses to bypass per-IP checks.
+     */
+    public static function recentFailedCountByEmail(string $email, int $minutes = 60): int
+    {
+        return static::where('email', mb_strtolower(trim($email)))
+            ->where('successful', false)
+            ->where('attempted_at', '>=', now()->subMinutes($minutes))
+            ->count();
+    }
+
+    /**
+     * Check if too many failed attempts (brute force protection — per email+IP).
      */
     public static function isTooManyAttempts(string $email, string $ip, int $maxAttempts = 5, int $minutes = 15): bool
     {
         return static::recentFailedCount($email, $ip, $minutes) >= $maxAttempts;
+    }
+
+    /**
+     * F-012: Check if too many failed attempts by email alone (any IP).
+     * Higher threshold to allow legitimate users on dynamic IPs while
+     * blocking credential stuffing across distributed attack sources.
+     */
+    public static function isTooManyAttemptsByEmail(string $email, int $maxAttempts = 20, int $minutes = 60): bool
+    {
+        return static::recentFailedCountByEmail($email, $minutes) >= $maxAttempts;
     }
 
     /**

@@ -43,6 +43,14 @@ Thumbs.db
 # Debug & temp
 npm-debug.log
 yarn-error.log
+check_users.php
+cookies.txt
+error.html
+error_utf8.html
+reset-pass.php
+reset_password.php
+test_login.php
+update_superadmin.php
 
 # SQLite dev database
 database/database.sqlite
