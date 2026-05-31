@@ -22,11 +22,13 @@ class Reminder extends Model
         'remind_at',
         'message',
         'is_read',
+        'pushed_at',
     ];
 
     protected $casts = [
         'remind_at' => 'datetime',
         'is_read' => 'boolean',
+        'pushed_at' => 'datetime',
     ];
 
     public function consultation(): BelongsTo

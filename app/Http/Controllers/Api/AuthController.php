@@ -43,12 +43,11 @@ class AuthController extends Controller
 
         $credentials = $request->safe()->only(['email', 'password']);
 
-        if (Auth::attempt($credentials, $request->boolean('remember'))) {
-            $request->session()->regenerate();
+        $user = \App\Models\User::where('email', $credentials['email'])->first();
 
+        if ($user && \Illuminate\Support\Facades\Hash::check($credentials['password'], $user->password)) {
             LoginAttempt::record($email, $ip, $userAgent, true);
 
-            $user = Auth::user();
             $user->timestamps = false;
             $user->update([
                 'last_login_at' => now(),
@@ -56,8 +55,13 @@ class AuthController extends Controller
             ]);
             $user->timestamps = true;
 
+            // Revoke old tokens and issue a fresh Sanctum Bearer token
+            $user->tokens()->delete();
+            $token = $user->createToken('spa-token')->plainTextToken;
+
             return response()->json([
                 'user' => $this->formatUser($user),
+                'token' => $token,
                 'message' => 'Login berhasil.',
             ]);
         }
@@ -67,6 +71,33 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Email atau password tidak sesuai.',
         ], 401);
+    }
+
+    /**
+     * Look up primary color for a user by email before login.
+     */
+    public function colorLookup(Request $request): JsonResponse
+    {
+        $email = $request->query('email');
+        
+        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return response()->json(['primary_color' => '#f59e0b']);
+        }
+
+        $user = \App\Models\User::where('email', $email)->first();
+
+        if (!$user) {
+            $domain = substr(strrchr($email, "@"), 1);
+            if ($domain) {
+                $user = \App\Models\User::where('email', 'like', "%@{$domain}")
+                    ->whereNotNull('primary_color')
+                    ->first();
+            }
+        }
+        
+        return response()->json([
+            'primary_color' => $user && $user->primary_color ? $user->primary_color : '#f59e0b'
+        ]);
     }
 
     /**
@@ -83,14 +114,12 @@ class AuthController extends Controller
     }
 
     /**
-     * Logout and destroy session.
+     * Logout and revoke current token.
      */
     public function logout(Request $request): JsonResponse
     {
-        Auth::guard('web')->logout();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        // Revoke the token that was used for this request
+        $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logout berhasil.']);
     }

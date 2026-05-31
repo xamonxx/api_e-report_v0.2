@@ -11,6 +11,7 @@ use App\Models\StatusCategory;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -22,10 +23,17 @@ class MasterDataController extends Controller
     /**
      * GET /api/v1/master-data/needs-categories
      */
+    private const CACHE_NEEDS = 'master-data:needs-categories';
+
+    private const CACHE_STATUSES = 'master-data:status-categories';
+
     public function needsCategories(): JsonResponse
     {
-        $categories = NeedsCategory::forConsultationOptions()
-            ->get(['id', 'name']);
+        $categories = Cache::remember(
+            self::CACHE_NEEDS,
+            now()->addHours(6),
+            fn () => NeedsCategory::forConsultationOptions()->get(['id', 'name'])
+        );
 
         return response()->json([
             'data' => $categories,
@@ -37,8 +45,12 @@ class MasterDataController extends Controller
      */
     public function statusCategories(): JsonResponse
     {
-        $statuses = StatusCategory::orderBy('sort_order')
-            ->get(['id', 'name', 'css_class', 'color', 'sort_order']);
+        $statuses = Cache::remember(
+            self::CACHE_STATUSES,
+            now()->addHours(6),
+            fn () => StatusCategory::orderBy('sort_order')
+                ->get(['id', 'name', 'css_class', 'color', 'sort_order'])
+        );
 
         return response()->json([
             'data' => $statuses,
@@ -88,6 +100,7 @@ class MasterDataController extends Controller
         ]);
 
         $category = NeedsCategory::create(['name' => trim($validated['name'])]);
+        Cache::forget(self::CACHE_NEEDS);
 
         return response()->json([
             'message' => 'Kategori kebutuhan berhasil ditambahkan!',
@@ -111,6 +124,7 @@ class MasterDataController extends Controller
         ]);
 
         $category->update(['name' => trim($validated['name'])]);
+        Cache::forget(self::CACHE_NEEDS);
 
         return response()->json([
             'message' => 'Kategori berhasil diperbarui!',
@@ -131,6 +145,7 @@ class MasterDataController extends Controller
         }
 
         $category->delete();
+        Cache::forget(self::CACHE_NEEDS);
 
         return response()->json([
             'message' => 'Kategori berhasil dihapus!',
@@ -171,6 +186,7 @@ class MasterDataController extends Controller
             'color' => $validated['color'],
             'sort_order' => $maxOrder + 1,
         ]);
+        Cache::forget(self::CACHE_STATUSES);
 
         return response()->json([
             'message' => 'Status berhasil ditambahkan!',
@@ -200,6 +216,7 @@ class MasterDataController extends Controller
             'name' => trim($validated['name']),
             'color' => $validated['color'],
         ]);
+        Cache::forget(self::CACHE_STATUSES);
 
         return response()->json([
             'message' => 'Status berhasil diperbarui!',
@@ -220,6 +237,7 @@ class MasterDataController extends Controller
         }
 
         $status->delete();
+        Cache::forget(self::CACHE_STATUSES);
 
         return response()->json([
             'message' => 'Status berhasil dihapus!',

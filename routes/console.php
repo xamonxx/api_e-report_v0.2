@@ -10,3 +10,7 @@ Artisan::command('inspire', function () {
 
 // ── Security: Bersihkan login_attempts yang lebih dari 30 hari ───
 Schedule::call(fn () => \App\Models\LoginAttempt::purgeOlderThan(30))->daily();
+
+// ── Web Push: kirim notifikasi untuk reminder yang jatuh tempo ───
+// Butuh cron server menjalankan `php artisan schedule:run` tiap menit.
+Schedule::command('reminders:push-due')->everyMinute()->withoutOverlapping();

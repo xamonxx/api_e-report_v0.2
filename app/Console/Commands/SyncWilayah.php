@@ -103,11 +103,12 @@ class SyncWilayah extends Command
         // Sort cities mapping by key
         ksort($citiesMapping);
 
-        // Save config/wilayah_kota.php
-        $wilayahKotaConfigPath = config_path('wilayah_kota.php');
+        // Save resources/data/wilayah_kota.php
+        $wilayahKotaConfigPath = \App\Support\Wilayah::path('wilayah_kota.php');
+        $this->ensureDataDir($wilayahKotaConfigPath);
         $wilayahKotaContent = "<?php\n\nreturn [\n    'mapping' => " . var_export($citiesMapping, true) . ",\n];\n";
         file_put_contents($wilayahKotaConfigPath, $wilayahKotaContent);
-        $this->info('Berhasil memperbarui config/wilayah_kota.php');
+        $this->info('Berhasil memperbarui resources/data/wilayah_kota.php');
 
         // 3. Fetch Districts/Kecamatan
         $this->info('Mengunduh data Kecamatan...');
@@ -141,14 +142,27 @@ class SyncWilayah extends Command
             }
         }
 
-        // Save config/wilayah_kecamatan.php
-        $wilayahKecConfigPath = config_path('wilayah_kecamatan.php');
+        // Save resources/data/wilayah_kecamatan.php
+        $wilayahKecConfigPath = \App\Support\Wilayah::path('wilayah_kecamatan.php');
+        $this->ensureDataDir($wilayahKecConfigPath);
         $wilayahKecContent = "<?php\n\nreturn [\n    'mapping' => " . var_export($districtsMapping, true) . ",\n];\n";
         file_put_contents($wilayahKecConfigPath, $wilayahKecContent);
-        $this->info('Berhasil memperbarui config/wilayah_kecamatan.php');
+        $this->info('Berhasil memperbarui resources/data/wilayah_kecamatan.php');
 
         $this->info('✅ Sinkronisasi data wilayah selesai dengan sukses!');
         return 0;
+    }
+
+    /**
+     * Ensure the target data directory exists before writing.
+     */
+    private function ensureDataDir(string $filePath): void
+    {
+        $dir = dirname($filePath);
+
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
     }
 
     /**

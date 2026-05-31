@@ -22,14 +22,17 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
 
     // ── Public (guest only) ──────────────────────────────────────────────────
-    Route::middleware('web')->group(function () {
-        Route::post('/auth/login', [AuthController::class, 'login'])
-            ->middleware('throttle:10,1')
-            ->name('api.auth.login');
-    });
+    // Login uses API middleware (no CSRF) since the SPA uses Bearer token auth.
+    Route::post('/auth/login', [AuthController::class, 'login'])
+        ->middleware('throttle:10,1')
+        ->name('api.auth.login');
+
+    Route::get('/auth/color-lookup', [AuthController::class, 'colorLookup'])
+        ->name('api.auth.color-lookup');
 
     // ── Authenticated ──────────────────────────────────────────────────────────
-    Route::middleware(['web', 'auth'])->group(function () {
+    // auth:sanctum accepts both session cookies AND Bearer tokens.
+    Route::middleware(['auth:sanctum'])->group(function () {
 
         // Auth
         Route::get('/auth/me', [AuthController::class, 'me'])->name('api.auth.me');
@@ -103,6 +106,14 @@ Route::prefix('v1')->group(function () {
             ->name('api.consultations.reminders.store');
         Route::delete('/consultations/{consultation}/reminders/{reminder}', [App\Http\Controllers\Api\ReminderController::class, 'destroy'])
             ->name('api.consultations.reminders.destroy');
+
+        // Web Push subscriptions (PWA notifications)
+        Route::get('/push/public-key', [App\Http\Controllers\Api\PushSubscriptionController::class, 'publicKey'])
+            ->name('api.push.public-key');
+        Route::post('/push/subscribe', [App\Http\Controllers\Api\PushSubscriptionController::class, 'subscribe'])
+            ->name('api.push.subscribe');
+        Route::post('/push/unsubscribe', [App\Http\Controllers\Api\PushSubscriptionController::class, 'unsubscribe'])
+            ->name('api.push.unsubscribe');
 
         // Debug & Testing — Security: restricted to super_admin only (F-005)
         // These endpoints perform destructive data operations and expose internal metrics.
