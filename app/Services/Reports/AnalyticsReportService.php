@@ -13,6 +13,7 @@ use App\Support\PendingConfirmation;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class AnalyticsReportService
@@ -23,6 +24,26 @@ class AnalyticsReportService
     }
 
     public function buildForUser(User $user, array $filters, array $options = []): array
+    {
+        $includeRawRows = (bool) ($options['includeRawRows'] ?? false);
+
+        // Exports request raw rows and must always run fresh; the UI path is
+        // heavy (many aggregations) but tolerant of slight staleness, so we
+        // cache it briefly keyed by the user's scope + the requested filters.
+        if ($includeRawRows) {
+            return $this->compute($user, $filters, $options);
+        }
+
+        $scopeAccount = $user->isSuperAdmin() ? ($filters['account'] ?? null) : $user->account_id;
+        $cacheKey = 'analytics:report:' . $user->id . ':' . md5(json_encode([
+            'account' => $scopeAccount,
+            'filters' => $filters,
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(3), fn () => $this->compute($user, $filters, $options));
+    }
+
+    private function compute(User $user, array $filters, array $options = []): array
     {
         $period = $this->periodResolver->resolve($filters);
         $selectedAccount = $user->isSuperAdmin() ? ($filters['account'] ?? null) : $user->account_id;

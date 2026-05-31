@@ -60,6 +60,8 @@ database/database.sqlite
 
 # Temporary and generated documents
 *.docx
+*.xls
+*.xlsx
 composer.phar
 /storage/app/imports/
 /storage/app/public/accounts/*

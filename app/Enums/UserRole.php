@@ -6,6 +6,8 @@ enum UserRole: string
 {
     case SuperAdmin = 'super_admin';
     case Admin = 'admin';
+    case Surveyor = 'surveyor';
+    case ManagerSurveyor = 'manager_surveyor';
 
     /**
      * Mendapatkan label yang ramah untuk ditampilkan di UI.
@@ -15,6 +17,8 @@ enum UserRole: string
         return match ($this) {
             self::SuperAdmin => 'Super Admin',
             self::Admin => 'Admin',
+            self::Surveyor => 'Surveyor',
+            self::ManagerSurveyor => 'Manager Surveyor',
         };
     }
 

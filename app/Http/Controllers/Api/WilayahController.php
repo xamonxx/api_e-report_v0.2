@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\Wilayah;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class WilayahController extends Controller
 {
@@ -14,82 +16,102 @@ class WilayahController extends Controller
      */
     public function provinces(): JsonResponse
     {
-        $provinces = config('wilayah.provinces', []);
-
         return response()->json([
-            'data' => $provinces,
+            'data' => Wilayah::provinces(),
         ])->header('Cache-Control', 'public, max-age=86400, s-maxage=86400');
     }
 
     /**
      * GET /api/v1/wilayah/cities?province=...
      * Returns cities filtered by province.
+     *
+     * The filtering result is memoized server-side (keyed by dataset version +
+     * filter params) so the O(n) scan over the city dataset runs once, not on
+     * every request.
      */
     public function cities(Request $request): JsonResponse
     {
         $province = $request->query('province');
-        $mapping = config('wilayah_kota.mapping', []);
+        $includeDetails = (bool) $request->query('include_details');
 
-        if ($province) {
-            $provinceClean = trim(strtolower($province));
-            $mapping = array_filter($mapping, function ($provName) use ($provinceClean) {
-                return trim(strtolower($provName)) === $provinceClean;
-            });
-        }
+        $cacheKey = 'wilayah:cities:' . Wilayah::version()
+            . ':' . md5(strtolower((string) $province))
+            . ':' . (int) $includeDetails;
 
-        if ($request->query('include_details')) {
-            $data = [];
-            foreach ($mapping as $city => $prov) {
-                $data[] = [
-                    'city' => $city,
-                    'province' => $prov,
-                ];
+        $data = Cache::rememberForever($cacheKey, function () use ($province, $includeDetails) {
+            $mapping = Wilayah::cityMapping();
+
+            if ($province) {
+                $provinceClean = trim(strtolower($province));
+                $mapping = array_filter(
+                    $mapping,
+                    fn ($provName) => trim(strtolower($provName)) === $provinceClean
+                );
             }
-            return response()->json([
-                'data' => $data,
-            ])->header('Cache-Control', 'public, max-age=86400, s-maxage=86400');
-        }
+
+            if ($includeDetails) {
+                $rows = [];
+                foreach ($mapping as $city => $prov) {
+                    $rows[] = ['city' => $city, 'province' => $prov];
+                }
+
+                return $rows;
+            }
+
+            return array_values(array_keys($mapping));
+        });
 
         return response()->json([
-            'data' => array_values(array_keys($mapping)),
+            'data' => $data,
         ])->header('Cache-Control', 'public, max-age=86400, s-maxage=86400');
     }
 
     /**
      * GET /api/v1/wilayah/districts?city=...
      * Returns districts filtered by city.
+     *
+     * Result is memoized server-side; the fuzzy city matching (regex per row
+     * over a ~7k-entry dataset) only runs on a cache miss.
      */
     public function districts(Request $request): JsonResponse
     {
         $city = $request->query('city');
-        $mapping = config('wilayah_kecamatan.mapping', []);
+        $includeDetails = (bool) $request->query('include_details');
 
-        if ($city) {
-            $mapping = array_filter($mapping, function ($info) use ($city) {
-                return $this->matchCity($info['city'] ?? '', $city);
-            });
-        }
+        $cacheKey = 'wilayah:districts:' . Wilayah::version()
+            . ':' . md5(strtolower((string) $city))
+            . ':' . (int) $includeDetails;
 
-        if ($request->query('include_details')) {
-            $data = [];
-            foreach ($mapping as $item) {
-                $data[] = [
-                    'district' => $item['district'] ?? '',
-                    'city' => $item['city'] ?? '',
-                    'province' => $item['province'] ?? '',
-                ];
+        $data = Cache::rememberForever($cacheKey, function () use ($city, $includeDetails) {
+            $mapping = Wilayah::districtMapping();
+
+            if ($city) {
+                $mapping = array_filter(
+                    $mapping,
+                    fn ($info) => $this->matchCity($info['city'] ?? '', $city)
+                );
             }
-            return response()->json([
-                'data' => $data,
-            ])->header('Cache-Control', 'public, max-age=86400, s-maxage=86400');
-        }
 
-        $districts = array_map(function ($item) {
-            return $item['district'] ?? '';
-        }, $mapping);
+            if ($includeDetails) {
+                $rows = [];
+                foreach ($mapping as $item) {
+                    $rows[] = [
+                        'district' => $item['district'] ?? '',
+                        'city' => $item['city'] ?? '',
+                        'province' => $item['province'] ?? '',
+                    ];
+                }
+
+                return $rows;
+            }
+
+            $districts = array_map(fn ($item) => $item['district'] ?? '', $mapping);
+
+            return array_values(array_unique($districts));
+        });
 
         return response()->json([
-            'data' => array_values(array_unique($districts)),
+            'data' => $data,
         ])->header('Cache-Control', 'public, max-age=86400, s-maxage=86400');
     }
 

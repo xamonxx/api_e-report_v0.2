@@ -74,7 +74,7 @@ class ConsultationRequest extends FormRequest
         }
 
         if ($city !== $none) {
-            $cityMapping = config('wilayah_kota.mapping', []);
+            $cityMapping = \App\Support\Wilayah::cityMapping();
             foreach ($cityMapping as $cName => $pName) {
                 if (strtolower($cName) === strtolower($city)) {
                     if ($province === $none || strtolower($pName) === strtolower($province)) {
@@ -89,7 +89,7 @@ class ConsultationRequest extends FormRequest
         }
 
         if ($district !== $none) {
-            $districtMapping = config('wilayah_kecamatan.mapping', []);
+            $districtMapping = \App\Support\Wilayah::districtMapping();
             foreach ($districtMapping as $item) {
                 if (strtolower($item['district'] ?? '') === strtolower($district)) {
                     if (
@@ -230,11 +230,11 @@ class ConsultationRequest extends FormRequest
                     if (! in_array($province, $provinces, true)) {
                         $validator->errors()->add('province', 'Provinsi tidak ditemukan dalam data wilayah Indonesia.');
                     } else {
-                        $cityMapping = config('wilayah_kota.mapping', []);
+                        $cityMapping = \App\Support\Wilayah::cityMapping();
                         if (! isset($cityMapping[$city]) || $cityMapping[$city] !== $province) {
                             $validator->errors()->add('city', 'Kabupaten / Kota tidak valid atau tidak sesuai dengan Provinsi.');
                         } else {
-                            $districtMapping = config('wilayah_kecamatan.mapping', []);
+                            $districtMapping = \App\Support\Wilayah::districtMapping();
                             $districtValid = false;
                             foreach ($districtMapping as $item) {
                                 if (

@@ -22,13 +22,14 @@ class UpdateLastSeen
      */
     public function terminate(Request $request, Response $response): void
     {
-        if (!Auth::check()) {
+        $user = $request->user();
+
+        if (!$user) {
             return;
         }
 
-        $user = Auth::user();
-
-        if ($user->last_seen_at && now()->diffInSeconds($user->last_seen_at) < 60) {
+        // Use abs() to handle signed/negative difference results
+        if ($user->last_seen_at && abs(now()->diffInSeconds($user->last_seen_at, false)) < 60) {
             return;
         }
 

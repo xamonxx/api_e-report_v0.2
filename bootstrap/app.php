@@ -17,10 +17,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->statefulApi();
+        // $middleware->statefulApi();
 
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+        ]);
+
+        $middleware->api(prepend: [
+            \App\Http\Middleware\QueryTokenToHeader::class,
+        ], append: [
+            \App\Http\Middleware\UpdateLastSeen::class,
         ]);
 
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');

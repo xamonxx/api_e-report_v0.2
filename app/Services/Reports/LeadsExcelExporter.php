@@ -646,7 +646,7 @@ class LeadsExcelExporter
             ->values()
             ->all();
 
-        $cityProvinceRows = collect(config('wilayah_kota.mapping', []))
+        $cityProvinceRows = collect(\App\Support\Wilayah::cityMapping())
             ->map(fn (string $province, string $city) => [
                 'city' => $this->excelCityName($city),
                 'province' => $province,

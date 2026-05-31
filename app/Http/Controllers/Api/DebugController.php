@@ -127,8 +127,8 @@ class DebugController extends Controller
         if (empty($provinces)) {
             $provinces = ['JAWA BARAT', 'DKI JAKARTA', 'BANTEN', 'JAWA TENGAH', 'JAWA TIMUR', 'DI YOGYAKARTA'];
         }
-        $cityMapping = config('wilayah_kota.mapping', []);
-        $districtMapping = config('wilayah_kecamatan.mapping', []);
+        $cityMapping = \App\Support\Wilayah::cityMapping();
+        $districtMapping = \App\Support\Wilayah::districtMapping();
 
         // Master lists
         $needsCategories = NeedsCategory::all();
