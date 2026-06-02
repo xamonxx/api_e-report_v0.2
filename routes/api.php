@@ -27,8 +27,17 @@ Route::prefix('v1')->group(function () {
         ->middleware('throttle:10,1')
         ->name('api.auth.login');
 
+    // Throttled: this endpoint queries users by email, so an unmetered version
+    // is both a user-enumeration oracle and an unauthenticated DB-load vector.
     Route::get('/auth/color-lookup', [AuthController::class, 'colorLookup'])
+        ->middleware('throttle:20,1')
         ->name('api.auth.color-lookup');
+
+    // Bug reports — publicly submittable (reachable from the login screen).
+    // Tightly throttled to 5/min per IP to prevent spam / storage-exhaustion abuse.
+    Route::post('/bug-reports', [App\Http\Controllers\Api\BugReportController::class, 'store'])
+        ->middleware('throttle:5,1')
+        ->name('api.bug-reports.store');
 
     // ── Authenticated ──────────────────────────────────────────────────────────
     // auth:sanctum accepts both session cookies AND Bearer tokens.
@@ -124,6 +133,14 @@ Route::prefix('v1')->group(function () {
             Route::post('/clear-logs', [DebugController::class, 'clearLogs'])->name('api.debug.clear-logs');
         });
 
+        // Bug Reports — viewing restricted to super_admin (may contain PII in screenshots)
+        Route::middleware('role:super_admin')->group(function () {
+            Route::get('/bug-reports', [App\Http\Controllers\Api\BugReportController::class, 'index'])
+                ->name('api.bug-reports.index');
+            Route::get('/bug-reports/{bugReport}', [App\Http\Controllers\Api\BugReportController::class, 'show'])
+                ->name('api.bug-reports.show');
+        });
+
         // Master Data
         Route::get('/master-data/needs-categories', [MasterDataController::class, 'needsCategories'])
             ->name('api.master-data.needs-categories');
@@ -147,6 +164,7 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/categories/{category}', [MasterDataController::class, 'destroyCategory'])->name('categories.destroy');
 
                 Route::post('/statuses', [MasterDataController::class, 'storeStatus'])->name('statuses.store');
+                Route::patch('/statuses/reorder', [MasterDataController::class, 'reorderStatuses'])->name('statuses.reorder');
                 Route::put('/statuses/{status}', [MasterDataController::class, 'updateStatus'])->name('statuses.update');
                 Route::delete('/statuses/{status}', [MasterDataController::class, 'destroyStatus'])->name('statuses.destroy');
 

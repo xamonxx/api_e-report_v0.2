@@ -11,8 +11,8 @@
         body {
             font-family: DejaVu Sans, sans-serif;
             color: #0f172a;
-            font-size: 10px;
-            line-height: 1.4;
+            font-size: 11px;
+            line-height: 1.5;
         }
 
         table {
@@ -29,10 +29,11 @@
         }
 
         .hero {
-            border: 1px solid #cfe0ff;
+            border: 1px solid #f6d9a7;
             border-radius: 18px;
-            background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%);
+            background: linear-gradient(135deg, #fffaf2 0%, #fff2dc 100%);
             padding: 22px 24px;
+            border-top: 3px solid #f59e0b;
         }
 
         .eyebrow {
@@ -40,7 +41,7 @@
             text-transform: uppercase;
             letter-spacing: 1.9px;
             font-weight: 800;
-            color: #2563eb;
+            color: #b45309;
         }
 
         .title {
@@ -61,7 +62,7 @@
         }
 
         .meta td {
-            border: 1px solid #dbeafe;
+            border: 1px solid #f3e2c4;
             padding: 8px 10px;
             background: #ffffff;
         }
@@ -70,7 +71,7 @@
             width: 110px;
             font-weight: 700;
             color: #475569;
-            background: #eff6ff;
+            background: #fff7ed;
         }
 
         .section {
@@ -82,6 +83,8 @@
             font-weight: 800;
             margin-bottom: 7px;
             color: #0f172a;
+            border-left: 3px solid #f59e0b;
+            padding-left: 9px;
         }
 
         .section-note {
@@ -160,8 +163,8 @@
             display: inline-block;
             padding: 4px 8px;
             border-radius: 999px;
-            background: #dbeafe;
-            color: #1d4ed8;
+            background: #fef0d0;
+            color: #b45309;
             font-size: 8px;
             font-weight: 800;
         }
@@ -226,15 +229,17 @@
         .report-table th,
         .report-table td {
             border: 1px solid #dbe4e7;
-            padding: 6px 7px;
+            padding: 7px 8px;
             vertical-align: top;
             word-break: break-word;
+            overflow-wrap: anywhere;
+            font-size: 9.5px;
         }
 
         .report-table th {
-            background: #1d4ed8;
+            background: #b45309;
             color: #ffffff;
-            font-size: 8px;
+            font-size: 9px;
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -320,7 +325,7 @@
                                 <span class="metric-name">Lead to Survey</span>
                                 <span class="metric-count">{{ $funnel['survey_rate'] }}%</span>
                             </div>
-                            <div class="funnel-bar"><div class="funnel-fill" style="width: {{ min($funnel['survey_rate'], 100) }}%; background: #2563eb;"></div></div>
+                            <div class="funnel-bar"><div class="funnel-fill" style="width: {{ min($funnel['survey_rate'], 100) }}%; background: #f59e0b;"></div></div>
                         </div>
 
                         <div class="metric-row">
@@ -503,7 +508,7 @@
                                     <span class="metric-count">{{ $item['count'] }}</span>
                                 </div>
                                 <div class="track">
-                                    <div class="fill" style="width: {{ ($item['count'] / $needsMax) * 100 }}%; background: #2563eb;"></div>
+                                    <div class="fill" style="width: {{ ($item['count'] / $needsMax) * 100 }}%; background: #f59e0b;"></div>
                                 </div>
                             </div>
                         @empty

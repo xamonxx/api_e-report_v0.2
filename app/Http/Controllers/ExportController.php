@@ -101,20 +101,19 @@ class ExportController extends Controller
     public function exportLeadsExcel(
         Request $request,
         LeadsReportService $reportService,
-        LeadsExcelExporter $excelExporter
+        LeadsExcelExporter $excelExporter,
+        SpreadsheetXmlToXlsxConverter $xlsxConverter
     ): Response {
         $report = $reportService->buildForUser($request->user(), $this->validatedLeadExportFilters($request));
-        $filename = $this->leadsFilename('xls', $report);
+        $filename = $this->leadsFilename('xlsx', $report);
 
         return response(
-            $excelExporter->buildWorkbook($report),
+            $xlsxConverter->convert($excelExporter->buildWorkbook($report)),
             200,
             [
-                'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-                'Pragma' => 'no-cache',
-                'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
-                'Expires' => '0',
+                'Cache-Control' => 'max-age=0',
             ]
         );
     }

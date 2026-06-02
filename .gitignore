@@ -51,6 +51,8 @@ reset-pass.php
 reset_password.php
 test_login.php
 update_superadmin.php
+public/test-query.php
+public/test-request.php
 
 # SQLite dev database
 database/database.sqlite
@@ -65,4 +67,8 @@ database/database.sqlite
 composer.phar
 /storage/app/imports/
 /storage/app/public/accounts/*
+/storage/app/public/bug-reports/*
+
+# Internal review notes
+/docs/SECURITY-REVIEW-*.md
 

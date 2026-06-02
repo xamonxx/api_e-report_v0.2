@@ -35,7 +35,8 @@ class AnalyticsReportService
         }
 
         $scopeAccount = $user->isSuperAdmin() ? ($filters['account'] ?? null) : $user->account_id;
-        $cacheKey = 'analytics:report:' . $user->id . ':' . md5(json_encode([
+        $lastUpdated = Cache::rememberForever('analytics:last_updated', fn () => now()->timestamp);
+        $cacheKey = 'analytics:report:' . $user->id . ':' . $lastUpdated . ':' . md5(json_encode([
             'account' => $scopeAccount,
             'filters' => $filters,
         ]));
@@ -406,6 +407,7 @@ class AnalyticsReportService
                     'phone' => $consultation->phone,
                     'province' => $consultation->province,
                     'city' => $consultation->city,
+                    'district' => $consultation->district,
                     'account' => $consultation->account?->name,
                     'need' => $consultation->product_names_label,
                     'product_details' => $consultation->product_details,

@@ -75,12 +75,32 @@ class MasterDataController extends Controller
     // ── Super Admin Master Data CRUD ─────────────────────────────
 
     /**
+     * Resolve a safe page size from the `per_page` query param. Lets the master
+     * data screens request the full list in one page (these sets are small),
+     * while still capping the value to avoid abuse.
+     */
+    private function resolvePerPage(int $default = 15, int $max = 500): int
+    {
+        $perPage = (int) request('per_page', $default);
+
+        return $perPage > 0 ? min($perPage, $max) : $default;
+    }
+
+    /**
      * GET /api/v1/master-data/categories/list
      */
     public function listCategories(): JsonResponse
     {
         $this->ensureSuperAdmin();
-        $categories = NeedsCategory::forConsultationOptions()->paginate(15);
+
+        $query = NeedsCategory::forConsultationOptions();
+
+        if (request()->filled('search')) {
+            $query->where('name', 'like', '%' . request('search') . '%');
+        }
+
+        $categories = $query->paginate($this->resolvePerPage());
+
         return response()->json($categories);
     }
 
@@ -158,7 +178,7 @@ class MasterDataController extends Controller
     public function listStatuses(): JsonResponse
     {
         $this->ensureSuperAdmin();
-        $statuses = StatusCategory::orderBy('sort_order')->paginate(15);
+        $statuses = StatusCategory::orderBy('sort_order')->paginate($this->resolvePerPage());
         return response()->json($statuses);
     }
 
@@ -241,6 +261,40 @@ class MasterDataController extends Controller
 
         return response()->json([
             'message' => 'Status berhasil dihapus!',
+        ]);
+    }
+
+    /**
+     * PATCH /api/v1/master-data/statuses/reorder
+     *
+     * Persist a new ordering of the pipeline stages produced by drag-and-drop.
+     * The client sends `order`: an array of status ids in their new sequence;
+     * we rewrite sort_order to match (1-based) inside a transaction.
+     */
+    public function reorderStatuses(Request $request): JsonResponse
+    {
+        $this->ensureSuperAdmin();
+
+        $validated = $request->validate([
+            'order' => ['required', 'array', 'min:1'],
+            'order.*' => ['integer', 'distinct', 'exists:status_categories,id'],
+        ], [
+            'order.required' => 'Urutan status wajib dikirim.',
+            'order.array' => 'Format urutan tidak valid.',
+            'order.*.exists' => 'Salah satu status tidak ditemukan.',
+        ]);
+
+        DB::transaction(function () use ($validated) {
+            foreach ($validated['order'] as $index => $id) {
+                StatusCategory::where('id', $id)->update(['sort_order' => $index + 1]);
+            }
+        });
+
+        Cache::forget(self::CACHE_STATUSES);
+
+        return response()->json([
+            'message' => 'Urutan status berhasil diperbarui!',
+            'data' => StatusCategory::orderBy('sort_order')->get(),
         ]);
     }
 
