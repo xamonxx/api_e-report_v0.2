@@ -83,7 +83,7 @@ class ResetForProduction extends Command
             // Pastikan Super Admin tidak terikat ke akun manapun (karena akunnya akan dihapus)
             User::where('role', UserRole::SuperAdmin)->update(['account_id' => null]);
 
-            // 3. Hapus semua Akun / Cabang
+            // 3. Hapus semua Akun
             $this->info('- Menghapus semua Akun Interior...');
             Account::truncate();
 

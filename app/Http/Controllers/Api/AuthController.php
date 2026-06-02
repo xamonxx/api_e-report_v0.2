@@ -12,6 +12,13 @@ use Illuminate\Support\Facades\Auth;
 class AuthController extends Controller
 {
     /**
+     * A valid bcrypt hash (cost 12) of a random string. Used only to burn the
+     * same CPU time as a real Hash::check when the supplied email has no account,
+     * defeating timing-based user enumeration. Never matches any real password.
+     */
+    private const DUMMY_HASH = '$2y$12$bVACSeOR0J3SFk2JgSTLLu701EDuZqFxlVl6JRvBGARKRzBBVOetG';
+
+    /**
      * Authenticate via Sanctum SPA session.
      * Next.js calls POST /sanctum/csrf-cookie first, then POST /api/v1/auth/login.
      */
@@ -45,7 +52,16 @@ class AuthController extends Controller
 
         $user = \App\Models\User::where('email', $credentials['email'])->first();
 
-        if ($user && \Illuminate\Support\Facades\Hash::check($credentials['password'], $user->password)) {
+        // F-013: Constant-time user enumeration defense. When the email does not
+        // exist we still run a bcrypt comparison against a dummy hash so the
+        // response time is indistinguishable from a wrong-password attempt.
+        // Without this, "no such user" returns measurably faster than "bad
+        // password", leaking which emails are registered.
+        $passwordMatches = $user
+            ? \Illuminate\Support\Facades\Hash::check($credentials['password'], $user->password)
+            : \Illuminate\Support\Facades\Hash::check($credentials['password'], self::DUMMY_HASH);
+
+        if ($user && $passwordMatches) {
             LoginAttempt::record($email, $ip, $userAgent, true);
 
             $user->timestamps = false;

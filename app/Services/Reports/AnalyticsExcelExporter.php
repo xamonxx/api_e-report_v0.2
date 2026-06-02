@@ -19,6 +19,7 @@ class AnalyticsExcelExporter
 
         $worksheets = [
             $this->buildDashboardSheet($report, $rawLastRow, $trendLastRow),
+            $this->buildAnalysisSheet($report),
             $this->buildTrendSheet($report['trendSeries'] ?? collect(), $report),
             $this->buildQualitySheet($report, $rawLastRow),
             $this->buildMetricSheet(
@@ -85,10 +86,10 @@ class AnalyticsExcelExporter
         $lastIndex = count($columns) - 1;
 
         $nameRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 2);
-        $statusRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 8);
+        $statusRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 9);
         $provinceRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 4);
         $cityRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 5);
-        $notesRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 9);
+        $notesRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 10);
         $leadTrendRange = $this->sheetRange('Tren', self::DATA_START_ROW, $trendLastRow, 3);
         $surveyTrendRange = $this->sheetRange('Tren', self::DATA_START_ROW, $trendLastRow, 4);
         $dealTrendRange = $this->sheetRange('Tren', self::DATA_START_ROW, $trendLastRow, 5);
@@ -115,7 +116,7 @@ class AnalyticsExcelExporter
             ], 22),
             $this->blankRow(count($columns)),
             $this->row([
-                $this->cell('KPI Dinamis (otomatis hitung ulang saat data mentah diubah)', 'sectionTitle', mergeAcross: $lastIndex),
+                $this->cell('Ringkasan Utama', 'sectionTitle', mergeAcross: $lastIndex),
             ]),
             $this->row([
                 $this->cell('Total Lead', 'kpiLabel'),
@@ -127,10 +128,14 @@ class AnalyticsExcelExporter
             ], 24),
             $this->row([
                 $this->cell('Konversi Survey', 'kpiLabel'),
-                $this->formulaCell('=IF(R[-1]C[-4]=0,0,R[-1]C[-2]/R[-1]C[-4])', ($report['conversionRate'] ?? 0) / 100, 'percentStrong'),
+                // Survey / Lead. This cell is in column 2 (same column as Total
+                // Lead above, Total Survey is 2 columns to the right).
+                $this->formulaCell('=IF(R[-1]C=0,0,R[-1]C[2]/R[-1]C)', ($report['conversionRate'] ?? 0) / 100, 'percentStrong'),
                 $this->cell('Konversi Deal', 'kpiLabel'),
-                $this->formulaCell('=IF(R[-1]C[-4]=0,0,R[-1]C[-1]/R[-1]C[-4])', ($report['dealRate'] ?? 0) / 100, 'percentStrong'),
-                $this->cell('Growth vs Pembanding', 'kpiLabel'),
+                // Deal / Lead. This cell is in column 4 (Total Lead is 2 columns
+                // left, Total Deal is 2 columns right).
+                $this->formulaCell('=IF(R[-1]C[-2]=0,0,R[-1]C[2]/R[-1]C[-2])', ($report['dealRate'] ?? 0) / 100, 'percentStrong'),
+                $this->cell('Pertumbuhan vs Periode Lalu', 'kpiLabel'),
                 $this->cell(($report['growthPercent'] ?? 0) / 100, 'percentStrong', 'Number'),
             ], 24),
             $this->blankRow(count($columns)),
@@ -152,37 +157,37 @@ class AnalyticsExcelExporter
                     ($report['dataQuality']['location_completion_rate'] ?? 0) / 100,
                     'tablePercent'
                 ),
-                $this->cell('Rata Lead / Hari Aktif', 'metaLabel'),
+                $this->cell('Rata-rata Lead per Hari Aktif', 'metaLabel'),
                 $this->cell($report['summaryStats']['avg_per_active_day'] ?? 0, 'tableNumberDecimal', 'Number'),
-                $this->cell('Rata Lead / Hari Kalender', 'metaLabel'),
+                $this->cell('Rata-rata Lead per Hari', 'metaLabel'),
                 $this->cell($report['summaryStats']['avg_per_calendar_day'] ?? 0, 'tableNumberDecimal', 'Number'),
             ], 22),
             $this->row([
-                $this->cell('Puncak Periode', 'metaLabel'),
+                $this->cell('Periode Tertinggi', 'metaLabel'),
                 $this->cell(($report['summaryStats']['peak_period_label'] ?? '-') . ' (' . ($report['summaryStats']['peak_period_total'] ?? 0) . ')', 'metaValue'),
-                $this->cell('Leads Tren', 'metaLabel'),
+                $this->cell('Total Lead (Tren)', 'metaLabel'),
                 $this->formulaCell("=SUM($leadTrendRange)", $report['totalLeads'] ?? 0, 'tableNumber'),
-                $this->cell('Survey Tren', 'metaLabel'),
+                $this->cell('Total Survey (Tren)', 'metaLabel'),
                 $this->formulaCell("=SUM($surveyTrendRange)", $report['totalSurveys'] ?? 0, 'tableNumber'),
             ], 22),
             $this->row([
-                $this->cell('Deal Tren', 'metaLabel'),
+                $this->cell('Total Deal (Tren)', 'metaLabel'),
                 $this->formulaCell("=SUM($dealTrendRange)", $report['totalDeals'] ?? 0, 'tableNumber'),
                 $this->cell('Admin Aktif', 'metaLabel'),
                 $this->cell($report['dataQuality']['active_admins'] ?? 0, 'tableNumber', 'Number'),
-                $this->cell('No. Duplikat', 'metaLabel'),
+                $this->cell('Telepon Ganda', 'metaLabel'),
                 $this->cell($report['dataQuality']['duplicate_phone_rows'] ?? 0, 'tableNumber', 'Number'),
             ], 22),
             $this->blankRow(count($columns)),
             $this->row([
-                $this->cell('Highlight Cepat', 'sectionTitle', mergeAcross: $lastIndex),
+                $this->cell('Sorotan Utama', 'sectionTitle', mergeAcross: $lastIndex),
             ]),
             $this->row([
-                $this->cell('Top Status', 'tableHeader'),
-                $this->cell('Top Kebutuhan', 'tableHeader'),
-                $this->cell('Top Provinsi', 'tableHeader'),
-                $this->cell('Best Account', 'tableHeader'),
-                $this->cell('Best Admin', 'tableHeader', mergeAcross: 1),
+                $this->cell('Status Terbanyak', 'tableHeader'),
+                $this->cell('Kebutuhan Terbanyak', 'tableHeader'),
+                $this->cell('Provinsi Terbanyak', 'tableHeader'),
+                $this->cell('Akun Terbaik', 'tableHeader'),
+                $this->cell('Admin Terbaik', 'tableHeader', mergeAcross: 1),
             ], 22),
             $this->row([
                 $this->cell(($report['topPerformers']['status']['name'] ?? '-') . ' | ' . (($report['topPerformers']['status']['count'] ?? 0)) . ' lead', 'tableCellWrap'),
@@ -274,13 +279,13 @@ class AnalyticsExcelExporter
         $nameRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 2);
         $provinceRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 4);
         $cityRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 5);
-        $notesRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 9);
+        $notesRange = $this->sheetRange('Data Mentah', self::DATA_START_ROW, $rawLastRow, 10);
 
         $rows[] = $this->row([
             $this->cell('Metrik', 'tableHeader'),
-            $this->cell('Formula / Nilai', 'tableHeader'),
+            $this->cell('Jumlah', 'tableHeader'),
             $this->cell('Persentase', 'tableHeader'),
-            $this->cell('Interpretasi', 'tableHeader'),
+            $this->cell('Keterangan', 'tableHeader'),
         ], 24);
 
         $qualityRows = [
@@ -309,7 +314,7 @@ class AnalyticsExcelExporter
                 'note' => 'Siap dipakai untuk reporting wilayah',
             ],
             [
-                'label' => 'No telepon duplikat',
+                'label' => 'Nomor telepon ganda',
                 'value_cell' => $this->cell($report['dataQuality']['duplicate_phone_rows'] ?? 0, 'tableNumber', 'Number'),
                 'percentage_cell' => $this->cell('-', 'tableCellCenter'),
                 'note' => 'Perlu audit jika nilainya tinggi',
@@ -402,6 +407,129 @@ class AnalyticsExcelExporter
 
         return [
             'name' => $sheetName,
+            'columns' => $columns,
+            'rows' => $rows,
+            'freeze_rows' => 4,
+        ];
+    }
+
+    /**
+     * Narrative sheet: executive KPIs, the conversion funnel, and the
+     * auto-generated insights/recommendations — so the Excel carries the
+     * analysis, not just raw tables.
+     */
+    private function buildAnalysisSheet(array $report): array
+    {
+        $columns = [55, 320, 150, 150];
+        $lastIndex = count($columns) - 1;
+
+        $funnel = $report['funnel'] ?? [];
+        $insights = $report['insights'] ?? collect();
+        if (! $insights instanceof Collection) {
+            $insights = collect($insights);
+        }
+
+        $totalLeads = (int) ($report['totalLeads'] ?? 0);
+        $totalSurveys = (int) ($report['totalSurveys'] ?? 0);
+        $totalDeals = (int) ($report['totalDeals'] ?? 0);
+        $prevLeads = (int) ($report['previousTotalLeads'] ?? 0);
+        $growthDelta = (int) ($report['growthDelta'] ?? ($totalLeads - $prevLeads));
+        $growthPercent = (float) ($report['growthPercent'] ?? 0);
+        $conversionRate = (float) ($report['conversionRate'] ?? 0);
+        $surveyRate = (float) ($report['requestSurveyRate'] ?? 0);
+
+        $rows = $this->sheetIntroRows(
+            'Analisis & Insight',
+            'Ringkasan eksekutif, funnel konversi, dan rekomendasi otomatis untuk '
+                . ($report['periodLabel'] ?? 'periode terpilih') . '.',
+            count($columns)
+        );
+
+        // ── Ringkasan Eksekutif ──────────────────────────────────────────
+        $rows[] = $this->row([
+            $this->cell('Ringkasan Eksekutif', 'sectionTitle', mergeAcross: $lastIndex),
+        ], 26);
+        $rows[] = $this->row([
+            $this->cell('Metrik', 'tableHeader'),
+            $this->cell('Nilai', 'tableHeader'),
+            $this->cell('Keterangan', 'tableHeader', mergeAcross: 1),
+        ], 24);
+
+        $kpis = [
+            ['Total Leads', $totalLeads, 'tableNumber', 'Number', 'Periode sebelumnya: ' . number_format($prevLeads)],
+            ['Total Survey', $totalSurveys, 'tableNumber', 'Number', 'Lead yang masuk tahap survey'],
+            ['Total Deal', $totalDeals, 'tableNumber', 'Number', 'Lead yang berhasil closing/deal'],
+            ['Conversion Rate (Deal)', $conversionRate / 100, 'tablePercent', 'Number', 'Total deal dibagi total leads'],
+            ['Survey Rate', $surveyRate / 100, 'tablePercent', 'Number', 'Total survey dibagi total leads'],
+            ['Deal dari Survey', (float) ($funnel['deal_from_survey_rate'] ?? 0) / 100, 'tablePercent', 'Number', 'Total deal dibagi total survey'],
+            ['Pertumbuhan Leads', $growthPercent / 100, 'tablePercent', 'Number', 'Selisih ' . ($growthDelta >= 0 ? '+' : '') . number_format($growthDelta) . ' lead vs periode sebelumnya'],
+        ];
+        foreach ($kpis as $i => [$label, $value, $valStyle, $valType, $note]) {
+            $base = $i % 2 === 0 ? '' : 'Alt';
+            $rows[] = $this->row([
+                $this->cell($label, 'tableCell' . $base),
+                $this->cell($value, $valStyle . $base, $valType),
+                $this->cell($note, 'tableCell' . $base, mergeAcross: 1),
+            ], 22);
+        }
+
+        $rows[] = $this->blankRow(count($columns));
+
+        // ── Funnel Konversi ──────────────────────────────────────────────
+        $rows[] = $this->row([
+            $this->cell('Funnel Konversi', 'sectionTitle', mergeAcross: $lastIndex),
+        ], 26);
+        $rows[] = $this->row([
+            $this->cell('Tahap', 'tableHeader'),
+            $this->cell('Jumlah', 'tableHeader'),
+            $this->cell('Konversi dari Lead', 'tableHeader'),
+            $this->cell('Catatan', 'tableHeader'),
+        ], 24);
+
+        $funnelRows = [
+            ['Lead Masuk', (int) ($funnel['leads'] ?? $totalLeads), 1.0, 'Seluruh lead yang masuk pada periode ini'],
+            ['Request Survey', (int) ($funnel['surveys'] ?? $totalSurveys), (float) ($funnel['survey_rate'] ?? 0) / 100, 'Lead yang berlanjut ke tahap survey'],
+            ['Deal / Closing', (int) ($funnel['deals'] ?? $totalDeals), (float) ($funnel['deal_rate'] ?? 0) / 100, 'Konversi dari survey: ' . number_format((float) ($funnel['deal_from_survey_rate'] ?? 0), 1) . '%'],
+        ];
+        foreach ($funnelRows as $i => [$stage, $count, $rate, $note]) {
+            $base = $i % 2 === 0 ? '' : 'Alt';
+            $rows[] = $this->row([
+                $this->cell($stage, 'tableCell' . $base),
+                $this->cell($count, 'tableNumber' . $base, 'Number'),
+                $this->cell($rate, 'tablePercent' . $base, 'Number'),
+                $this->cell($note, 'tableCell' . $base),
+            ], 22);
+        }
+
+        $rows[] = $this->blankRow(count($columns));
+
+        // ── Insight & Rekomendasi ────────────────────────────────────────
+        $rows[] = $this->row([
+            $this->cell('Insight & Rekomendasi', 'sectionTitle', mergeAcross: $lastIndex),
+        ], 26);
+        $rows[] = $this->row([
+            $this->cell('No', 'tableHeader'),
+            $this->cell('Insight', 'tableHeader', mergeAcross: 2),
+        ], 24);
+
+        if ($insights->isEmpty()) {
+            $rows[] = $this->row([
+                $this->cell('Belum ada insight untuk periode ini.', 'emptyState', mergeAcross: $lastIndex),
+            ], 24);
+        } else {
+            foreach ($insights->values() as $index => $insight) {
+                $base = $index % 2 === 0 ? '' : 'Alt';
+                $text = is_array($insight) ? ($insight['html'] ?? '') : (string) $insight;
+                $text = trim(html_entity_decode(strip_tags((string) $text), ENT_QUOTES, 'UTF-8'));
+                $rows[] = $this->row([
+                    $this->cell($index + 1, 'tableCellCenter' . $base, 'Number'),
+                    $this->cell($text, 'tableCellWrap' . $base, mergeAcross: 2),
+                ], 30);
+            }
+        }
+
+        return [
+            'name' => 'Analisis & Insight',
             'columns' => $columns,
             'rows' => $rows,
             'freeze_rows' => 4,
@@ -558,7 +686,7 @@ class AnalyticsExcelExporter
 
     private function buildRawDataSheet(Collection $rows, array $report): array
     {
-        $columns = [110, 170, 105, 100, 110, 125, 125, 120, 220, 92, 60, 70, 60, 60, 120, 92, 85];
+        $columns = [110, 170, 105, 100, 110, 110, 125, 125, 120, 220, 92, 60, 70, 60, 60, 120, 92, 85, 220];
         $sheetRows = $this->sheetIntroRows(
             'Data Mentah',
             sprintf(
@@ -575,6 +703,7 @@ class AnalyticsExcelExporter
             $this->cell('No Telepon', 'tableHeader'),
             $this->cell('Provinsi', 'tableHeader'),
             $this->cell('Kota', 'tableHeader'),
+            $this->cell('Kecamatan', 'tableHeader'),
             $this->cell('Akun', 'tableHeader'),
             $this->cell('Kebutuhan', 'tableHeader'),
             $this->cell('Status', 'tableHeader'),
@@ -583,10 +712,11 @@ class AnalyticsExcelExporter
             $this->cell('Tahun', 'tableHeader'),
             $this->cell('Bulan', 'tableHeader'),
             $this->cell('Minggu', 'tableHeader'),
-            $this->cell('Q', 'tableHeader'),
+            $this->cell('Kuartal', 'tableHeader'),
             $this->cell('Dibuat Oleh', 'tableHeader'),
-            $this->cell('Update', 'tableHeader'),
-            $this->cell('Umur Data', 'tableHeader'),
+            $this->cell('Terakhir Diubah', 'tableHeader'),
+            $this->cell('Umur (hari)', 'tableHeader'),
+            $this->cell('Detail Produk', 'tableHeader'),
         ], 26);
 
         $items = $rows->values();
@@ -616,6 +746,7 @@ class AnalyticsExcelExporter
                 $this->cell($row['phone'] ?? '', 'tableCell' . $base),
                 $this->cell($row['province'] ?? '', 'tableCell' . $base),
                 $this->cell($row['city'] ?? '', 'tableCell' . $base),
+                $this->cell($row['district'] ?? '', 'tableCell' . $base),
                 $this->cell($row['account'] ?? '', 'tableCell' . $base),
                 $this->cell($row['need'] ?? '', 'tableCell' . $base),
                 $this->cell($row['status'] ?? '', 'tableCell' . $base),
@@ -632,6 +763,7 @@ class AnalyticsExcelExporter
                     ? $this->cell($row['updated_at_excel'], 'dateTimeCell' . $base, 'DateTime')
                     : $this->cell('', 'tableCellCenter' . $base),
                 $this->formulaCell('=IF(ISBLANK(RC[-7]),"",TODAY()-RC[-7])', '', 'tableNumber' . $base, 'Number'),
+                $this->cell($row['product_details'] ?? '', 'tableCellWrap' . $base),
             ], 34);
         }
 
@@ -788,46 +920,50 @@ class AnalyticsExcelExporter
 
     private function stylesXml(): string
     {
+        // Shared "all borders" block applied to every table/data style so the
+        // grid is visible on all sheets.
+        $b = '<Borders>'
+            . '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>'
+            . '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>'
+            . '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>'
+            . '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>'
+            . '</Borders>';
+
         return '<Styles>'
             . '<Style ss:ID="Default" ss:Name="Normal">'
             . '<Alignment ss:Vertical="Center"/>'
-            . '<Borders>'
-            . '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>'
-            . '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>'
-            . '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>'
-            . '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>'
-            . '</Borders>'
+            . $b
             . '<Font ss:FontName="Calibri" ss:Size="11" ss:Color="#0F172A"/>'
             . '<Interior/>'
             . '<NumberFormat/>'
             . '<Protection/>'
             . '</Style>'
-            . '<Style ss:ID="sheetTitle"><Font ss:Bold="1" ss:Size="18" ss:Color="#0F172A"/><Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="sheetSubtitle"><Font ss:Size="11" ss:Color="#475569"/><Alignment ss:WrapText="1"/><Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="sectionTitle"><Font ss:Bold="1" ss:Size="12" ss:Color="#1E3A8A"/><Interior ss:Color="#E0ECFF" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="metaLabel"><Font ss:Bold="1" ss:Color="#1E293B"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="metaValue"><Alignment ss:WrapText="1"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="kpiLabel"><Font ss:Bold="1" ss:Color="#1E293B"/><Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="kpiValueNumber"><Font ss:Bold="1" ss:Size="13" ss:Color="#1D4ED8"/><Alignment ss:Horizontal="Right"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0"/></Style>'
-            . '<Style ss:ID="percentStrong"><Font ss:Bold="1" ss:Size="13" ss:Color="#0F766E"/><Alignment ss:Horizontal="Right"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="0.0%"/></Style>'
-            . '<Style ss:ID="tableHeader"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/><Interior ss:Color="#1D4ED8" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="tableCell"><Alignment ss:Vertical="Top" ss:WrapText="1"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="tableCellAlt"><Alignment ss:Vertical="Top" ss:WrapText="1"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="tableCellWrap"><Alignment ss:Vertical="Top" ss:WrapText="1"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="tableCellWrapAlt"><Alignment ss:Vertical="Top" ss:WrapText="1"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="tableCellCenter"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="tableCellCenterAlt"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>'
-            . '<Style ss:ID="tableNumber"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0"/></Style>'
-            . '<Style ss:ID="tableNumberAlt"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0"/></Style>'
-            . '<Style ss:ID="tableNumberDecimal"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.0"/></Style>'
-            . '<Style ss:ID="tableNumberDecimalAlt"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.0"/></Style>'
-            . '<Style ss:ID="tablePercent"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="0.0%"/></Style>'
-            . '<Style ss:ID="tablePercentAlt"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="0.0%"/></Style>'
-            . '<Style ss:ID="dateCell"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="dd/mm/yyyy"/></Style>'
-            . '<Style ss:ID="dateCellAlt"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="dd/mm/yyyy"/></Style>'
-            . '<Style ss:ID="dateTimeCell"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="dd/mm/yyyy hh:mm"/></Style>'
-            . '<Style ss:ID="dateTimeCellAlt"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="dd/mm/yyyy hh:mm"/></Style>'
-            . '<Style ss:ID="emptyState"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/><Font ss:Italic="1" ss:Color="#64748B"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="sheetTitle">' . $b . '<Font ss:Bold="1" ss:Size="20" ss:Color="#0F172A"/><Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="sheetSubtitle"><Alignment ss:WrapText="1"/>' . $b . '<Font ss:Size="11" ss:Color="#92400E"/><Interior ss:Color="#FFFBEB" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="sectionTitle"><Alignment ss:Vertical="Center"/>' . $b . '<Font ss:Bold="1" ss:Size="12.5" ss:Color="#FFFFFF"/><Interior ss:Color="#B45309" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="metaLabel">' . $b . '<Font ss:Bold="1" ss:Color="#334155"/><Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="metaValue"><Alignment ss:WrapText="1"/>' . $b . '<Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="kpiLabel">' . $b . '<Font ss:Bold="1" ss:Color="#334155"/><Interior ss:Color="#FFF7ED" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="kpiValueNumber"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/>' . $b . '<Font ss:Bold="1" ss:Size="15" ss:Color="#B45309"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0"/></Style>'
+            . '<Style ss:ID="percentStrong"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/>' . $b . '<Font ss:Bold="1" ss:Size="15" ss:Color="#047857"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="0.0%"/></Style>'
+            . '<Style ss:ID="tableHeader"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>' . $b . '<Font ss:Bold="1" ss:Size="11" ss:Color="#FFFFFF"/><Interior ss:Color="#1E293B" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="tableCell"><Alignment ss:Vertical="Top" ss:WrapText="1"/>' . $b . '<Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="tableCellAlt"><Alignment ss:Vertical="Top" ss:WrapText="1"/>' . $b . '<Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="tableCellWrap"><Alignment ss:Vertical="Top" ss:WrapText="1"/>' . $b . '<Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="tableCellWrapAlt"><Alignment ss:Vertical="Top" ss:WrapText="1"/>' . $b . '<Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="tableCellCenter"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="tableCellCenterAlt"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>'
+            . '<Style ss:ID="tableNumber"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0"/></Style>'
+            . '<Style ss:ID="tableNumberAlt"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0"/></Style>'
+            . '<Style ss:ID="tableNumberDecimal"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.0"/></Style>'
+            . '<Style ss:ID="tableNumberDecimalAlt"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.0"/></Style>'
+            . '<Style ss:ID="tablePercent"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="0.0%"/></Style>'
+            . '<Style ss:ID="tablePercentAlt"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="0.0%"/></Style>'
+            . '<Style ss:ID="dateCell"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="dd/mm/yyyy"/></Style>'
+            . '<Style ss:ID="dateCellAlt"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="dd/mm/yyyy"/></Style>'
+            . '<Style ss:ID="dateTimeCell"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="dd/mm/yyyy hh:mm"/></Style>'
+            . '<Style ss:ID="dateTimeCellAlt"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' . $b . '<Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><NumberFormat ss:Format="dd/mm/yyyy hh:mm"/></Style>'
+            . '<Style ss:ID="emptyState"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>' . $b . '<Font ss:Italic="1" ss:Color="#64748B"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>'
             . '<Style ss:ID="blank"><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>'
             . '</Styles>';
     }

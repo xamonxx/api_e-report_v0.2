@@ -12,6 +12,7 @@ use App\Models\StatusCategory;
 use App\Services\ConsultationImportService;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\LeadsExcelExporter;
+use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -289,16 +290,14 @@ class ConsultationController extends Controller
     /**
      * GET /api/v1/consultations/import/template
      */
-    public function downloadTemplate(LeadsExcelExporter $excelExporter): Response
+    public function downloadTemplate(LeadsExcelExporter $excelExporter, SpreadsheetXmlToXlsxConverter $xlsxConverter): Response
     {
-        $fileName = 'template_import_leads.xls';
+        $fileName = 'template_import_leads.xlsx';
 
-        return response($excelExporter->buildTemplateWorkbook(auth()->user()), 200, [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+        return response($xlsxConverter->convert($excelExporter->buildTemplateWorkbook(auth()->user())), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
-            'Pragma' => 'no-cache',
-            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
-            'Expires' => '0',
+            'Cache-Control' => 'max-age=0',
         ]);
     }
 

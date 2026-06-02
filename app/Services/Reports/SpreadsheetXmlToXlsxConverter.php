@@ -93,6 +93,20 @@ class SpreadsheetXmlToXlsxConverter
     {
         $sheets = [];
 
+        // Collect named ranges from <Names> element at workbook level
+        $workbookNamedRanges = [];
+        $namesNode = $workbook->children(self::SS_NS)->Names;
+        if ($namesNode) {
+            foreach ($namesNode->children(self::SS_NS)->NamedRange as $namedRange) {
+                $attrs = $namedRange->attributes(self::SS_NS);
+                $name    = (string) ($attrs['Name'] ?? '');
+                $refersTo = (string) ($attrs['RefersTo'] ?? '');
+                if ($name !== '' && $refersTo !== '') {
+                    $workbookNamedRanges[] = ['name' => $name, 'refers_to' => $refersTo];
+                }
+            }
+        }
+
         foreach ($workbook->children(self::SS_NS)->Worksheet as $worksheet) {
             $sheetAttributes = $worksheet->attributes(self::SS_NS);
             $name = trim((string) ($sheetAttributes['Name'] ?? 'Sheet' . (count($sheets) + 1)));
@@ -126,11 +140,13 @@ class SpreadsheetXmlToXlsxConverter
                     $mergeAcross = (int) ($cellAttrs['MergeAcross'] ?? 0);
                     $mergeDown = (int) ($cellAttrs['MergeDown'] ?? 0);
                     $styleId = (string) ($cellAttrs['StyleID'] ?? '');
+                    $formula = (string) ($cellAttrs['Formula'] ?? '');
 
                     $cells[$columnNumber] = [
-                        'type' => (string) ($dataAttrs['Type'] ?? 'String'),
-                        'value' => (string) $data,
-                        'style' => $styleIndexes[$styleId] ?? 0,
+                        'type'    => (string) ($dataAttrs['Type'] ?? 'String'),
+                        'value'   => (string) $data,
+                        'style'   => $styleIndexes[$styleId] ?? 0,
+                        'formula' => $formula,
                     ];
 
                     if ($mergeAcross > 0 || $mergeDown > 0) {
@@ -148,17 +164,54 @@ class SpreadsheetXmlToXlsxConverter
 
                 $rows[$rowNumber] = [
                     'height' => isset($rowAttrs['Height']) ? (float) $rowAttrs['Height'] : null,
-                    'cells' => $cells,
+                    'cells'  => $cells,
                 ];
                 $rowNumber++;
             }
 
+            // Parse data validations from Excel namespace
+            $dataValidations = [];
+            $excelNs = 'urn:schemas-microsoft-com:office:excel';
+            foreach ($worksheet->children($excelNs)->DataValidation as $dv) {
+                $range = (string) $dv->children($excelNs)->Range;
+                $value = (string) $dv->children($excelNs)->Value;
+                if ($range !== '' && $value !== '') {
+                    $dataValidations[] = [
+                        'sqref'   => $this->convertSqRef($range),
+                        'formula' => $this->convertNamedRangeFormula($value),
+                    ];
+                }
+            }
+
+            // Parse WorksheetOptions for freeze rows and hidden flag
+            $freezeRows = 0;
+            $hidden = false;
+            $wsOptions = $worksheet->children($excelNs)->WorksheetOptions;
+            if ($wsOptions) {
+                $splitH = (int) ($wsOptions->SplitHorizontal ?? 0);
+                if ($splitH > 0) {
+                    $freezeRows = $splitH;
+                }
+                $visible = strtolower((string) ($wsOptions->Visible ?? ''));
+                if ($visible === 'sheethidden' || $visible === 'hidden') {
+                    $hidden = true;
+                }
+            }
+
             $sheets[] = [
-                'name' => $this->sanitizeSheetName($name !== '' ? $name : 'Sheet' . (count($sheets) + 1)),
-                'columns' => $columns,
-                'rows' => $rows,
-                'merges' => $merges,
+                'name'            => $this->sanitizeSheetName($name !== '' ? $name : 'Sheet' . (count($sheets) + 1)),
+                'columns'         => $columns,
+                'rows'            => $rows,
+                'merges'          => $merges,
+                'dataValidations' => $dataValidations,
+                'freezeRows'      => $freezeRows,
+                'hidden'          => $hidden,
             ];
+        }
+
+        // Attach workbook-level named ranges to the first sheet (they will be written to workbook.xml)
+        if ($sheets !== [] && $workbookNamedRanges !== []) {
+            $sheets[0]['namedRanges'] = $workbookNamedRanges;
         }
 
         return $sheets;
@@ -207,11 +260,29 @@ class SpreadsheetXmlToXlsxConverter
             }
         }
 
+        $freezeRows = (int) ($sheet['freezeRows'] ?? 0);
+        $hidden = (bool) ($sheet['hidden'] ?? false);
+
+        // Build sheetView with freeze pane
+        $sheetViewContent = '';
+        if ($freezeRows > 0) {
+            $sheetViewContent = sprintf(
+                '<sheetView workbookViewId="0"><pane ySplit="%d" topLeftCell="A%d" activePane="bottomLeft" state="frozen"/></sheetView>',
+                $freezeRows,
+                $freezeRows + 1
+            );
+        } else {
+            $sheetViewContent = '<sheetView workbookViewId="0"/>';
+        }
+
+        // sheetState attribute for hidden sheets
+        $sheetStateAttr = $hidden ? ' state="hidden"' : '';
+
         $xml = [
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
-            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+            sprintf('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"%s>', $sheetStateAttr),
             sprintf('<dimension ref="A1:%s%d"/>', $this->columnName($maxColumn), $maxRow),
-            '<sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/>',
+            '<sheetViews>' . $sheetViewContent . '</sheetViews><sheetFormatPr defaultRowHeight="15"/>',
         ];
 
         if ($sheet['columns'] !== []) {
@@ -244,6 +315,20 @@ class SpreadsheetXmlToXlsxConverter
             $xml[] = '</mergeCells>';
         }
 
+        // Data validations (dropdown lists)
+        $dataValidations = $sheet['dataValidations'] ?? [];
+        if ($dataValidations !== []) {
+            $xml[] = sprintf('<dataValidations count="%d">', count($dataValidations));
+            foreach ($dataValidations as $dv) {
+                $xml[] = sprintf(
+                    '<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" sqref="%s"><formula1>%s</formula1></dataValidation>',
+                    $this->xml($dv['sqref']),
+                    $this->xml($dv['formula'])
+                );
+            }
+            $xml[] = '</dataValidations>';
+        }
+
         $xml[] = '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/></worksheet>';
 
         return implode('', $xml);
@@ -254,6 +339,31 @@ class SpreadsheetXmlToXlsxConverter
         $ref = $this->columnName($columnNumber) . $rowNumber;
         $style = $cell['style'] > 0 ? sprintf(' s="%d"', $cell['style']) : '';
         $value = $cell['value'];
+        $formula = $cell['formula'] ?? '';
+
+        // Formula cell (R1C1 → A1 style already stored, emit as formula)
+        if ($formula !== '') {
+            // Convert R1C1 formula to A1 notation for XLSX
+            $a1Formula = $this->convertR1C1Formula($formula, $columnNumber, $rowNumber);
+
+            // Safety net: convertR1C1Formula leaves a token untouched when it
+            // can't resolve it (e.g. an out-of-bounds relative reference). Such
+            // a token still contains a square bracket, which never appears in a
+            // valid A1 formula here — so if one survives, the formula is broken
+            // and Excel would silently strip it ("Removed Records: Formula").
+            // In that case skip the <f> and keep just the cached value below.
+            if (! str_contains($a1Formula, '[')) {
+                if ($value !== '') {
+                    // Provide cached value for formula cells
+                    if ($cell['type'] === 'Number' && is_numeric($value)) {
+                        return sprintf('<c r="%s"%s><f>%s</f><v>%s</v></c>', $ref, $style, $this->xml($a1Formula), $this->number((float) $value));
+                    }
+                    return sprintf('<c r="%s"%s t="str"><f>%s</f><v>%s</v></c>', $ref, $style, $this->xml($a1Formula), $this->xml($value));
+                }
+                return sprintf('<c r="%s"%s><f>%s</f></c>', $ref, $style, $this->xml($a1Formula));
+            }
+            // else: fall through and emit the cached value as a plain cell.
+        }
 
         if ($value === '') {
             return sprintf('<c r="%s"%s/>', $ref, $style);
@@ -410,10 +520,31 @@ class SpreadsheetXmlToXlsxConverter
 
         foreach ($sheets as $index => $sheet) {
             $sheetId = $index + 1;
-            $xml[] = sprintf('<sheet name="%s" sheetId="%d" r:id="rId%d"/>', $this->xml($sheet['name']), $sheetId, $sheetId);
+            $stateAttr = ($sheet['hidden'] ?? false) ? ' state="hidden"' : '';
+            $xml[] = sprintf('<sheet name="%s" sheetId="%d" r:id="rId%d"%s/>', $this->xml($sheet['name']), $sheetId, $sheetId, $stateAttr);
         }
 
-        $xml[] = '</sheets><calcPr calcId="0"/></workbook>';
+        $xml[] = '</sheets>';
+
+        // Emit definedNames from named ranges stored in any sheet
+        $allNamedRanges = [];
+        foreach ($sheets as $sheet) {
+            foreach ($sheet['namedRanges'] ?? [] as $nr) {
+                $allNamedRanges[] = $nr;
+            }
+        }
+
+        if ($allNamedRanges !== []) {
+            $xml[] = '<definedNames>';
+            foreach ($allNamedRanges as $nr) {
+                // Convert SpreadsheetML formula (=Opsi!R2C1:R100C1) to A1 notation
+                $a1Refers = $this->convertDefinedNameFormula($nr['refers_to']);
+                $xml[] = sprintf('<definedName name="%s">%s</definedName>', $this->xml($nr['name']), $this->xml($a1Refers));
+            }
+            $xml[] = '</definedNames>';
+        }
+
+        $xml[] = '<calcPr calcId="0"/></workbook>';
 
         return implode('', $xml);
     }
@@ -482,6 +613,126 @@ class SpreadsheetXmlToXlsxConverter
     private function sanitizeSheetName(string $name): string
     {
         return mb_substr(preg_replace('/[\[\]:*?\/\\\\]/', ' ', $name) ?: 'Sheet', 0, 31);
+    }
+
+    /**
+     * Convert a SpreadsheetML sqref like "R5C4:R306C4" to A1 notation like "D5:D306".
+     * Handles both R1C1 range pairs and named-range style references.
+     */
+    private function convertSqRef(string $sqref): string
+    {
+        // Try to match R1C1 range like R5C4:R306C4
+        if (preg_match('/^R(\d+)C(\d+):R(\d+)C(\d+)$/', $sqref, $m)) {
+            return $this->columnName((int) $m[2]) . $m[1] . ':' . $this->columnName((int) $m[4]) . $m[3];
+        }
+        // Single cell R1C1
+        if (preg_match('/^R(\d+)C(\d+)$/', $sqref, $m)) {
+            return $this->columnName((int) $m[2]) . $m[1];
+        }
+        // Already in A1 notation or unknown — return as-is
+        return $sqref;
+    }
+
+    /**
+     * Convert a SpreadsheetML DataValidation value like "=AccountOptions" to
+     * an OOXML formula1 value like "AccountOptions" (drop leading "=").
+     * If the value is a quoted list like "\"A,B,C\"", keep it.
+     */
+    private function convertNamedRangeFormula(string $value): string
+    {
+        // SpreadsheetML stores named range refs as "=NamedRange"
+        if (str_starts_with($value, '=')) {
+            return substr($value, 1);
+        }
+        return $value;
+    }
+
+    /**
+     * Convert a SpreadsheetML NamedRange RefersTo like
+     * "=Opsi!R2C1:R100C1" to OOXML A1 notation "Opsi!$A$2:$A$101".
+     */
+    private function convertDefinedNameFormula(string $refersTo): string
+    {
+        // Strip leading "="
+        $formula = str_starts_with($refersTo, '=') ? substr($refersTo, 1) : $refersTo;
+
+        // Match: SheetName!R(r1)C(c1):R(r2)C(c2)
+        if (preg_match('/^([^!]+)!R(\d+)C(\d+):R(\d+)C(\d+)$/', $formula, $m)) {
+            $sheet = $m[1];
+            $r1 = (int) $m[2]; $c1 = (int) $m[3];
+            $r2 = (int) $m[4]; $c2 = (int) $m[5];
+            return sprintf("%s!\$%s\$%d:\$%s\$%d",
+                $sheet,
+                $this->columnName($c1), $r1,
+                $this->columnName($c2), $r2
+            );
+        }
+
+        // Match: SheetName!R(r1)C(c1) (single cell)
+        if (preg_match('/^([^!]+)!R(\d+)C(\d+)$/', $formula, $m)) {
+            $sheet = $m[1];
+            $r1 = (int) $m[2]; $c1 = (int) $m[3];
+            return sprintf("%s!\$%s\$%d", $sheet, $this->columnName($c1), $r1);
+        }
+
+        // Return as-is (might already be A1 or just a name)
+        return $formula;
+    }
+
+    /**
+     * Convert an R1C1 formula (from SpreadsheetML ss:Formula) to A1 notation
+     * for use in OOXML <f> elements. The context cell (col, row) is used for
+     * relative references like RC[2] or R[-1]C.
+     */
+    private function convertR1C1Formula(string $formula, int $contextCol, int $contextRow): string
+    {
+        // Strip leading "="
+        if (str_starts_with($formula, '=')) {
+            $formula = substr($formula, 1);
+        }
+
+        // Replace R1C1 references like R5C4, RC[2], R[-1]C, RC, etc.
+        $formula = preg_replace_callback(
+            '/R(\[(-?\d+)\]|(-?\d*))C(\[(-?\d+)\]|(-?\d*))/',
+            function (array $m) use ($contextRow, $contextCol): string {
+                // Row part
+                $rowPart = $m[1];
+                if ($rowPart === '') {
+                    // RC... means current row (relative)
+                    $row = $contextRow;
+                    $rowAbs = false;
+                } elseif (str_starts_with($rowPart, '[')) {
+                    $row = $contextRow + (int) $m[2];
+                    $rowAbs = false;
+                } else {
+                    $row = (int) $rowPart;
+                    $rowAbs = $row > 0;
+                }
+
+                // Column part
+                $colPart = $m[4];
+                if ($colPart === '') {
+                    $col = $contextCol;
+                    $colAbs = false;
+                } elseif (str_starts_with($colPart, '[')) {
+                    $col = $contextCol + (int) $m[5];
+                    $colAbs = false;
+                } else {
+                    $col = (int) $colPart;
+                    $colAbs = $col > 0;
+                }
+
+                if ($row <= 0 || $col <= 0) {
+                    return $m[0]; // can't convert, leave as-is
+                }
+
+                return ($colAbs ? '$' : '') . $this->columnName($col)
+                    . ($rowAbs ? '$' : '') . $row;
+            },
+            $formula
+        ) ?? $formula;
+
+        return $formula;
     }
 
     private function columnName(int $columnNumber): string

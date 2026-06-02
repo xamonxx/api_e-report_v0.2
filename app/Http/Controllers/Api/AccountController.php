@@ -31,14 +31,24 @@ class AccountController extends Controller
         }
 
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('admins', function ($aq) use ($search) {
+                        $aq->where('name', 'like', "%{$search}%");
+                    });
+            });
         }
 
         if ($request->filled('category')) {
             $query->where('description', $request->category);
         }
 
-        $accounts = $query->orderBy('name')->paginate(20);
+        $perPage = (int) $request->input('per_page', 20);
+        $perPage = $perPage > 0 ? min($perPage, 100) : 20;
+
+        $accounts = $query->orderBy('name')->paginate($perPage);
 
         return response()->json($accounts);
     }

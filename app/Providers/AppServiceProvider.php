@@ -36,7 +36,15 @@ class AppServiceProvider extends ServiceProvider
         Consultation::observe(AuditObserver::class);
 
         $clearDashboardCache = function ($model = null) {
-            Cache::forget('dashboard:super_admin');
+            // Clear all super admin dashboard caches (as key includes user ID)
+            try {
+                $superAdmins = \App\Models\User::where('role', \App\Enums\UserRole::SuperAdmin)->pluck('id');
+                foreach ($superAdmins as $adminId) {
+                    Cache::forget("dashboard:super_admin:{$adminId}");
+                }
+            } catch (\Throwable $e) {
+                Cache::forget('dashboard:super_admin');
+            }
 
             $accountId = null;
             if ($model instanceof Consultation) {
@@ -48,6 +56,9 @@ class AppServiceProvider extends ServiceProvider
             if ($accountId) {
                 Cache::forget("dashboard:admin:{$accountId}");
             }
+
+            // Invalidate analytics report cache
+            Cache::forever('analytics:last_updated', now()->timestamp);
         };
 
         Consultation::created($clearDashboardCache);
