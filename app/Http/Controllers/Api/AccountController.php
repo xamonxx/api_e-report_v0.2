@@ -18,6 +18,25 @@ class AccountController extends Controller
     /**
      * GET /api/v1/accounts
      */
+    /**
+     * GET /api/v1/accounts/categories
+     *
+     * Daftar kategori akun unik (kolom description) untuk mengisi dropdown
+     * filter pada halaman Kelola Akun.
+     */
+    public function categories(): JsonResponse
+    {
+        $categories = Account::query()
+            ->whereNotNull('description')
+            ->where('description', '!=', '')
+            ->distinct()
+            ->orderBy('description')
+            ->pluck('description')
+            ->values();
+
+        return response()->json(['data' => $categories]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $query = Account::query()

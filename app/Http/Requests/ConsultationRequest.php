@@ -214,43 +214,45 @@ class ConsultationRequest extends FormRequest
             $hasCity = ($city !== null && $city !== $none);
             $hasDistrict = ($district !== null && $district !== $none);
 
+            // Data wilayah bersifat opsional dan boleh diisi sebagian: pengguna
+            // boleh mengisi hanya provinsi, hanya kota/kabupaten, atau hanya
+            // kecamatan. Setiap nilai yang diisi tetap divalidasi keabsahannya
+            // dan konsistensinya terhadap tingkatan lain yang juga diisi.
             if ($hasProvince || $hasCity || $hasDistrict) {
-                if (! $hasProvince) {
-                    $validator->errors()->add('province', 'Provinsi wajib diisi jika data wilayah lainnya ditentukan.');
-                }
-                if (! $hasCity) {
-                    $validator->errors()->add('city', 'Kabupaten / Kota wajib diisi jika data wilayah lainnya ditentukan.');
-                }
-                if (! $hasDistrict) {
-                    $validator->errors()->add('district', 'Kecamatan wajib diisi jika data wilayah lainnya ditentukan.');
+                $provinces = config('wilayah.provinces', []);
+                $cityMapping = \App\Support\Wilayah::cityMapping();
+                $districtMapping = \App\Support\Wilayah::districtMapping();
+
+                if ($hasProvince && ! in_array($province, $provinces, true)) {
+                    $validator->errors()->add('province', 'Provinsi tidak ditemukan dalam data wilayah Indonesia.');
                 }
 
-                if ($hasProvince && $hasCity && $hasDistrict) {
-                    $provinces = config('wilayah.provinces', []);
-                    if (! in_array($province, $provinces, true)) {
-                        $validator->errors()->add('province', 'Provinsi tidak ditemukan dalam data wilayah Indonesia.');
-                    } else {
-                        $cityMapping = \App\Support\Wilayah::cityMapping();
-                        if (! isset($cityMapping[$city]) || $cityMapping[$city] !== $province) {
-                            $validator->errors()->add('city', 'Kabupaten / Kota tidak valid atau tidak sesuai dengan Provinsi.');
-                        } else {
-                            $districtMapping = \App\Support\Wilayah::districtMapping();
-                            $districtValid = false;
-                            foreach ($districtMapping as $item) {
-                                if (
-                                    ($item['district'] ?? '') === $district &&
-                                    ($item['city'] ?? '') === $city &&
-                                    ($item['province'] ?? '') === $province
-                                ) {
-                                    $districtValid = true;
-                                    break;
-                                }
-                            }
+                if ($hasCity) {
+                    if (! isset($cityMapping[$city])) {
+                        $validator->errors()->add('city', 'Kabupaten / Kota tidak ditemukan dalam data wilayah Indonesia.');
+                    } elseif ($hasProvince && $cityMapping[$city] !== $province) {
+                        $validator->errors()->add('city', 'Kabupaten / Kota tidak sesuai dengan Provinsi.');
+                    }
+                }
 
-                            if (! $districtValid) {
-                                $validator->errors()->add('district', 'Kecamatan tidak valid atau tidak sesuai dengan Kota/Provinsi.');
-                            }
+                if ($hasDistrict) {
+                    $districtValid = false;
+                    foreach ($districtMapping as $item) {
+                        if (($item['district'] ?? '') !== $district) {
+                            continue;
                         }
+                        if ($hasCity && ($item['city'] ?? '') !== $city) {
+                            continue;
+                        }
+                        if ($hasProvince && ($item['province'] ?? '') !== $province) {
+                            continue;
+                        }
+                        $districtValid = true;
+                        break;
+                    }
+
+                    if (! $districtValid) {
+                        $validator->errors()->add('district', 'Kecamatan tidak valid atau tidak sesuai dengan Kota/Provinsi.');
                     }
                 }
             }
