@@ -73,6 +73,11 @@ Route::prefix('v1')->group(function () {
             ->name('api.online-users');
 
         // Accounts CRUD (Super Admin Only)
+        // Daftar kategori akun (kolom description) untuk filter — didaftarkan
+        // sebelum apiResource agar tidak tertangkap sebagai accounts/{account}.
+        Route::get('accounts/categories', [App\Http\Controllers\Api\AccountController::class, 'categories'])
+            ->name('api.accounts.categories')
+            ->middleware('role:super_admin');
         Route::apiResource('accounts', App\Http\Controllers\Api\AccountController::class)
             ->names('api.accounts')
             ->middleware('role:super_admin');
