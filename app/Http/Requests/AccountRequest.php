@@ -57,6 +57,18 @@ class AccountRequest extends FormRequest
             'name.max' => 'Nama akun terlalu panjang (maksimal 100 karakter).',
             'name.unique' => 'Nama akun sudah digunakan.',
             'description.max' => 'Kategori/tagline terlalu panjang (maksimal 120 karakter).',
+            'account_group.required' => 'Grup akun tidak boleh dikosongkan. Pilih salah satu: '
+                . implode(', ', AccountGroup::labels()) . '.',
+            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
+                . implode(', ', AccountGroup::labels()) . '.',
+            'account_group.required' => 'Grup akun tidak boleh dikosongkan. Pilih salah satu: '
+                . implode(', ', AccountGroup::labels()) . '.',
+            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
+                . implode(', ', AccountGroup::labels()) . '.',
+            'account_group.required' => 'Grup akun tidak boleh dikosongkan. Pilih salah satu: '
+                . implode(', ', AccountGroup::labels()) . '.',
+            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
+                . implode(', ', AccountGroup::labels()) . '.',
             'target_leads.integer' => 'Target leads harus berupa angka.',
             'target_leads.min' => 'Target leads minimal 1.',
             'target_leads.max' => 'Target leads terlalu besar (maksimal 1.000.000).',

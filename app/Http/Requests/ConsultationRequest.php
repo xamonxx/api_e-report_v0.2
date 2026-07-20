@@ -59,9 +59,9 @@ class ConsultationRequest extends FormRequest
             return $clean === '' ? null : $clean;
         };
 
-        $province = $trimmed($this->input('province')) ?? PendingConfirmation::LABEL;
-        $city = $trimmed($this->input('city')) ?? PendingConfirmation::LABEL;
-        $district = $trimmed($this->input('district')) ?? PendingConfirmation::LABEL;
+        $province = PendingConfirmation::normalize($trimmed($this->input('province')));
+        $city = PendingConfirmation::normalize($trimmed($this->input('city')));
+        $district = PendingConfirmation::normalize($trimmed($this->input('district')));
 
         $none = PendingConfirmation::LABEL;
         if ($province !== $none) {
@@ -116,7 +116,7 @@ class ConsultationRequest extends FormRequest
         }
 
         $this->merge([
-            'client_name' => $trimmed($this->input('client_name')),
+            'client_name' => $trimmed($this->input('client_name')) ?? Consultation::generatePlaceholderClientName(),
             'phone' => $phone,
             'province' => $province,
             'city' => $city,
@@ -146,7 +146,7 @@ class ConsultationRequest extends FormRequest
 
         return [
             'client_name'        => [
-                'required',
+                'nullable',
                 'string',
                 'min:2',
                 'max:100',
@@ -168,9 +168,9 @@ class ConsultationRequest extends FormRequest
                     $duplicate = Consultation::findDuplicatePhone($accountId, $value, $consultationId);
 
                     if ($duplicate) {
-                        $fail('Nomor telepon ini sudah digunakan pada lead lain di akun yang sama.');
+                        $fail("Nomor telepon ini sudah digunakan pada lead {$duplicate->consultation_id} di akun yang sama. Gunakan nomor lain atau perbarui lead tersebut.");
                     }
-                }
+                },
             ],
             'province'           => ['nullable', 'string', 'min:3', 'max:100', 'regex:/^[\pL0-9\s\-.,]+$/u'],
             'city'               => ['nullable', 'string', 'min:3', 'max:100', 'regex:/^[\pL0-9\s\-.,]+$/u'],
@@ -236,23 +236,30 @@ class ConsultationRequest extends FormRequest
                 }
 
                 if ($hasDistrict) {
-                    $districtValid = false;
-                    foreach ($districtMapping as $item) {
-                        if (($item['district'] ?? '') !== $district) {
-                            continue;
-                        }
-                        if ($hasCity && ($item['city'] ?? '') !== $city) {
-                            continue;
-                        }
-                        if ($hasProvince && ($item['province'] ?? '') !== $province) {
-                            continue;
-                        }
-                        $districtValid = true;
-                        break;
-                    }
+                    $knownDistricts = collect($districtMapping)
+                        ->filter(fn (array $item) => strcasecmp((string) ($item['district'] ?? ''), (string) $district) === 0)
+                        ->values();
 
-                    if (! $districtValid) {
-                        $validator->errors()->add('district', 'Kecamatan tidak valid atau tidak sesuai dengan Kota/Provinsi.');
+                    // Reference data is not exhaustive. A district absent from it is retained as
+                    // a manual value, but a known district must still match the selected area.
+                    if ($knownDistricts->isNotEmpty()) {
+                        $matchingDistrict = $knownDistricts->first(function (array $item) use ($hasCity, $hasProvince, $city, $province) {
+                            return (! $hasCity || strcasecmp((string) ($item['city'] ?? ''), (string) $city) === 0)
+                                && (! $hasProvince || strcasecmp((string) ($item['province'] ?? ''), (string) $province) === 0);
+                        });
+
+                        if (! $matchingDistrict) {
+                            $actual = $knownDistricts->first();
+                            $validator->errors()->add(
+                                'district',
+                                sprintf(
+                                    'Kecamatan %s terdaftar di %s, %s.',
+                                    $district,
+                                    $actual['city'] ?? '-',
+                                    $actual['province'] ?? '-'
+                                )
+                            );
+                        }
                     }
                 }
             }
@@ -261,15 +268,6 @@ class ConsultationRequest extends FormRequest
                 return;
             }
 
-            $consultationId = $this->route('consultation')?->id;
-            $duplicate = Consultation::findDuplicateLead($this->duplicateCheckPayload(), $consultationId);
-
-            if ($duplicate) {
-                $validator->errors()->add(
-                    'client_name',
-                    'Lead dengan nama, lokasi, dan detail produk yang sama sudah terdaftar pada akun ini.'
-                );
-            }
         });
     }
 
@@ -279,7 +277,6 @@ class ConsultationRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'client_name.required'        => 'Nama klien wajib diisi.',
             'client_name.min'             => 'Nama klien minimal 2 karakter.',
             'client_name.max'             => 'Nama klien maksimal 100 karakter.',
             'client_name.regex'           => 'Nama klien hanya boleh berisi huruf, angka, spasi, dan tanda baca dasar (-.,\'&()).',

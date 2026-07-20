@@ -26,7 +26,7 @@ class ConsultationPolicy
      */
     public function viewAny(User $user): bool
     {
-        return true;
+        return $user->isAdmin();
     }
 
     /**
@@ -34,36 +34,36 @@ class ConsultationPolicy
      */
     public function view(User $user, Consultation $consultation): bool
     {
-        return $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->account_id === $consultation->account_id;
     }
 
     public function create(User $user): bool
     {
-        return true;
+        return $user->isAdmin();
     }
 
     public function update(User $user, Consultation $consultation): bool
     {
-        return $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->account_id === $consultation->account_id;
     }
 
     public function delete(User $user, Consultation $consultation): bool
     {
-        return $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->account_id === $consultation->account_id;
     }
 
     public function viewHistory(User $user, Consultation $consultation): bool
     {
-        return $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->account_id === $consultation->account_id;
     }
 
     public function addNote(User $user, Consultation $consultation): bool
     {
-        return $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->account_id === $consultation->account_id;
     }
 
     public function addReminder(User $user, Consultation $consultation): bool
     {
-        return $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->account_id === $consultation->account_id;
     }
 }

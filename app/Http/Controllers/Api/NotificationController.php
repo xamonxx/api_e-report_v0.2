@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ConsultationNote;
 use App\Models\Reminder;
+use App\Models\SurveyNotification;
 use App\Services\NotificationSummaryService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -24,11 +25,13 @@ class NotificationController extends Controller
         $user = Auth::user();
 
         $summary = $this->notificationSummaryService->getCountsForUser($user);
+        $unreadSurveys = SurveyNotification::where('user_id', $user->id)->whereNull('read_at')->count();
 
         return response()->json([
             'unread_notes' => $summary['unreadNotesCount'],
             'upcoming_reminders' => $summary['upcomingRemindersCount'],
-            'total' => $summary['initialTotalAlerts'],
+            'unread_surveys' => $unreadSurveys,
+            'total' => $summary['initialTotalAlerts'] + $unreadSurveys,
             'timestamp' => Carbon::now()->toIso8601String(),
         ]);
     }
@@ -37,11 +40,18 @@ class NotificationController extends Controller
     {
         $user = Auth::user();
         $summary = $this->notificationSummaryService->getForUser($user);
+        $surveyNotifications = SurveyNotification::query()
+            ->where('user_id', $user->id)
+            ->latest()
+            ->limit(30)
+            ->get();
+        $unreadSurveys = $surveyNotifications->whereNull('read_at')->count();
 
         return response()->json([
             'unread_notes' => $summary['unreadNotesCount'],
             'upcoming_reminders' => $summary['upcomingRemindersCount'],
-            'total' => $summary['initialTotalAlerts'],
+            'unread_surveys' => $unreadSurveys,
+            'total' => $summary['initialTotalAlerts'] + $unreadSurveys,
             'notes' => $summary['unreadNotes']->map(function (ConsultationNote $note) {
                 return [
                     'id' => $note->id,
@@ -66,6 +76,15 @@ class NotificationController extends Controller
                     'mark_read_url' => route('api.notifications.reminders.read', $reminder),
                 ];
             })->values(),
+            'surveys' => $surveyNotifications
+                ->map(fn (SurveyNotification $notification) => [
+                    'id' => $notification->id,
+                    'type' => $notification->action,
+                    'title' => $notification->title,
+                    'message' => $notification->message,
+                    'is_read' => $notification->read_at !== null,
+                    'created_human' => $notification->created_at?->diffForHumans(),
+                ]),
             'timestamp' => Carbon::now()->toIso8601String(),
         ]);
     }
@@ -98,6 +117,15 @@ class NotificationController extends Controller
         $reminder->update(['is_read' => true]);
         $this->notificationSummaryService->forgetForUser($user->id);
         
+        return response()->json(['success' => true]);
+    }
+
+    public function markSurveyRead(SurveyNotification $notification): JsonResponse
+    {
+        abort_unless($notification->user_id === Auth::id(), 403);
+        $notification->update(['read_at' => now()]);
+        $this->notificationSummaryService->forgetForUser((int) Auth::id());
+
         return response()->json(['success' => true]);
     }
 }

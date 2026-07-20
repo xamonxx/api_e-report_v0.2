@@ -494,6 +494,7 @@ class LeadsExcelExporter
                 ['name' => 'StatusOptions', 'refers_to' => '=Opsi!R2C4:R' . max(2, count($options['statuses']) + 1) . 'C4'],
                 ['name' => 'DomicileOptions', 'refers_to' => '=Opsi!R2C5:R' . max(2, count($options['domiciles']) + 1) . 'C5'],
                 ['name' => 'ProvinceOptions', 'refers_to' => '=Opsi!R2C15:R' . max(2, count($options['provinces']) + 1) . 'C15'],
+                ['name' => 'ProvinceOptions', 'refers_to' => '=Opsi!R2C15:R' . max(2, count($options['provinces']) + 1) . 'C15'],
                 ['name' => 'CityOptions', 'refers_to' => '=Opsi!R2C9:R' . max(2, count($options['city_province_rows']) + 1) . 'C9'],
                 ['name' => 'CityProvinceMap', 'refers_to' => '=Opsi!R2C9:R' . max(2, count($options['city_province_rows']) + 1) . 'C10'],
                 ['name' => 'CityProvinceLookup', 'refers_to' => '=Opsi!R2C11:R' . max(2, count($options['city_province_lookup_rows']) + 1) . 'C12'],
