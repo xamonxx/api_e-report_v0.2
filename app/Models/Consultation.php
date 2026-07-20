@@ -97,6 +97,11 @@ class Consultation extends Model
         return $this->hasMany(Reminder::class)->latest();
     }
 
+    public function surveys()
+    {
+        return $this->hasMany(Survey::class);
+    }
+
     public function statusHistories()
     {
         return $this->hasMany(ConsultationStatusHistory::class)->oldest();
@@ -157,6 +162,19 @@ class Consultation extends Model
             ->sort()
             ->values()
             ->all();
+    }
+
+    public static function generatePlaceholderClientName(): string
+    {
+        return static::PLACEHOLDER_NAME_PREFIX;
+    }
+
+    public static function isPlaceholderClientName(?string $name): bool
+    {
+        return (bool) preg_match(
+            '/^' . preg_quote(static::PLACEHOLDER_NAME_PREFIX, '/') . '(\s+\d+)?$/iu',
+            trim((string) $name)
+        );
     }
 
     public static function buildLeadPhoneKey(int|string|null $accountId, ?string $phone): string

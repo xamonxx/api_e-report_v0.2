@@ -75,7 +75,9 @@ class AdminReportAttendanceExcelExporter
                 return [
                     'admin' => $admin,
                     'account_name' => $admin->account?->name ?? $admin->name,
-                    'account_group' => $this->accountGroupLabel($admin->account?->description),
+                    // Ember lama PC/NPP: kontrak export ini tetap dua nilai,
+                    // sementara grup sebenarnya sudah terpecah jadi NPP1/NPP2.
+                    'account_group' => AccountGroup::legacyBucket($admin->account?->account_group),
                     'attendances' => $attendances,
                 ];
             })

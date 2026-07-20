@@ -3,14 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\AnalyticsReportRequest;
+use App\Http\Requests\SurveyorScheduleRecapRequest;
 use App\Models\Consultation;
+use App\Models\Survey;
 use App\Services\Reports\AnalyticsExcelExporter;
 use App\Services\Reports\AnalyticsReportService;
 use App\Services\Reports\LeadsExcelExporter;
 use App\Services\Reports\LeadsReportService;
 use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
+use App\Services\Reports\SurveyorScheduleRecapExcelExporter;
+use App\Services\Reports\SurveyorScheduleRecapService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -170,6 +175,32 @@ class ExportController extends Controller
         ])->setPaper('a4', 'landscape');
 
         return $pdf->download($filename);
+    }
+
+    public function exportSurveyorScheduleRecapExcel(
+        SurveyorScheduleRecapRequest $request,
+        SurveyorScheduleRecapService $reportService,
+        SurveyorScheduleRecapExcelExporter $excelExporter,
+        SpreadsheetXmlToXlsxConverter $xlsxConverter
+    ): Response {
+        Gate::authorize('viewRecap', Survey::class);
+
+        $report = $reportService->buildForUser($request->user(), $request->validated());
+        $filename = sprintf(
+            'rekap-jadwal-surveyor-%s-%s.xlsx',
+            $report['period']['start'],
+            $report['period']['end']
+        );
+
+        return response(
+            $xlsxConverter->convert($excelExporter->buildWorkbook($report)),
+            200,
+            [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                'Cache-Control' => 'max-age=0',
+            ]
+        );
     }
 
     private function analyticsFilename(string $extension, array $report): string

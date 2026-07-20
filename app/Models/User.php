@@ -38,7 +38,6 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'role' => UserRole::class,
@@ -78,5 +77,25 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return $this->role === UserRole::Admin;
+    }
+
+    public function isSurveyor(): bool
+    {
+        return $this->role === UserRole::Surveyor;
+    }
+
+    public function isManagerSurveyor(): bool
+    {
+        return $this->role === UserRole::ManagerSurveyor;
+    }
+
+    public function isSurveyTeam(): bool
+    {
+        return $this->isSurveyor() || $this->isManagerSurveyor();
+    }
+
+    public function assignedSurveys()
+    {
+        return $this->hasMany(Survey::class, 'surveyor_id');
     }
 }

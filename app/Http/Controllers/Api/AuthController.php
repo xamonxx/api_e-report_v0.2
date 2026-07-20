@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\Models\LoginAttempt;
+use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -83,6 +84,18 @@ class AuthController extends Controller
         }
 
         LoginAttempt::record($email, $ip, $userAgent, false);
+
+        // Telegram alert: notify ONLY on the 5th consecutive failed attempt (exactly 5, not 6+).
+        // This prevents spamming the Telegram chat if the user keeps trying after being blocked.
+        $failedCount = LoginAttempt::recentFailedCount($email, $ip, minutes: 15);
+        if ($failedCount === 5) {
+            app(TelegramService::class)->sendFailedLoginAlert(
+                $email,
+                $ip,
+                $failedCount,
+                $userAgent
+            );
+        }
 
         return response()->json([
             'message' => 'Email atau password tidak sesuai.',

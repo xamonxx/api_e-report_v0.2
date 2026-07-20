@@ -69,7 +69,15 @@ class AccountController extends Controller
 
         $accounts = $query->orderBy('name')->paginate($perPage);
 
-        return response()->json($accounts);
+        return response()->json([
+            'data' => $accounts->items(),
+            'meta' => [
+                'current_page' => $accounts->currentPage(),
+                'last_page' => $accounts->lastPage(),
+                'per_page' => $accounts->perPage(),
+                'total' => $accounts->total(),
+            ],
+        ]);
     }
 
     /**

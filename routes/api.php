@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\ConsultationController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\MasterDataController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\SurveyController;
 use App\Http\Controllers\Api\WilayahController;
 use App\Http\Controllers\Api\DebugController;
 use App\Http\Controllers\ExportController;
@@ -49,11 +50,12 @@ Route::prefix('v1')->group(function () {
 
         // Dashboard
         Route::get('/dashboard', [DashboardController::class, 'index'])
-            ->middleware('throttle:60,1')
+            ->middleware(['role:admin', 'throttle:60,1'])
             ->name('api.dashboard');
 
         // Analytics
         Route::get('/analytics', [App\Http\Controllers\Api\AnalyticsController::class, 'index'])
+            ->middleware('role:admin')
             ->name('api.analytics');
 
         // Settings
@@ -64,8 +66,10 @@ Route::prefix('v1')->group(function () {
 
         // Audit Logs
         Route::get('/audit-logs', [App\Http\Controllers\Api\AuditLogController::class, 'index'])
+            ->middleware('role:super_admin')
             ->name('api.audit-logs.index');
         Route::get('/audit-logs/{auditLog}', [App\Http\Controllers\Api\AuditLogController::class, 'show'])
+            ->middleware('role:super_admin')
             ->name('api.audit-logs.show');
 
         // Online Users (realtime presence via last_seen_at polling)
@@ -82,44 +86,79 @@ Route::prefix('v1')->group(function () {
             ->names('api.accounts')
             ->middleware('role:super_admin');
 
-        // Report Attendances
-        Route::get('/report-attendances', [App\Http\Controllers\Api\ReportAttendanceController::class, 'index'])
-            ->name('api.report-attendances.index');
-        Route::get('/report-attendances/export', [App\Http\Controllers\Api\ReportAttendanceController::class, 'export'])
-            ->name('api.report-attendances.export');
-        Route::post('/report-attendances', [App\Http\Controllers\Api\ReportAttendanceController::class, 'store'])
-            ->name('api.report-attendances.store');
-        Route::post('/report-attendances/upsert-by-super-admin', [App\Http\Controllers\Api\ReportAttendanceController::class, 'upsertBySuperAdmin'])
-            ->name('api.report-attendances.upsert-by-super-admin');
+        Route::middleware('role:admin')->group(function () {
+            // Report Attendances
+            Route::get('/report-attendances', [App\Http\Controllers\Api\ReportAttendanceController::class, 'index'])
+                ->name('api.report-attendances.index');
+            Route::get('/report-attendances/export', [App\Http\Controllers\Api\ReportAttendanceController::class, 'export'])
+                ->name('api.report-attendances.export');
+            Route::post('/report-attendances', [App\Http\Controllers\Api\ReportAttendanceController::class, 'store'])
+                ->name('api.report-attendances.store');
+            Route::post('/report-attendances/upsert-by-super-admin', [App\Http\Controllers\Api\ReportAttendanceController::class, 'upsertBySuperAdmin'])
+                ->name('api.report-attendances.upsert-by-super-admin');
 
-        // Consultations CRUD
-        Route::get('/consultations/id-preview', [ConsultationController::class, 'previewId'])
-            ->name('api.consultations.preview-id');
-        Route::get('/consultations/import/template', [ConsultationController::class, 'downloadTemplate'])
-            ->name('api.consultations.template');
-        Route::post('/consultations/import', [ConsultationController::class, 'import'])
-            ->name('api.consultations.import');
-        Route::patch('/consultations/{consultation}/status', [ConsultationController::class, 'updateStatus'])
-            ->name('api.consultations.update-status');
-        Route::apiResource('consultations', ConsultationController::class)
-            ->names('api.consultations');
+            // Consultations CRUD
+            Route::get('/consultations/id-preview', [ConsultationController::class, 'previewId'])
+                ->name('api.consultations.preview-id');
+            Route::get('/consultations/import/template', [ConsultationController::class, 'downloadTemplate'])
+                ->name('api.consultations.template');
+            Route::post('/consultations/import', [ConsultationController::class, 'import'])
+                ->name('api.consultations.import');
+            Route::patch('/consultations/{consultation}/status', [ConsultationController::class, 'updateStatus'])
+                ->name('api.consultations.update-status');
+            Route::apiResource('consultations', ConsultationController::class)
+                ->names('api.consultations');
+        });
+
+        // Survey lokasi dan rekap jadwal surveyor.
+        Route::post('/consultations/{consultation}/survey', [SurveyController::class, 'store'])
+            ->name('api.consultations.survey.store');
+        Route::get('/surveys/recap', [SurveyController::class, 'recap'])
+            ->name('api.surveys.recap');
+        Route::get('/surveys/availability', [SurveyController::class, 'availability'])
+            ->name('api.surveys.availability');
+        Route::get('/surveys', [SurveyController::class, 'index'])->name('api.surveys.index');
+        Route::get('/surveys/{survey}', [SurveyController::class, 'show'])->name('api.surveys.show');
+        Route::get('/surveys/{survey}/history', [SurveyController::class, 'history'])
+            ->name('api.surveys.history');
+        Route::patch('/surveys/{survey}/assign', [SurveyController::class, 'assign'])
+            ->name('api.surveys.assign');
+        Route::patch('/surveys/{survey}/reschedule', [SurveyController::class, 'reschedule'])
+            ->name('api.surveys.reschedule');
+        Route::patch('/surveys/{survey}/reschedule-assignment', [SurveyController::class, 'rescheduleAssignment'])
+            ->name('api.surveys.reschedule-assignment');
+        Route::patch('/surveys/{survey}/start', [SurveyController::class, 'start'])
+            ->name('api.surveys.start');
+        Route::patch('/surveys/{survey}/result', [SurveyController::class, 'submitResult'])
+            ->name('api.surveys.result');
+        Route::patch('/surveys/{survey}/cancel', [SurveyController::class, 'cancel'])
+            ->name('api.surveys.cancel');
 
         // Export
-        Route::get('/export/csv', [ExportController::class, 'exportCsv'])->name('api.export.csv');
-        Route::get('/export/leads/excel', [ExportController::class, 'exportLeadsExcel'])->name('api.export.leads.excel');
-        Route::get('/export/leads/pdf', [ExportController::class, 'exportLeadsPdf'])->name('api.export.leads.pdf');
-        Route::get('/export/analytics/excel', [ExportController::class, 'exportAnalyticsExcel'])->name('api.export.analytics.excel');
-        Route::get('/export/analytics/pdf', [ExportController::class, 'exportAnalyticsPdf'])->name('api.export.analytics.pdf');
+        Route::middleware('role:admin')->group(function () {
+            Route::get('/export/csv', [ExportController::class, 'exportCsv'])->name('api.export.csv');
+            Route::get('/export/leads/excel', [ExportController::class, 'exportLeadsExcel'])->name('api.export.leads.excel');
+            Route::get('/export/leads/pdf', [ExportController::class, 'exportLeadsPdf'])->name('api.export.leads.pdf');
+            Route::get('/export/analytics/excel', [ExportController::class, 'exportAnalyticsExcel'])->name('api.export.analytics.excel');
+            Route::get('/export/analytics/pdf', [ExportController::class, 'exportAnalyticsPdf'])->name('api.export.analytics.pdf');
+        });
 
-        // Nested Consultations Notes & Reminders
-        Route::post('/consultations/{consultation}/notes', [App\Http\Controllers\Api\ConsultationNoteController::class, 'store'])
-            ->name('api.consultations.notes.store');
-        Route::delete('/consultations/{consultation}/notes/{note}', [App\Http\Controllers\Api\ConsultationNoteController::class, 'destroy'])
-            ->name('api.consultations.notes.destroy');
-        Route::post('/consultations/{consultation}/reminders', [App\Http\Controllers\Api\ReminderController::class, 'store'])
-            ->name('api.consultations.reminders.store');
-        Route::delete('/consultations/{consultation}/reminders/{reminder}', [App\Http\Controllers\Api\ReminderController::class, 'destroy'])
-            ->name('api.consultations.reminders.destroy');
+        Route::middleware('role:manager_surveyor')->group(function () {
+            Route::get('/export/surveys/recap/excel', [ExportController::class, 'exportSurveyorScheduleRecapExcel'])
+                ->name('api.export.surveys.recap.excel');
+        });
+
+        Route::middleware('role:admin')->group(function () {
+            // Nested Consultations Notes & Reminders
+            Route::post('/consultations/{consultation}/notes', [App\Http\Controllers\Api\ConsultationNoteController::class, 'store'])
+                ->name('api.consultations.notes.store');
+            Route::delete('/consultations/{consultation}/notes/{note}', [App\Http\Controllers\Api\ConsultationNoteController::class, 'destroy'])
+                ->name('api.consultations.notes.destroy');
+            Route::post('/consultations/{consultation}/reminders', [App\Http\Controllers\Api\ReminderController::class, 'store'])
+                ->name('api.consultations.reminders.store');
+            Route::delete('/consultations/{consultation}/reminders/{reminder}', [App\Http\Controllers\Api\ReminderController::class, 'destroy'])
+                ->name('api.consultations.reminders.destroy');
+        });
 
         // Web Push subscriptions (PWA notifications)
         Route::get('/push/public-key', [App\Http\Controllers\Api\PushSubscriptionController::class, 'publicKey'])
@@ -144,6 +183,10 @@ Route::prefix('v1')->group(function () {
                 ->name('api.bug-reports.index');
             Route::get('/bug-reports/{bugReport}', [App\Http\Controllers\Api\BugReportController::class, 'show'])
                 ->name('api.bug-reports.show');
+            Route::patch('/bug-reports/{bugReport}', [App\Http\Controllers\Api\BugReportController::class, 'update'])
+                ->name('api.bug-reports.update');
+            Route::delete('/bug-reports/{bugReport}', [App\Http\Controllers\Api\BugReportController::class, 'destroy'])
+                ->name('api.bug-reports.destroy');
         });
 
         // Master Data
@@ -153,6 +196,10 @@ Route::prefix('v1')->group(function () {
             ->name('api.master-data.status-categories');
         Route::get('/master-data/accounts', [MasterDataController::class, 'accounts'])
             ->name('api.master-data.accounts');
+        Route::get('/master-data/surveyors', [MasterDataController::class, 'surveyors'])
+            ->name('api.master-data.surveyors');
+        Route::get('/master-data/survey-statuses', [MasterDataController::class, 'surveyStatuses'])
+            ->name('api.master-data.survey-statuses');
 
         // Master Data CRUD — F-008: write operations restricted to super_admin at route level.
         // GET /categories/list and GET /statuses/list are accessible to all authenticated users
@@ -172,6 +219,11 @@ Route::prefix('v1')->group(function () {
                 Route::patch('/statuses/reorder', [MasterDataController::class, 'reorderStatuses'])->name('statuses.reorder');
                 Route::put('/statuses/{status}', [MasterDataController::class, 'updateStatus'])->name('statuses.update');
                 Route::delete('/statuses/{status}', [MasterDataController::class, 'destroyStatus'])->name('statuses.destroy');
+
+                Route::post('/survey-statuses', [MasterDataController::class, 'storeSurveyStatus'])->name('survey-statuses.store');
+                Route::patch('/survey-statuses/reorder', [MasterDataController::class, 'reorderSurveyStatuses'])->name('survey-statuses.reorder');
+                Route::put('/survey-statuses/{surveyStatus}', [MasterDataController::class, 'updateSurveyStatus'])->name('survey-statuses.update');
+                Route::delete('/survey-statuses/{surveyStatus}', [MasterDataController::class, 'destroySurveyStatus'])->name('survey-statuses.destroy');
 
                 Route::get('/users', [MasterDataController::class, 'listUsers'])->name('users.index');
                 Route::post('/users', [MasterDataController::class, 'storeUser'])->name('users.store');
@@ -194,6 +246,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/summary', [NotificationController::class, 'summary'])->name('summary');
             Route::patch('/notes/{note}/read', [NotificationController::class, 'markNoteRead'])->name('notes.read');
             Route::patch('/reminders/{reminder}/read', [NotificationController::class, 'markReminderRead'])->name('reminders.read');
+            Route::patch('/surveys/{notification}/read', [NotificationController::class, 'markSurveyRead'])->name('surveys.read');
         });
     });
 });

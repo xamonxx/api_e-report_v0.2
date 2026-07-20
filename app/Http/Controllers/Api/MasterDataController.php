@@ -8,6 +8,7 @@ use App\Models\Account;
 use App\Models\AuditLog;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
+use App\Models\SurveyStatus;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,8 @@ class MasterDataController extends Controller
     private const CACHE_NEEDS = 'master-data:needs-categories';
 
     private const CACHE_STATUSES = 'master-data:status-categories';
+
+    private const CACHE_SURVEY_STATUSES = 'master-data:survey-statuses';
 
     public function needsCategories(): JsonResponse
     {
@@ -69,6 +72,92 @@ class MasterDataController extends Controller
 
         return response()->json([
             'data' => $accounts,
+        ]);
+    }
+
+    public function surveyors(): JsonResponse
+    {
+        return response()->json([
+            'data' => User::query()
+                ->where('role', UserRole::Surveyor->value)
+                ->orderBy('name')
+                ->get(['id', 'name']),
+        ]);
+    }
+
+    public function surveyStatuses(): JsonResponse
+    {
+        return response()->json([
+            'data' => SurveyStatus::query()
+                ->orderBy('sort_order')
+                ->get(['id', 'name', 'color', 'css_class']),
+        ]);
+    }
+
+    /** Kelola master status hasil survey. */
+    public function storeSurveyStatus(Request $request): JsonResponse
+    {
+        $this->ensureSuperAdmin();
+        $validated = $request->validate([
+            'name' => 'required|string|max:255|unique:survey_statuses,name|regex:/^[^\<\>]+$/',
+            'color' => ['required', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+        ]);
+
+        $status = SurveyStatus::create([
+            'name' => trim($validated['name']),
+            'color' => $validated['color'],
+            'sort_order' => (SurveyStatus::max('sort_order') ?? 0) + 1,
+        ]);
+        Cache::forget(self::CACHE_SURVEY_STATUSES);
+
+        return response()->json(['message' => 'Status survey berhasil ditambahkan!', 'data' => $status], 201);
+    }
+
+    public function updateSurveyStatus(Request $request, SurveyStatus $surveyStatus): JsonResponse
+    {
+        $this->ensureSuperAdmin();
+        $validated = $request->validate([
+            'name' => 'required|string|max:255|unique:survey_statuses,name,' . $surveyStatus->id . '|regex:/^[^\<\>]+$/',
+            'color' => ['required', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+        ]);
+
+        $surveyStatus->update(['name' => trim($validated['name']), 'color' => $validated['color']]);
+        Cache::forget(self::CACHE_SURVEY_STATUSES);
+
+        return response()->json(['message' => 'Status survey berhasil diperbarui!', 'data' => $surveyStatus]);
+    }
+
+    public function destroySurveyStatus(SurveyStatus $surveyStatus): JsonResponse
+    {
+        $this->ensureSuperAdmin();
+        if ($surveyStatus->surveys()->withTrashed()->exists()) {
+            return response()->json(['message' => 'Status survey yang masih digunakan tidak dapat dihapus.'], 422);
+        }
+
+        $surveyStatus->delete();
+        Cache::forget(self::CACHE_SURVEY_STATUSES);
+
+        return response()->json(['message' => 'Status survey berhasil dihapus!']);
+    }
+
+    public function reorderSurveyStatuses(Request $request): JsonResponse
+    {
+        $this->ensureSuperAdmin();
+        $validated = $request->validate([
+            'order' => ['required', 'array', 'min:1'],
+            'order.*' => ['integer', 'distinct', 'exists:survey_statuses,id'],
+        ]);
+
+        DB::transaction(function () use ($validated) {
+            foreach ($validated['order'] as $index => $id) {
+                SurveyStatus::whereKey($id)->update(['sort_order' => $index + 1]);
+            }
+        });
+        Cache::forget(self::CACHE_SURVEY_STATUSES);
+
+        return response()->json([
+            'message' => 'Urutan status survey berhasil diperbarui!',
+            'data' => SurveyStatus::orderBy('sort_order')->get(['id', 'name', 'color', 'css_class', 'sort_order']),
         ]);
     }
 
@@ -345,6 +434,10 @@ class MasterDataController extends Controller
             'password_confirmation.required' => 'Konfirmasi password wajib diisi.',
             'password_confirmation.same' => 'Konfirmasi password tidak cocok.',
             'account_id.required_if' => 'Akun wajib dipilih untuk pengguna dengan role Admin.',
+            'role.required' => 'Role pengguna wajib dipilih.',
+            // Rule objek Enum memakai FQCN-nya sebagai kunci custom message;
+            // 'role.enum' TIDAK berlaku (sudah diverifikasi lewat tes).
+            'role.' . Enum::class => 'Role pengguna tidak valid.',
         ]);
 
         if ($validator->fails()) {
@@ -365,7 +458,10 @@ class MasterDataController extends Controller
                     'name' => trim($validated['name']),
                     'email' => mb_strtolower(trim($validated['email'])),
                     'password' => Hash::make($validated['password']),
-                    'account_id' => $role === UserRole::SuperAdmin ? null : $validated['account_id'],
+                    // `account_id` hanya dikirim untuk role admin (required_if), jadi
+                    // untuk surveyor/manager_surveyor key-nya TIDAK ADA di validated()
+                    // -> wajib pakai `?? null`, kalau tidak: "Undefined array key".
+                    'account_id' => $role === UserRole::SuperAdmin ? null : ($validated['account_id'] ?? null),
                 ]);
                 $createdUser->role = $role;
                 $createdUser->save();
@@ -409,6 +505,10 @@ class MasterDataController extends Controller
             'email.email' => 'Format email tidak valid.',
             'email.unique' => 'Email sudah digunakan user lain.',
             'account_id.required_if' => 'Akun wajib dipilih untuk pengguna dengan role Admin.',
+            'role.required' => 'Role pengguna wajib dipilih.',
+            // Rule objek Enum memakai FQCN-nya sebagai kunci custom message;
+            // 'role.enum' TIDAK berlaku (sudah diverifikasi lewat tes).
+            'role.' . Enum::class => 'Role pengguna tidak valid.',
         ]);
 
         if ($validator->fails()) {
@@ -447,7 +547,10 @@ class MasterDataController extends Controller
                 $user->update([
                     'name' => trim($validated['name']),
                     'email' => mb_strtolower(trim($validated['email'])),
-                    'account_id' => $role === UserRole::SuperAdmin ? null : $validated['account_id'],
+                    // `account_id` hanya dikirim untuk role admin (required_if), jadi
+                    // untuk surveyor/manager_surveyor key-nya TIDAK ADA di validated()
+                    // -> wajib pakai `?? null`, kalau tidak: "Undefined array key".
+                    'account_id' => $role === UserRole::SuperAdmin ? null : ($validated['account_id'] ?? null),
                 ]);
                 $user->role = $role;
                 $user->save();

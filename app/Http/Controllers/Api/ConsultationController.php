@@ -33,6 +33,8 @@ class ConsultationController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Consultation::class);
+
         $user = auth()->user();
         $query = Consultation::query()->withProductRelations();
         $query->forUser($user);
@@ -141,6 +143,8 @@ class ConsultationController extends Controller
      */
     public function store(ConsultationRequest $request): JsonResponse
     {
+        $this->authorize('create', Consultation::class);
+
         $user = auth()->user();
         $validated = $request->validated();
         $productIds = collect($validated['needs_category_ids'] ?? [])
@@ -156,14 +160,6 @@ class ConsultationController extends Controller
             return response()->json([
                 'message' => 'Anda tidak memiliki izin untuk membuat data pada akun lain.',
             ], 403);
-        }
-
-        // Deduplication check
-        if (Consultation::findDuplicateLead($validated)) {
-            return response()->json([
-                'message' => 'Lead dengan data yang sama sudah terdaftar pada akun ini.',
-                'errors' => ['client_name' => ['Lead dengan data yang sama sudah terdaftar.']],
-            ], 422);
         }
 
         $validated['consultation_id'] = Consultation::generateConsultationId($validated['account_id']);
@@ -214,13 +210,6 @@ class ConsultationController extends Controller
             return response()->json([
                 'message' => 'Anda tidak memiliki izin untuk memindahkan data ke akun lain.',
             ], 403);
-        }
-
-        if ($duplicate = Consultation::findDuplicateLead($validated, $consultation->id)) {
-            return response()->json([
-                'message' => 'Lead dengan data yang sama sudah terdaftar.',
-                'errors' => ['client_name' => ['Lead duplikat ditemukan.']],
-            ], 422);
         }
 
         $validated['needs_category_id'] = $productIds->first();

@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BugReportRequest;
 use App\Models\BugReport;
+use App\Services\TelegramNotifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class BugReportController extends Controller
 {
@@ -43,6 +45,11 @@ class BugReportController extends Controller
             'ip_address'     => $request->ip(),
             'user_agent'     => $request->userAgent() ? mb_substr($request->userAgent(), 0, 255) : null,
         ]);
+
+        if ($report->user_id) {
+            $report->loadMissing('user');
+        }
+        dispatch(fn () => app(TelegramNotifier::class)->sendBugReport($report))->afterResponse();
 
         return response()->json([
             'message'     => 'Laporan bug berhasil dikirim. Terima kasih atas masukannya!',
@@ -97,5 +104,38 @@ class BugReportController extends Controller
                 'created_at'     => $bugReport->created_at?->toIso8601String(),
             ],
         ]);
+    }
+
+    public const STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
+
+    /** Update the report workflow status. */
+    public function update(Request $request, BugReport $bugReport): JsonResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:' . implode(',', self::STATUSES)],
+        ]);
+
+        $bugReport->update(['status' => $validated['status']]);
+
+        return response()->json([
+            'message' => 'Status laporan diperbarui.',
+            'data' => [
+                'id' => $bugReport->id,
+                'status' => $bugReport->status,
+            ],
+        ]);
+    }
+
+    /** Permanently remove a report and its uploaded screenshots. */
+    public function destroy(BugReport $bugReport): JsonResponse
+    {
+        $images = $bugReport->image_paths ?? [];
+        if ($images !== []) {
+            Storage::disk('public')->delete($images);
+        }
+
+        $bugReport->delete();
+
+        return response()->json(['message' => 'Laporan bug dihapus.']);
     }
 }
