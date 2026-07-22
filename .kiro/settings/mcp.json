@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gradientdeck": {
+      "url": "https://mcp.gradientdeck.com/mcp",
+      "disabled": false
+    }
+  }
+}
