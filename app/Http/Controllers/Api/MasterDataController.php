@@ -66,7 +66,7 @@ class MasterDataController extends Controller
     public function accounts(): JsonResponse
     {
         $user = auth()->user();
-        $accounts = $user->isSuperAdmin()
+        $accounts = ($user->isSuperAdmin() || $user->isManagerSurveyor())
             ? Account::orderBy('name')->get(['id', 'name'])
             : Account::whereKey($user->account_id)->get(['id', 'name']);
 
