@@ -6,6 +6,8 @@ use App\Models\Account;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Models\User;
+use App\Support\PhoneNumber;
+use App\Support\WilayahNormalizer;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -26,8 +28,11 @@ class LeadsExcelExporter
         80, 48, 48,
     ];
 
+    // NO, ID KONSUMEN, TGL. AWAL KONSUL, NAMA AKUN, Nama Konsumen, WA Konsumen,
+    // Domisili, Provinsi, Kota Kab., Kecamatan, Jenis Kebutuhan,
+    // Detail Kebutuhan, Catatan, kategori, Tanggal Update
     private const DATA_LEADS_COLUMNS = [
-        28, 132, 125, 151, 169, 145, 145, 145, 145, 131, 143, 272, 143, 167,
+        28, 132, 125, 151, 169, 145, 145, 145, 145, 145, 131, 143, 272, 143, 167,
     ];
 
     private const ANALYSIS_COLUMNS = [213, 372, 143, 213];
@@ -453,8 +458,12 @@ class LeadsExcelExporter
                 $this->cell('Kota Domisili Lookup', 'dataLeadHeader'),
                 $this->cell('Domisili Lookup', 'dataLeadHeader'),
                 $this->cell('Provinsi Opsi', 'dataLeadHeader'),
+                $this->cell('Kecamatan Kota', 'dataLeadHeader'),
+                $this->cell('Kecamatan Nama', 'dataLeadHeader'),
             ], 22),
         ];
+
+        $districtRows = $options['district_rows'];
 
         for ($index = 0; $index < $maxRows; $index++) {
             $account = $options['accounts'][$index] ?? null;
@@ -479,12 +488,24 @@ class LeadsExcelExporter
                 $this->cell($cityDomicileLookup['city'] ?? '', 'dataLeadBody'),
                 $this->cell($cityDomicileLookup['domicile'] ?? '', 'dataLeadBody'),
                 $this->cell($options['provinces'][$index] ?? '', 'dataLeadBody'),
+                $this->cell($districtRows[$index]['city'] ?? '', 'dataLeadBody'),
+                $this->cell($districtRows[$index]['district'] ?? '', 'dataLeadBody'),
+            ], 18);
+        }
+
+        // Pasangan kota-kecamatan jauh lebih banyak (7283) daripada kolom lain
+        // (maks 514). Sisanya ditulis sebagai baris ramping yang hanya berisi
+        // dua kolom itu, memakai ss:Index, supaya file tidak dipenuhi sel kosong.
+        for ($index = $maxRows; $index < count($districtRows); $index++) {
+            $rows[] = $this->row([
+                $this->cell($districtRows[$index]['city'], 'dataLeadBody', index: 16),
+                $this->cell($districtRows[$index]['district'], 'dataLeadBody'),
             ], 18);
         }
 
         return [
             'name' => 'Opsi',
-            'columns' => [190, 70, 190, 190, 105, 115, 95, 95, 200, 160, 200, 160, 200, 115, 160],
+            'columns' => [190, 70, 190, 190, 105, 115, 95, 95, 200, 160, 200, 160, 200, 115, 160, 200, 200],
             'rows' => $rows,
             'freeze_rows' => 1,
             'hidden' => true,
@@ -494,11 +515,17 @@ class LeadsExcelExporter
                 ['name' => 'StatusOptions', 'refers_to' => '=Opsi!R2C4:R' . max(2, count($options['statuses']) + 1) . 'C4'],
                 ['name' => 'DomicileOptions', 'refers_to' => '=Opsi!R2C5:R' . max(2, count($options['domiciles']) + 1) . 'C5'],
                 ['name' => 'ProvinceOptions', 'refers_to' => '=Opsi!R2C15:R' . max(2, count($options['provinces']) + 1) . 'C15'],
-                ['name' => 'ProvinceOptions', 'refers_to' => '=Opsi!R2C15:R' . max(2, count($options['provinces']) + 1) . 'C15'],
                 ['name' => 'CityOptions', 'refers_to' => '=Opsi!R2C9:R' . max(2, count($options['city_province_rows']) + 1) . 'C9'],
                 ['name' => 'CityProvinceMap', 'refers_to' => '=Opsi!R2C9:R' . max(2, count($options['city_province_rows']) + 1) . 'C10'],
+                // Kolom provinsi milik daftar kota, dipakai MATCH/COUNTIF untuk
+                // dropdown kota bertingkat. Baris kota sudah terurut per provinsi
+                // sehingga tiap provinsi menempati blok yang berurutan.
+                ['name' => 'CityProvinceCol', 'refers_to' => '=Opsi!R2C10:R' . max(2, count($options['city_province_rows']) + 1) . 'C10'],
                 ['name' => 'CityProvinceLookup', 'refers_to' => '=Opsi!R2C11:R' . max(2, count($options['city_province_lookup_rows']) + 1) . 'C12'],
                 ['name' => 'CityDomicileLookup', 'refers_to' => '=Opsi!R2C13:R' . max(2, count($options['city_domicile_lookup_rows']) + 1) . 'C14'],
+                // Idem untuk kecamatan: terurut per kota.
+                ['name' => 'DistrictCityCol', 'refers_to' => '=Opsi!R2C16:R' . max(2, count($districtRows) + 1) . 'C16'],
+                ['name' => 'DistrictNameCol', 'refers_to' => '=Opsi!R2C17:R' . max(2, count($districtRows) + 1) . 'C17'],
             ],
         ];
     }
@@ -529,7 +556,7 @@ class LeadsExcelExporter
                 $this->cell('ID KONSUMEN', 'dataLeadHeader', mergeDown: 1),
                 $this->cell('TGL. AWAL KONSUL', 'dataLeadHeader', mergeDown: 1),
                 $this->cell('NAMA AKUN', 'dataLeadHeader', mergeDown: 1),
-                $this->cell('DATA KONSUMEN', 'dataLeadHeader', mergeAcross: 4),
+                $this->cell('DATA KONSUMEN', 'dataLeadHeader', mergeAcross: 5),
                 $this->cell('KEBUTUHAN KATEGORI', 'dataLeadHeader', mergeAcross: 3),
                 $this->cell('UPDATE', 'dataLeadHeader'),
             ], 21.75),
@@ -539,6 +566,7 @@ class LeadsExcelExporter
                 $this->cell('Domisili', 'dataLeadHeader'),
                 $this->cell('Provinsi', 'dataLeadHeader'),
                 $this->cell('Kota Kab.', 'dataLeadHeader'),
+                $this->cell('Kecamatan', 'dataLeadHeader'),
                 $this->cell('Jenis Kebutuhan', 'dataLeadHeader'),
                 $this->cell('Detail Kebutuhan', 'dataLeadHeader'),
                 $this->cell('Catatan', 'dataLeadHeader'),
@@ -565,10 +593,13 @@ class LeadsExcelExporter
                 : $this->cell('', 'dataLeadDate'),
             $this->cell($item['account'] ?? '', 'dataLeadBlue'),
             $this->cell($item['client_name'] ?? '', 'dataLeadBody'),
-            $this->cell($item['phone'] ?? '', 'dataLeadPhone'),
+            // Disimpan E.164 tanpa pemisah; ditampilkan dalam bentuk
+            // internasional yang enak dibaca sesuai negaranya.
+            $this->cell(PhoneNumber::format($item['phone'] ?? ''), 'dataLeadPhone'),
             $this->cell($item['domicile'] ?? '', 'dataLeadAuto', formula: $this->domicileByCityFormula()),
             $this->cell($item['province'] ?? '', 'dataLeadBlue'),
             $this->cell($this->excelCityName($item['city'] ?? ''), 'dataLeadBlue'),
+            $this->cell($item['district'] ?? '', 'dataLeadBlue'),
             $this->cell($item['need'] ?? '', 'dataLeadBlue'),
             $this->cell($item['product_details'] ?? '', 'dataLeadBodyWrap'),
             $this->cell($item['notes'] ?? '', 'dataLeadBodyWrap'),
@@ -668,6 +699,18 @@ class LeadsExcelExporter
             ->values()
             ->all();
 
+        // Pasangan kota-kecamatan untuk dropdown bertingkat. Urutannya mengikuti
+        // urutan kota di atas supaya tiap kota menempati blok baris berurutan -
+        // syarat agar OFFSET/MATCH/COUNTIF di validasi bekerja.
+        $districtRows = [];
+        foreach ($cityProvinceRows as $cityRow) {
+            $city = (string) $cityRow['city'];
+
+            foreach (WilayahNormalizer::districtsForCity($city) as $district) {
+                $districtRows[] = ['city' => $city, 'district' => $district];
+            }
+        }
+
         return [
             'accounts' => $accountRows,
             'products' => $products,
@@ -677,41 +720,20 @@ class LeadsExcelExporter
             'city_province_rows' => $cityProvinceRows,
             'city_province_lookup_rows' => $cityProvinceLookupRows,
             'city_domicile_lookup_rows' => $cityDomicileLookupRows,
+            'district_rows' => $districtRows,
             'sequences' => $sequences,
         ];
     }
 
     private function cityProvinceLookupRows(array $cityProvinceRows): array
     {
-        $shortAliases = [
-            'Jakarta Barat' => 'Jakbar',
-            'Jakarta Pusat' => 'Jakpus',
-            'Jakarta Selatan' => 'Jaksel',
-            'Jakarta Timur' => 'Jaktim',
-            'Jakarta Utara' => 'Jakut',
-            'Bandung Barat' => 'KBB',
-            'Tangerang Selatan' => 'Tangsel',
-        ];
-
         return collect($cityProvinceRows)
-            ->flatMap(function (array $row) use ($shortAliases) {
+            ->flatMap(function (array $row) {
                 $city = (string) $row['city'];
                 $province = (string) $row['province'];
-                $plainCity = preg_replace('/^(Kota Administrasi|Kabupaten Administrasi|Kota|Kabupaten|Kab\.)\s+/u', '', $city);
-                $longCity = $this->fullCityName($city);
-                $names = collect([$city, $plainCity]);
-
-                if (str_starts_with($city, 'Kab. ')) {
-                    $names->push(str_replace('Kab. ', 'Kab ', $city));
-                }
-
-                if ($longCity !== $city) {
-                    $names->push($longCity);
-                }
-
-                if (isset($shortAliases[$plainCity])) {
-                    $names->push($shortAliases[$plainCity]);
-                }
+                // Daftar ejaan alternatif dipusatkan di WilayahNormalizer supaya
+                // template dan importer memakai aturan yang sama.
+                $names = collect(WilayahNormalizer::cityAliases($city));
 
                 return $names
                     ->filter()
@@ -767,28 +789,36 @@ class LeadsExcelExporter
 
     private function excelCityName(?string $city): string
     {
-        $city = trim((string) $city);
-        $city = preg_replace('/^Kota Administrasi\s+/u', '', $city) ?? $city;
-        $city = preg_replace('/^Kabupaten Administrasi\s+/u', '', $city) ?? $city;
-
-        return preg_replace('/^Kabupaten\s+/u', 'Kab. ', $city) ?? $city;
+        return WilayahNormalizer::excelCityName($city);
     }
 
     private function fullCityName(string $city): string
     {
-        return preg_replace('/^Kab\.\s+/u', 'Kabupaten ', $city) ?? $city;
+        return WilayahNormalizer::fullCityName($city);
     }
 
     private function dataLeadsValidations(int $rowCount, array $options): array
     {
         $lastRow = 4 + $rowCount;
 
+        // Rumus ditulis gaya A1 relatif terhadap sel kiri-atas tiap rentang:
+        // H5 = Provinsi, I5 = Kota Kab. Daftar kota dan kecamatan di sheet Opsi
+        // sudah terurut per induknya, jadi satu blok berurutan bisa diambil
+        // dengan OFFSET(anchor, MATCH-1, 0, COUNTIF, 1) tanpa perlu ratusan
+        // named range terpisah.
+        $cityCascade = '=OFFSET(Opsi!$I$2,MATCH(H5,CityProvinceCol,0)-1,0,COUNTIF(CityProvinceCol,H5),1)';
+        $districtCascade = '=OFFSET(Opsi!$Q$2,MATCH(I5,DistrictCityCol,0)-1,0,COUNTIF(DistrictCityCol,I5),1)';
+
         return [
             ['range' => "R5C4:R{$lastRow}C4", 'value' => '=AccountOptions'],
             ['range' => "R5C8:R{$lastRow}C8", 'value' => '=ProvinceOptions'],
-            ['range' => "R5C9:R{$lastRow}C9", 'value' => '=CityOptions'],
-            ['range' => "R5C10:R{$lastRow}C10", 'value' => '=ProductOptions'],
-            ['range' => "R5C13:R{$lastRow}C13", 'value' => '=StatusOptions'],
+            ['range' => "R5C9:R{$lastRow}C9", 'value' => $cityCascade],
+            // Kecamatan sengaja tidak mengikat: daftar dataset tidak selalu
+            // lengkap, jadi user boleh mengetik nama yang tidak ada di dropdown.
+            // Ejaannya dirapikan saat import oleh WilayahNormalizer.
+            ['range' => "R5C10:R{$lastRow}C10", 'value' => $districtCascade, 'strict' => false],
+            ['range' => "R5C11:R{$lastRow}C11", 'value' => '=ProductOptions'],
+            ['range' => "R5C14:R{$lastRow}C14", 'value' => '=StatusOptions'],
         ];
     }
 
@@ -920,6 +950,8 @@ class LeadsExcelExporter
                 . '<Range>' . htmlspecialchars($validation['range'], ENT_XML1 | ENT_COMPAT, 'UTF-8') . '</Range>'
                 . '<Type>List</Type>'
                 . '<Value>' . htmlspecialchars($validation['value'], ENT_XML1 | ENT_COMPAT, 'UTF-8') . '</Value>'
+                // strict=false: dropdown sebagai bantuan isi, ketikan manual tetap diterima.
+                . (($validation['strict'] ?? true) ? '' : '<Strict>0</Strict>')
                 . '</DataValidation>')
             ->implode('');
     }

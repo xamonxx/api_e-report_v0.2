@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class SurveyReschedule extends Model
 {
+    use Auditable;
+
     public const SOURCE_ADMIN = 'admin';
     public const SOURCE_MANAGER = 'manager';
 

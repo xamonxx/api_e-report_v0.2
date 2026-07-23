@@ -175,10 +175,15 @@ class SpreadsheetXmlToXlsxConverter
             foreach ($worksheet->children($excelNs)->DataValidation as $dv) {
                 $range = (string) $dv->children($excelNs)->Range;
                 $value = (string) $dv->children($excelNs)->Value;
+                // <Strict>0</Strict> menandai dropdown yang hanya membantu isi:
+                // daftar tetap muncul, tapi nilai di luar daftar tidak ditolak.
+                $strictNode = $dv->children($excelNs)->Strict;
+                $strict = $strictNode === null || (string) $strictNode !== '0';
                 if ($range !== '' && $value !== '') {
                     $dataValidations[] = [
                         'sqref'   => $this->convertSqRef($range),
                         'formula' => $this->convertNamedRangeFormula($value),
+                        'strict'  => $strict,
                     ];
                 }
             }
@@ -320,8 +325,11 @@ class SpreadsheetXmlToXlsxConverter
         if ($dataValidations !== []) {
             $xml[] = sprintf('<dataValidations count="%d">', count($dataValidations));
             foreach ($dataValidations as $dv) {
+                // showErrorMessage="0" membuat Excel tetap menampilkan dropdown
+                // tanpa menolak nilai yang diketik manual.
                 $xml[] = sprintf(
-                    '<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" sqref="%s"><formula1>%s</formula1></dataValidation>',
+                    '<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="%s" sqref="%s"><formula1>%s</formula1></dataValidation>',
+                    ($dv['strict'] ?? true) ? '1' : '0',
                     $this->xml($dv['sqref']),
                     $this->xml($dv['formula'])
                 );

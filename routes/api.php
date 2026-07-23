@@ -123,6 +123,8 @@ Route::prefix('v1')->group(function () {
             ->name('api.surveys.history');
         Route::patch('/surveys/{survey}/assign', [SurveyController::class, 'assign'])
             ->name('api.surveys.assign');
+        Route::patch('/surveys/{survey}/unassign', [SurveyController::class, 'unassign'])
+            ->name('api.surveys.unassign');
         Route::patch('/surveys/{survey}/reschedule', [SurveyController::class, 'reschedule'])
             ->name('api.surveys.reschedule');
         Route::patch('/surveys/{survey}/reschedule-assignment', [SurveyController::class, 'rescheduleAssignment'])
@@ -247,6 +249,8 @@ Route::prefix('v1')->group(function () {
             Route::patch('/notes/{note}/read', [NotificationController::class, 'markNoteRead'])->name('notes.read');
             Route::patch('/reminders/{reminder}/read', [NotificationController::class, 'markReminderRead'])->name('reminders.read');
             Route::patch('/surveys/{notification}/read', [NotificationController::class, 'markSurveyRead'])->name('surveys.read');
+            Route::delete('/surveys/{notification}', [NotificationController::class, 'deleteSurvey'])->name('surveys.delete');
+            Route::delete('/clear', [NotificationController::class, 'clearAll'])->name('clear');
         });
     });
 });

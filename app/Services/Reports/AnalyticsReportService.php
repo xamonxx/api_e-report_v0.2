@@ -8,6 +8,9 @@ use App\Models\Consultation;
 use App\Models\ConsultationStatusHistory;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
+use App\Models\Survey;
+use App\Models\SurveyReschedule;
+use App\Models\SurveyStatus;
 use App\Models\User;
 use App\Support\PendingConfirmation;
 use Carbon\Carbon;
@@ -129,6 +132,9 @@ class AnalyticsReportService
             'funnel' => $funnel,
             'cohortConversion' => $this->buildCohortConversion($user, $selectedAccount, $period),
             'stageVelocity' => $this->buildStageVelocity($user, $selectedAccount, $period),
+            'surveyorLeaderboard' => $this->buildSurveyorLeaderboard($user, $selectedAccount, $period),
+            'rescheduleAnalytics' => $this->buildRescheduleAnalytics($user, $selectedAccount, $period),
+            'surveyBacklog' => $this->buildSurveyBacklog($user, $selectedAccount),
             'topPerformers' => $topPerformers,
             'summaryStats' => $summaryStats,
             'comparisonMatrix' => $this->buildComparisonMatrix($user, $selectedAccount, $period),
@@ -224,11 +230,12 @@ class AnalyticsReportService
     private function buildLocationDistribution(Builder $query, string $column, int $limit = 10): Collection
     {
         $qualifiedColumn = $this->consultationColumn($column);
-        $pendingLabel = mb_strtolower(PendingConfirmation::LABEL);
+        $pendingLabels = array_map('mb_strtolower', PendingConfirmation::labels());
+        $notPending = implode(', ', array_fill(0, count($pendingLabels), '?'));
 
         $rows = (clone $query)
             ->whereNotNull($qualifiedColumn)
-            ->whereRaw("LOWER(TRIM({$qualifiedColumn})) != ?", [$pendingLabel])
+            ->whereRaw("LOWER(TRIM({$qualifiedColumn})) NOT IN ({$notPending})", $pendingLabels)
             ->selectRaw("{$qualifiedColumn} as location_value, COUNT(*) as count")
             ->groupBy($qualifiedColumn)
             ->orderByDesc('count')
@@ -504,7 +511,10 @@ class AnalyticsReportService
 
     private function buildDataQuality(Builder $query, array $period, int $totalLeads): array
     {
-        $pendingLabel = mb_strtolower(PendingConfirmation::LABEL);
+        // Wilayah dianggap "terisi" bila bukan salah satu label placeholder
+        // (baru maupun lama), jadi perbandingannya NOT IN, bukan !=.
+        $pendingLabels = array_map('mb_strtolower', PendingConfirmation::labels());
+        $notPending = implode(', ', array_fill(0, count($pendingLabels), '?'));
         $pc = $this->consultationColumn('province');
         $cc = $this->consultationColumn('city');
         $nc = $this->consultationColumn('notes');
@@ -514,16 +524,18 @@ class AnalyticsReportService
         $phonec = $this->consultationColumn('phone');
 
         $stats = (clone $query)->selectRaw("
-            SUM(CASE WHEN {$pc} IS NOT NULL AND LOWER(TRIM({$pc})) != ? THEN 1 ELSE 0 END) as province_filled,
-            SUM(CASE WHEN {$cc} IS NOT NULL AND LOWER(TRIM({$cc})) != ? THEN 1 ELSE 0 END) as city_filled,
+            SUM(CASE WHEN {$pc} IS NOT NULL AND LOWER(TRIM({$pc})) NOT IN ({$notPending}) THEN 1 ELSE 0 END) as province_filled,
+            SUM(CASE WHEN {$cc} IS NOT NULL AND LOWER(TRIM({$cc})) NOT IN ({$notPending}) THEN 1 ELSE 0 END) as city_filled,
             SUM(CASE WHEN {$nc} IS NOT NULL AND TRIM({$nc}) != '' THEN 1 ELSE 0 END) as notes_filled,
-            SUM(CASE WHEN {$pc} IS NOT NULL AND LOWER(TRIM({$pc})) != ? AND {$cc} IS NOT NULL AND LOWER(TRIM({$cc})) != ? THEN 1 ELSE 0 END) as location_complete,
-            COUNT(DISTINCT CASE WHEN {$pc} IS NOT NULL AND LOWER(TRIM({$pc})) != ? THEN LOWER(TRIM({$pc})) END) as unique_provinces,
-            COUNT(DISTINCT CASE WHEN {$cc} IS NOT NULL AND LOWER(TRIM({$cc})) != ? THEN LOWER(TRIM({$cc})) END) as unique_cities,
+            SUM(CASE WHEN {$pc} IS NOT NULL AND LOWER(TRIM({$pc})) NOT IN ({$notPending}) AND {$cc} IS NOT NULL AND LOWER(TRIM({$cc})) NOT IN ({$notPending}) THEN 1 ELSE 0 END) as location_complete,
+            COUNT(DISTINCT CASE WHEN {$pc} IS NOT NULL AND LOWER(TRIM({$pc})) NOT IN ({$notPending}) THEN LOWER(TRIM({$pc})) END) as unique_provinces,
+            COUNT(DISTINCT CASE WHEN {$cc} IS NOT NULL AND LOWER(TRIM({$cc})) NOT IN ({$notPending}) THEN LOWER(TRIM({$cc})) END) as unique_cities,
             COUNT(DISTINCT {$cbc}) as active_admins,
             COUNT(DISTINCT DATE({$cdc})) as active_days,
             MAX({$uac}) as latest_update
-        ", [$pendingLabel, $pendingLabel, $pendingLabel, $pendingLabel, $pendingLabel, $pendingLabel])->first();
+        ", array_merge(
+            $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels
+        ))->first();
 
         $duplicatePhones = (int) (clone $query)
             ->whereNotNull($phonec)
@@ -554,8 +566,11 @@ class AnalyticsReportService
 
     private function buildPendingConfirmationStats(Builder $query, int $totalLeads): array
     {
+        // Kategori kebutuhan dan wilayah kini memakai label berbeda; ejaan lama
+        // tetap dicari supaya angka tidak nol di environment yang belum migrasi.
         $pendingConfirmationCategoryId = NeedsCategory::query()
-            ->where('name', PendingConfirmation::LABEL)
+            ->whereIn('name', [NeedsCategory::PENDING_LABEL, NeedsCategory::PENDING_LEGACY_LABEL])
+            ->orderByRaw('FIELD(name, ?) DESC', [NeedsCategory::PENDING_LABEL])
             ->value('id');
 
         $provinceCount = (clone $query)
@@ -595,22 +610,22 @@ class AnalyticsReportService
             'province' => [
                 'count' => $provinceCount,
                 'percentage' => $this->toRate($provinceCount, $totalLeads),
-                'label' => PendingConfirmation::LABEL,
+                'label' => PendingConfirmation::REGION_LABEL,
             ],
             'city' => [
                 'count' => $cityCount,
                 'percentage' => $this->toRate($cityCount, $totalLeads),
-                'label' => PendingConfirmation::LABEL,
+                'label' => PendingConfirmation::REGION_LABEL,
             ],
             'district' => [
                 'count' => $districtCount,
                 'percentage' => $this->toRate($districtCount, $totalLeads),
-                'label' => PendingConfirmation::LABEL,
+                'label' => PendingConfirmation::REGION_LABEL,
             ],
             'product' => [
                 'count' => $productCount,
                 'percentage' => $this->toRate($productCount, $totalLeads),
-                'label' => PendingConfirmation::LABEL,
+                'label' => NeedsCategory::PENDING_LABEL,
             ],
         ];
     }
@@ -839,6 +854,157 @@ class AnalyticsReportService
                 'slowest_days' => $sampleSize > 0 ? round($cycleDays[$sampleSize - 1], 1) : null,
             ],
             'stages' => $stages,
+        ];
+    }
+
+    /**
+     * Scope query survey mengikuti hak akses akun user.
+     */
+    private function scopeSurveyByAccount(Builder $query, User $user, ?int $selectedAccount): Builder
+    {
+        if ($user->isAdmin()) {
+            $query->where('account_id', $user->account_id);
+        } elseif ($selectedAccount) {
+            $query->where('account_id', $selectedAccount);
+        }
+
+        return $query;
+    }
+
+    /**
+     * ID status hasil survey yang dihitung sebagai "deal".
+     */
+    private function resolveSurveyDealStatusIds(): Collection
+    {
+        static $ids = null;
+
+        if ($ids === null) {
+            $ids = SurveyStatus::query()
+                ->get(['id', 'name'])
+                ->filter(fn ($status) => $this->statusNameMatches($status->name, ['Deal', 'Selesai/Deal', 'Closing', 'Closing Deal']))
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Leaderboard kinerja surveyor pada periode terpilih:
+     * survey selesai, durasi rata-rata, ketepatan waktu mulai, dan deal-rate.
+     */
+    private function buildSurveyorLeaderboard(User $user, ?int $selectedAccount, array $period): Collection
+    {
+        $start = $period['start']->copy()->startOfDay();
+        $end = $period['end']->copy()->endOfDay();
+        $dealStatusIds = $this->resolveSurveyDealStatusIds();
+
+        $surveys = $this->scopeSurveyByAccount(Survey::query(), $user, $selectedAccount)
+            ->where('state', Survey::STATE_COMPLETED)
+            ->whereBetween('completed_at', [$start, $end])
+            ->whereNotNull('surveyor_id')
+            ->with('surveyor:id,name')
+            ->get(['id', 'surveyor_id', 'scheduled_at', 'actual_start_at', 'actual_finish_at', 'result_status_id', 'completed_at']);
+
+        return $surveys->groupBy('surveyor_id')
+            ->map(function (Collection $rows) use ($dealStatusIds) {
+                $completed = $rows->count();
+
+                $durations = $rows
+                    ->filter(fn ($s) => $s->actual_start_at && $s->actual_finish_at)
+                    ->map(fn ($s) => abs($s->actual_start_at->diffInMinutes($s->actual_finish_at)));
+
+                // Tepat waktu: mulai maksimal 30 menit setelah jadwal.
+                $timed = $rows->filter(fn ($s) => $s->actual_start_at && $s->scheduled_at);
+                $onTime = $timed->filter(fn ($s) => $s->actual_start_at->lte($s->scheduled_at->copy()->addMinutes(30)))->count();
+
+                $deals = $rows->filter(fn ($s) => $s->result_status_id && $dealStatusIds->contains((int) $s->result_status_id))->count();
+
+                return [
+                    'surveyor_id' => (int) $rows->first()->surveyor_id,
+                    'name' => $rows->first()->surveyor?->name ?? 'Surveyor',
+                    'completed' => $completed,
+                    'avg_duration_min' => $durations->isNotEmpty() ? (int) round($durations->avg()) : null,
+                    'on_time_rate' => $timed->isNotEmpty() ? round(($onTime / $timed->count()) * 100, 1) : null,
+                    'deals' => $deals,
+                    'deal_rate' => $completed > 0 ? round(($deals / $completed) * 100, 1) : 0.0,
+                ];
+            })
+            ->sortByDesc('completed')
+            ->values();
+    }
+
+    /**
+     * Statistik reschedule pada periode: jumlah, sumber, dan dampak ke deal.
+     */
+    private function buildRescheduleAnalytics(User $user, ?int $selectedAccount, array $period): array
+    {
+        $start = $period['start']->copy()->startOfDay();
+        $end = $period['end']->copy()->endOfDay();
+
+        $surveyIdsInScope = $this->scopeSurveyByAccount(Survey::query(), $user, $selectedAccount)->pluck('id');
+
+        $reschedules = SurveyReschedule::query()
+            ->whereIn('survey_id', $surveyIdsInScope)
+            ->whereBetween('created_at', [$start, $end])
+            ->get(['id', 'survey_id', 'source', 'created_at']);
+
+        $rescheduledSurveyIds = $reschedules->pluck('survey_id')->unique();
+        $dealStatusIds = $this->resolveSurveyDealStatusIds();
+
+        $rescheduledDeals = 0;
+        if ($rescheduledSurveyIds->isNotEmpty() && $dealStatusIds->isNotEmpty()) {
+            $rescheduledDeals = Survey::query()
+                ->whereIn('id', $rescheduledSurveyIds)
+                ->where('state', Survey::STATE_COMPLETED)
+                ->whereIn('result_status_id', $dealStatusIds->all())
+                ->count();
+        }
+
+        return [
+            'total' => $reschedules->count(),
+            'by_admin' => $reschedules->where('source', SurveyReschedule::SOURCE_ADMIN)->count(),
+            'by_manager' => $reschedules->where('source', SurveyReschedule::SOURCE_MANAGER)->count(),
+            'rescheduled_surveys' => $rescheduledSurveyIds->count(),
+            'rescheduled_deal_rate' => $rescheduledSurveyIds->count() > 0
+                ? round(($rescheduledDeals / $rescheduledSurveyIds->count()) * 100, 1)
+                : 0.0,
+        ];
+    }
+
+    /**
+     * Backlog survey yang masih menunggu dijadwalkan (state=requested).
+     * Kondisi terkini, bukan terikat periode.
+     */
+    private function buildSurveyBacklog(User $user, ?int $selectedAccount): array
+    {
+        $pending = $this->scopeSurveyByAccount(Survey::query(), $user, $selectedAccount)
+            ->where('state', Survey::STATE_REQUESTED)
+            ->get(['id', 'requested_at']);
+
+        $now = now();
+        $buckets = ['<1 hari' => 0, '1-3 hari' => 0, '>3 hari' => 0];
+        $waits = [];
+
+        foreach ($pending as $survey) {
+            $days = $survey->requested_at ? abs($survey->requested_at->diffInDays($now)) : 0;
+            $waits[] = $days;
+
+            if ($days < 1) {
+                $buckets['<1 hari']++;
+            } elseif ($days <= 3) {
+                $buckets['1-3 hari']++;
+            } else {
+                $buckets['>3 hari']++;
+            }
+        }
+
+        return [
+            'total_pending' => $pending->count(),
+            'oldest_days' => ! empty($waits) ? round(max($waits), 1) : 0.0,
+            'avg_wait_days' => ! empty($waits) ? round(array_sum($waits) / count($waits), 1) : 0.0,
+            'buckets' => collect($buckets)->map(fn ($count, $label) => ['label' => $label, 'count' => $count])->values(),
         ];
     }
 
@@ -1778,14 +1944,26 @@ class AnalyticsReportService
             return false;
         }
 
-        return $this->normalizeLocation($label) === $this->normalizeLocation(PendingConfirmation::LABEL);
+        $normalized = $this->normalizeLocation($label);
+
+        foreach (PendingConfirmation::labels() as $pendingLabel) {
+            if ($normalized === $this->normalizeLocation($pendingLabel)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function applyPendingConfirmationConstraint(Builder $query, string $column): void
     {
         $qualifiedColumn = str_contains($column, '.') ? $column : $this->consultationColumn($column);
 
-        $query->whereRaw("LOWER(TRIM(COALESCE({$qualifiedColumn}, ''))) = ?", [mb_strtolower(PendingConfirmation::LABEL)]);
+        // Label wilayah baru dan lama sama-sama dihitung selama masa transisi.
+        $labels = array_map('mb_strtolower', PendingConfirmation::labels());
+        $placeholders = implode(', ', array_fill(0, count($labels), '?'));
+
+        $query->whereRaw("LOWER(TRIM(COALESCE({$qualifiedColumn}, ''))) IN ({$placeholders})", $labels);
     }
 
     private function normalizeLocation(?string $value): string

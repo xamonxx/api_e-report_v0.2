@@ -9,6 +9,7 @@ use App\Models\Consultation;
 use App\Models\ConsultationStatusHistory;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
+use App\Models\Survey;
 use App\Services\ConsultationImportService;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\LeadsExcelExporter;
@@ -36,12 +37,17 @@ class ConsultationController extends Controller
         $this->authorize('viewAny', Consultation::class);
 
         $user = auth()->user();
-        $query = Consultation::query()->withProductRelations();
+        // activeSurvey ikut dimuat supaya UI tahu lead sudah diajukan survey
+        // atau belum, tanpa query tambahan per baris.
+        $query = Consultation::query()->withProductRelations()->with('activeSurvey');
         $query->forUser($user);
 
         // Filters
         if ($request->filled('status')) {
             $query->where('status_category_id', $request->status);
+        }
+        if ($request->boolean('pending_survey')) {
+            $query->needsSurveyRequest();
         }
         if ($request->filled('account')) {
             if ($user->isSuperAdmin()) {
@@ -70,7 +76,11 @@ class ConsultationController extends Controller
 
             $query->where(function ($q) use ($search, $normalizedSearch) {
                 $q->where('client_name', 'like', "%{$search}%")
-                  ->orWhere('consultation_id', 'like', "%{$search}%");
+                  ->orWhere('consultation_id', 'like', "%{$search}%")
+                  // Nama akun/cabang ikut dicari. Aman dari kebocoran lintas
+                  // akun karena forUser() di atas sudah membatasi admin ke
+                  // akunnya sendiri.
+                  ->orWhereHas('account', fn ($account) => $account->where('name', 'like', "%{$search}%"));
 
                 if ($normalizedSearch) {
                     $q->orWhereRaw(
@@ -81,13 +91,24 @@ class ConsultationController extends Controller
             });
         }
 
-        // Sorting
-        $sortBy = $request->input('sort', 'updated_at');
+        // Sorting. Default memakai tanggal konsultasi, bukan `updated_at`:
+        // setelah import massal seluruh baris punya `updated_at` yang nyaris
+        // sama, sehingga urutannya mencerminkan waktu import - bukan lead mana
+        // yang konsultasinya paling baru. Laporan Excel memakai kolom yang
+        // sama dengan arah kebalikannya (terlama dulu).
+        $sortBy = $request->input('sort', 'consultation_date');
         $sortDir = $request->input('dir', 'desc');
         $allowedSorts = ['updated_at', 'created_at', 'consultation_date', 'client_name'];
         if (in_array($sortBy, $allowedSorts)) {
             $query->orderBy($sortBy, $sortDir === 'asc' ? 'asc' : 'desc');
         }
+
+        // Pemecah seri wajib ada. Import massal memberi ratusan lead
+        // `updated_at` yang persis sama, dan tanpa kolom kedua MySQL bebas
+        // menentukan urutannya sendiri - antar halaman baris bisa terulang
+        // atau justru hilang. `id` menurun sekaligus menjaga lead terbaru
+        // tetap di atas, sesuai tampilan halaman Konsultasi.
+        $query->orderByDesc('id');
 
         $perPage = min((int) $request->input('per_page', 25), 100);
         $paginated = $query->paginate($perPage);
@@ -115,6 +136,10 @@ class ConsultationController extends Controller
             [
                 'account',
                 'statusCategory',
+                // Menentukan apakah kartu Status Survey menampilkan survey yang
+                // berjalan atau ajakan "belum diajukan".
+                'activeSurvey.surveyor:id,name',
+                'activeSurvey.resultStatus:id,name,color',
                 'timelineNotes.user',
                 'reminders' => function ($query) use ($user) {
                     $query->forUser($user)->with(['user', 'creator']);
@@ -301,6 +326,10 @@ class ConsultationController extends Controller
             'status_category_id' => ['required', 'integer', 'exists:status_categories,id'],
         ]);
 
+        if ($conflict = $this->surveyStatusConflict($consultation, (int) $validated['status_category_id'])) {
+            return response()->json(['message' => $conflict], 422);
+        }
+
         $previousStatusId = $consultation->status_category_id;
         $consultation->update(['status_category_id' => $validated['status_category_id']]);
 
@@ -335,6 +364,61 @@ class ConsultationController extends Controller
             ],
             'message' => 'Import sedang diproses di background.',
         ], 202);
+    }
+
+    /**
+     * Cegah status pipeline lead bertabrakan dengan survey yang sedang berjalan.
+     *
+     * Status "Sedang Survey" dan "Selesai Survey" digerakkan otomatis oleh
+     * Survey::transitionTo(). Menggesernya manual membuat lead mengaku selesai
+     * survei padahal surveynya belum dijalankan, dan sebaliknya.
+     *
+     * @return string|null pesan penolakan, atau null bila boleh
+     */
+    private function surveyStatusConflict(Consultation $consultation, int $targetStatusId): ?string
+    {
+        $survey = $consultation->surveys()
+            ->where('state', '!=', Survey::STATE_CANCELLED)
+            ->latest('id')
+            ->first();
+
+        if (! $survey) {
+            return null; // Tidak ada survey aktif: status bebas digeser.
+        }
+
+        $target = StatusCategory::find($targetStatusId);
+        $targetName = mb_strtolower(trim((string) $target?->name));
+
+        $stageOf = fn (string $name) => match ($name) {
+            'sedang survey' => Survey::STATE_IN_PROGRESS,
+            'selesai survey' => Survey::STATE_COMPLETED,
+            default => null,
+        };
+
+        $requiredState = $stageOf($targetName);
+
+        if ($requiredState === Survey::STATE_IN_PROGRESS
+            && ! in_array($survey->state, [Survey::STATE_IN_PROGRESS, Survey::STATE_COMPLETED], true)) {
+            return 'Status "Sedang Survey" mengikuti pelaksanaan survey. Minta surveyor memulai surveynya lebih dulu.';
+        }
+
+        if ($requiredState === Survey::STATE_COMPLETED && $survey->state !== Survey::STATE_COMPLETED) {
+            return 'Status "Selesai Survey" mengikuti hasil survey. Lengkapi hasil surveynya lebih dulu.';
+        }
+
+        // Menggeser keluar dari tahap pengajuan sementara survey masih menunggu
+        // akan meninggalkan survey yatim di antrian manager.
+        $surveyStageName = mb_strtolower(trim(config('statuses.survey', 'Request Survey')));
+        $currentName = mb_strtolower(trim((string) $consultation->statusCategory?->name));
+
+        if ($currentName === $surveyStageName
+            && $targetName !== $surveyStageName
+            && in_array($survey->state, [Survey::STATE_REQUESTED, Survey::STATE_SCHEDULED], true)
+            && $requiredState === null) {
+            return 'Lead ini masih punya pengajuan survey yang berjalan. Batalkan surveynya lebih dulu bila ingin memindahkan status.';
+        }
+
+        return null;
     }
 
     private function flushDashboardCache(array $accountIds = []): void
