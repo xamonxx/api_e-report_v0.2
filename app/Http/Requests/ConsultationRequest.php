@@ -5,6 +5,8 @@ namespace App\Http\Requests;
 use App\Models\Consultation;
 use App\Models\NeedsCategory;
 use App\Support\PendingConfirmation;
+use App\Support\PhoneNumber;
+use App\Support\WilayahNormalizer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -13,7 +15,10 @@ class ConsultationRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        $pendingConfirmationCategoryId = $this->resolveNeedsCategoryId(PendingConfirmation::LABEL);
+        // Fallback ke ejaan lama supaya tetap berfungsi bila migrasi rename
+        // belum dijalankan di environment tersebut.
+        $pendingConfirmationCategoryId = $this->resolveNeedsCategoryId(NeedsCategory::PENDING_LABEL)
+            ?? $this->resolveNeedsCategoryId(NeedsCategory::PENDING_LEGACY_LABEL);
         $otherNeedsCategoryId = $this->resolveNeedsCategoryId(NeedsCategory::OTHER_OPTION_LABEL);
         $productIds = $this->input('needs_category_ids');
 
@@ -59,57 +64,62 @@ class ConsultationRequest extends FormRequest
             return $clean === '' ? null : $clean;
         };
 
-        $province = PendingConfirmation::normalize($trimmed($this->input('province')));
-        $city = PendingConfirmation::normalize($trimmed($this->input('city')));
-        $district = PendingConfirmation::normalize($trimmed($this->input('district')));
+        // Wilayah kosong dikerucutkan ke label placeholder, bukan dibiarkan null,
+        // supaya laporan "belum dikonfirmasi" bisa menghitungnya.
+        $province = PendingConfirmation::normalizeRegion($trimmed($this->input('province')));
+        $city = PendingConfirmation::normalizeRegion($trimmed($this->input('city')));
+        $district = PendingConfirmation::normalizeRegion($trimmed($this->input('district')));
 
-        $none = PendingConfirmation::LABEL;
+        $none = PendingConfirmation::REGION_LABEL;
+
+        // Ejaan disamakan ke format master Excel ("Kab. X", "Jakarta") lewat
+        // WilayahNormalizer, dan tingkat yang masih kosong diisi dari data yang
+        // lebih spesifik: kota melengkapi provinsi, kecamatan melengkapi keduanya.
         if ($province !== $none) {
-            $provinces = config('wilayah.provinces', []);
-            $provincesLower = array_map('strtolower', $provinces);
-            $provinceIdx = array_search(strtolower($province), $provincesLower);
-            if ($provinceIdx !== false) {
-                $province = $provinces[$provinceIdx];
-            }
+            $province = WilayahNormalizer::canonicalProvince($province) ?? $province;
         }
 
         if ($city !== $none) {
-            $cityMapping = \App\Support\Wilayah::cityMapping();
-            foreach ($cityMapping as $cName => $pName) {
-                if (strtolower($cName) === strtolower($city)) {
-                    if ($province === $none || strtolower($pName) === strtolower($province)) {
-                        $city = $cName;
-                        if ($province === $none) {
-                            $province = $pName;
-                        }
-                        break;
-                    }
+            $canonicalCity = WilayahNormalizer::canonicalCity($city);
+
+            if ($canonicalCity !== null) {
+                $city = $canonicalCity;
+
+                if ($province === $none) {
+                    $province = \App\Support\Wilayah::cityMapping()[$canonicalCity] ?? $province;
                 }
             }
         }
 
         if ($district !== $none) {
-            $districtMapping = \App\Support\Wilayah::districtMapping();
-            foreach ($districtMapping as $item) {
-                if (strtolower($item['district'] ?? '') === strtolower($district)) {
-                    if (
-                        ($city === $none || strtolower($item['city'] ?? '') === strtolower($city)) &&
-                        ($province === $none || strtolower($item['province'] ?? '') === strtolower($province))
-                    ) {
-                        $district = $item['district'];
-                        if ($city === $none) {
-                            $city = $item['city'] ?? '';
-                        }
-                        if ($province === $none) {
-                            $province = $item['province'] ?? '';
-                        }
-                        break;
+            $resolved = WilayahNormalizer::canonicalDistrict($district, $city !== $none ? $city : null);
+            $district = $resolved['value'] ?? $district;
+
+            if ($resolved['matched'] && ($city === $none || $province === $none)) {
+                foreach (\App\Support\Wilayah::districtMapping() as $item) {
+                    if (($item['district'] ?? null) !== $district) {
+                        continue;
                     }
+
+                    if ($city === $none) {
+                        $city = $item['city'] ?? $city;
+                    }
+
+                    if ($province === $none) {
+                        $province = $item['province'] ?? $province;
+                    }
+
+                    break;
                 }
             }
         }
         $productDetails = $trimmed($this->input('product_details'));
-        $phone = $this->formatIndonesiaPhone($trimmed($this->input('phone')));
+        // Disimpan E.164 supaya satu nomor selalu punya satu bentuk, apa pun
+        // negaranya. Nomor tanpa "+" diperlakukan sebagai nomor Indonesia.
+        // Nilai yang gagal diurai dibiarkan apa adanya agar aturan validasi di
+        // bawah yang memberi pesan error, bukan hilang diam-diam.
+        $rawPhone = $trimmed($this->input('phone'));
+        $phone = PhoneNumber::toE164($rawPhone) ?? $rawPhone;
 
         if (! $otherNeedsCategoryId || ! in_array($otherNeedsCategoryId, $productIds, true)) {
             $productDetails = null;
@@ -158,13 +168,15 @@ class ConsultationRequest extends FormRequest
                 'max:30',
                 'regex:/^([0-9\s\-\+\(\)]*)$/',
                 function ($attribute, $value, $fail) use ($accountId, $consultationId) {
-                    $digits = preg_replace('/[^0-9]/', '', $value);
-                    if (strlen($digits) < 9) {
-                        $fail('Nomor telepon minimal harus berisi 9 digit angka.');
+                    // Panjang nomor berbeda tiap negara (lokal Singapura hanya 8
+                    // digit), jadi keabsahan diserahkan ke aturan libphonenumber
+                    // alih-alih rentang digit tetap.
+                    if (! PhoneNumber::isValid($value)) {
+                        $fail('Nomor telepon tidak valid. Untuk nomor luar negeri, awali dengan kode negara, contoh +60 12-345 6789.');
+
+                        return;
                     }
-                    if (strlen($digits) > 14) {
-                        $fail('Nomor telepon tidak boleh lebih dari 14 digit angka.');
-                    }
+
                     $duplicate = Consultation::findDuplicatePhone($accountId, $value, $consultationId);
 
                     if ($duplicate) {
@@ -208,11 +220,11 @@ class ConsultationRequest extends FormRequest
             $province = $this->input('province');
             $city = $this->input('city');
             $district = $this->input('district');
-            $none = \App\Support\PendingConfirmation::LABEL;
-
-            $hasProvince = ($province !== null && $province !== $none);
-            $hasCity = ($city !== null && $city !== $none);
-            $hasDistrict = ($district !== null && $district !== $none);
+            // Pakai matches() supaya label legacy pada data lama juga dianggap
+            // placeholder dan tidak divalidasi terhadap dataset wilayah.
+            $hasProvince = ($province !== null && ! PendingConfirmation::matches($province));
+            $hasCity = ($city !== null && ! PendingConfirmation::matches($city));
+            $hasDistrict = ($district !== null && ! PendingConfirmation::matches($district));
 
             // Data wilayah bersifat opsional dan boleh diisi sebagian: pengguna
             // boleh mengisi hanya provinsi, hanya kota/kabupaten, atau hanya
@@ -349,44 +361,4 @@ class ConsultationRequest extends FormRequest
         ];
     }
 
-    private function formatIndonesiaPhone(?string $value): ?string
-    {
-        if (! filled($value)) {
-            return null;
-        }
-
-        $digits = preg_replace('/\D+/', '', $value) ?? '';
-
-        if ($digits === '') {
-            return null;
-        }
-
-        if (str_starts_with($digits, '620')) {
-            $digits = substr($digits, 3);
-        } elseif (str_starts_with($digits, '62')) {
-            $digits = substr($digits, 2);
-        } elseif (str_starts_with($digits, '0')) {
-            $digits = substr($digits, 1);
-        }
-
-        $digits = ltrim($digits, '0');
-
-        if ($digits === '') {
-            return null;
-        }
-
-        $segments = [substr($digits, 0, 3)];
-        $remaining = substr($digits, 3);
-
-        while (strlen($remaining) > 4) {
-            $segments[] = substr($remaining, 0, 4);
-            $remaining = substr($remaining, 4);
-        }
-
-        if ($remaining !== '') {
-            $segments[] = $remaining;
-        }
-
-        return '+62 ' . implode('-', array_filter($segments));
-    }
 }

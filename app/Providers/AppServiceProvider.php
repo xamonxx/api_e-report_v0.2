@@ -34,6 +34,9 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Reminder::class, ReminderPolicy::class);
 
         Consultation::observe(AuditObserver::class);
+        \App\Models\Survey::observe(AuditObserver::class);
+        \App\Models\SurveyStatus::observe(AuditObserver::class);
+        \App\Models\SurveyReschedule::observe(AuditObserver::class);
 
         $clearDashboardCache = function ($model = null) {
             // Clear all super admin dashboard caches (as key includes user ID)

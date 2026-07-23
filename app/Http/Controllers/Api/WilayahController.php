@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Support\Wilayah;
+use App\Support\WilayahNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -116,27 +117,28 @@ class WilayahController extends Controller
     }
 
     /**
-     * Normalize and compare two city names fuzzily.
+     * Bandingkan dua nama kota.
+     *
+     * Dulu memakai str_contains sebagai cadangan, sehingga kota "Bandung" ikut
+     * menarik kecamatan milik "Bandung Barat" - satu nama menjadi awalan nama
+     * lain. Kini perbandingannya memakai kunci ternormalisasi dari
+     * WilayahNormalizer, yang menyeragamkan awalan Kab./Kota tanpa membuangnya
+     * sehingga "Kab. Bandung" dan "Kota Bandung" tetap terpisah.
      */
     private function matchCity(string $a, string $b): bool
     {
-        $normalize = function ($name) {
-            $name = strtolower($name);
-            $name = str_replace(
-                ['kota administrasi ', 'kota ', 'kabupaten ', 'kab ', 'administrasi '],
-                '',
-                $name
-            );
-            return trim(preg_replace('/\s+/', ' ', $name));
-        };
-
-        $normA = $normalize($a);
-        $normB = $normalize($b);
-
-        if ($normA === $normB) {
+        if (WilayahNormalizer::cityKey($a) === WilayahNormalizer::cityKey($b)) {
             return true;
         }
 
-        return str_contains($normA, $normB) || str_contains($normB, $normA);
+        // Nama polos tanpa Kab./Kota masih boleh cocok dengan salah satunya,
+        // mis. filter "Bandung" untuk "Kota Bandung" - tapi hanya bila nama
+        // inti persis sama, bukan sekadar berawalan sama.
+        $plainA = WilayahNormalizer::cityPlainKey($a);
+        $plainB = WilayahNormalizer::cityPlainKey($b);
+        $bareA = WilayahNormalizer::cityKey($a) === $plainA;
+        $bareB = WilayahNormalizer::cityKey($b) === $plainB;
+
+        return ($bareA || $bareB) && $plainA === $plainB;
     }
 }

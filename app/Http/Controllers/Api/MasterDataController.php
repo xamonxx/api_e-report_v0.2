@@ -21,14 +21,11 @@ use Throwable;
 
 class MasterDataController extends Controller
 {
-    /**
-     * GET /api/v1/master-data/needs-categories
-     */
-    private const CACHE_NEEDS = 'master-data:needs-categories';
+    public const CACHE_NEEDS = 'master-data:needs-categories';
 
-    private const CACHE_STATUSES = 'master-data:status-categories';
+    public const CACHE_STATUSES = 'master-data:status-categories';
 
-    private const CACHE_SURVEY_STATUSES = 'master-data:survey-statuses';
+    public const CACHE_SURVEY_STATUSES = 'master-data:survey-statuses';
 
     public function needsCategories(): JsonResponse
     {
@@ -38,9 +35,12 @@ class MasterDataController extends Controller
             fn () => NeedsCategory::forConsultationOptions()->get(['id', 'name'])
         );
 
+        // Jangan di-cache browser/CDN. Cache server di atas sudah dibersihkan
+        // pada setiap mutasi master data; header publik 1 jam membuat kategori
+        // yang baru ditambahkan tetap tidak muncul di form dan template.
         return response()->json([
             'data' => $categories,
-        ])->header('Cache-Control', 'public, max-age=3600, s-maxage=3600');
+        ])->header('Cache-Control', 'private, no-cache, must-revalidate');
     }
 
     /**
@@ -55,9 +55,11 @@ class MasterDataController extends Controller
                 ->get(['id', 'name', 'css_class', 'color', 'sort_order'])
         );
 
+        // Sama seperti kategori kebutuhan: status pipeline yang baru ditambahkan
+        // harus langsung terlihat, jadi respons tidak boleh disimpan browser.
         return response()->json([
             'data' => $statuses,
-        ])->header('Cache-Control', 'public, max-age=3600, s-maxage=3600');
+        ])->header('Cache-Control', 'private, no-cache, must-revalidate');
     }
 
     /**

@@ -11,7 +11,9 @@ use App\Models\Survey;
 use App\Models\SurveyActivityLog;
 use App\Models\SurveyReschedule;
 use App\Models\User;
+use App\Services\NotificationSummaryService;
 use App\Services\Reports\SurveyorScheduleRecapService;
+use App\Services\WebPushService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -74,41 +76,70 @@ class SurveyController extends Controller
             'requested_date' => ['nullable', 'date', 'after_or_equal:today'],
             'requested_time' => ['nullable', 'date_format:H:i'],
             'requested_item' => ['nullable', 'string', 'max:1000'],
+            'google_maps_url' => ['nullable', 'url', 'max:2048'],
             'admin_notes' => ['nullable', 'string', 'max:5000'],
+        ], [
+            'google_maps_url.url' => 'Link Google Maps tidak valid. Tempelkan tautan lengkap dari aplikasi Maps.',
         ]);
 
-        // Cegah pengajuan ganda selagi masih ada survey aktif (non-cancelled).
-        $existing = $consultation->surveys()
-            ->where('state', '!=', Survey::STATE_CANCELLED)
-            ->first();
-
-        if ($existing) {
+        // Survey hanya boleh diajukan dari tahap pipeline yang tepat, supaya
+        // antrian manager tidak terisi lead yang belum siap disurvei.
+        $surveyStatusName = config('statuses.survey', 'Request Survey');
+        if (! $this->consultationIsAtSurveyStage($consultation, $surveyStatusName)) {
             return response()->json([
-                'message' => 'Lead ini sudah memiliki survey aktif.',
-                'data' => $existing->load($this->withRelations()),
+                'message' => "Survey hanya dapat diajukan ketika status lead adalah {$surveyStatusName}.",
             ], 422);
         }
 
-        $survey = new Survey([
-            'consultation_id' => $consultation->id,
-            'account_id' => $consultation->account_id,
-            'state' => Survey::STATE_REQUESTED,
-            'requested_by' => auth()->id(),
-            'requested_at' => now(),
-            'requested_date' => $validated['requested_date'] ?? null,
-            'requested_time' => $validated['requested_time'] ?? null,
-            'requested_item' => $validated['requested_item'] ?? null,
-            'admin_notes' => $validated['admin_notes'] ?? null,
-        ]);
-        $survey->save();
-        $survey->transitionTo(Survey::STATE_REQUESTED); // catat history awal (null â†’ requested)
+        // Cek-lalu-tulis dibungkus transaksi + lock: tanpa ini dua permintaan
+        // bersamaan sama-sama lolos pengecekan dan membuat dua survey aktif.
+        // Unique index `surveys.active_key` menjadi jaring pengaman terakhir.
+        [$survey, $alreadyExisted] = DB::transaction(function () use ($consultation, $validated) {
+            DB::table('consultations')->where('id', $consultation->id)->lockForUpdate()->first();
+
+            $existing = $consultation->surveys()
+                ->where('state', '!=', Survey::STATE_CANCELLED)
+                ->first();
+
+            if ($existing) {
+                return [$existing, true];
+            }
+
+            // `state` sengaja tidak diisi di sini. Kolomnya sudah default
+            // 'requested', dan dengan membiarkan atribut null sampai transitionTo()
+            // dipanggil, baris history awal (null -> requested) benar-benar tertulis.
+            // Kalau state diisi lebih dulu, transitionTo() menganggap tidak ada
+            // perubahan dan history awal tidak pernah dibuat.
+            $survey = new Survey([
+                'consultation_id' => $consultation->id,
+                'account_id' => $consultation->account_id,
+                'requested_by' => auth()->id(),
+                'requested_at' => now(),
+                'requested_date' => $validated['requested_date'] ?? null,
+                'requested_time' => $validated['requested_time'] ?? null,
+                'requested_item' => $validated['requested_item'] ?? null,
+                'google_maps_url' => $validated['google_maps_url'] ?? null,
+                'admin_notes' => $validated['admin_notes'] ?? null,
+            ]);
+            $survey->save();
+            $survey->transitionTo(Survey::STATE_REQUESTED); // catat history awal (null -> requested)
+
+            return [$survey, false];
+        });
+
+        if ($alreadyExisted) {
+            return response()->json([
+                'message' => 'Lead ini sudah memiliki survey aktif.',
+                'data' => $survey->load($this->withRelations()),
+            ], 422);
+        }
 
         $this->flushDashboardCache([(int) $consultation->account_id]);
         $requesterName = auth()->user()?->name ?? 'Admin';
         $requestedAt = ! empty($validated['requested_date'])
             ? Carbon::parse($validated['requested_date'].' '.($validated['requested_time'] ?? '23:59'))->toDateTimeString()
             : null;
-        SurveyRealtimeUpdated::dispatch(
+        $this->notifySurvey(
             $survey,
             'request_created',
             "{$requesterName} mengajukan survey konsumen {$this->surveyClientArea($survey)}" . ($requestedAt ? '. Jadwal diminta: '.$this->fmtDt($requestedAt).'.' : '.')
@@ -118,6 +149,122 @@ class SurveyController extends Controller
             'message' => 'Survey berhasil diajukan!',
             'data' => $survey->load($this->withRelations()),
         ], 201);
+    }
+
+    /**
+     * Kirim notifikasi survey: simpan in-app + kirim Web Push ke orang yang sama.
+     *
+     * Penerima diambil dari SurveyRealtimeUpdated::recipientsFor() supaya push
+     * dan notifikasi in-app tidak pernah menyasar orang yang berbeda.
+     * WebPushService sudah gagal-aman (error di-log, tidak melempar), jadi
+     * kegagalan push tidak boleh membatalkan aksi yang memicunya.
+     *
+     * @param  array<int|null>  $extraRecipients
+     */
+    private function notifySurvey(Survey $survey, string $action, string $message, array $extraRecipients = []): void
+    {
+        SurveyRealtimeUpdated::dispatch($survey, $action, $message, $extraRecipients);
+
+        // Angka "lead belum diajukan" milik pelaku ikut berubah walau dia bukan
+        // penerima notifikasi, jadi cache-nya harus ikut dibersihkan.
+        if ($actorId = auth()->id()) {
+            app(NotificationSummaryService::class)->forgetForUser((int) $actorId);
+        }
+
+        $recipients = SurveyRealtimeUpdated::recipientsFor($survey, $action, $extraRecipients);
+
+        if ($recipients === []) {
+            return;
+        }
+
+        app(WebPushService::class)->sendToUsers($recipients, [
+            'title' => SurveyRealtimeUpdated::titleFor($action),
+            'body' => $message,
+            'url' => '/surveys',
+            // Tag seragam per survey: notifikasi lama tertimpa, bukan menumpuk.
+            'tag' => 'survey-'.$survey->id,
+        ]);
+    }
+
+    /**
+     * True bila status pipeline lead memang tahap pengajuan survey.
+     * Perbandingan mengabaikan huruf besar-kecil dan spasi berlebih.
+     */
+    private function consultationIsAtSurveyStage(Consultation $consultation, string $surveyStatusName): bool
+    {
+        $consultation->loadMissing('statusCategory');
+        $current = mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $consultation->statusCategory?->name)));
+
+        return $current === mb_strtolower(trim($surveyStatusName));
+    }
+
+    /**
+     * PATCH /api/v1/surveys/{survey}/unassign
+     * Manager melepas penugasan: scheduled -> requested (kembali ke antrian).
+     *
+     * Tanpa ini, satu-satunya cara membetulkan salah tugas adalah membatalkan
+     * survey, yang memaksa admin mengajukan ulang dari nol.
+     */
+    public function unassign(Request $request, Survey $survey): JsonResponse
+    {
+        $this->authorize('assign', $survey);
+
+        if ($survey->state !== Survey::STATE_SCHEDULED) {
+            return response()->json([
+                'message' => 'Hanya survey yang sudah terjadwal yang bisa dilepas penugasannya.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $previousSurveyorId = (int) $survey->surveyor_id;
+        $previousScheduledAt = $survey->scheduled_at;
+
+        DB::transaction(function () use ($survey, $validated, $previousScheduledAt) {
+            $locked = Survey::query()->lockForUpdate()->findOrFail($survey->id);
+
+            if ($locked->state !== Survey::STATE_SCHEDULED) {
+                abort(422, 'Survey tidak lagi berada pada status terjadwal.');
+            }
+
+            // Jejak pelepasan disimpan sebagai riwayat jadwal: dari jadwal lama
+            // ke kosong, supaya bisa ditelusuri kenapa antrian bertambah lagi.
+            SurveyReschedule::create([
+                'survey_id' => $locked->id,
+                'source' => SurveyReschedule::SOURCE_MANAGER,
+                'field' => SurveyReschedule::FIELD_SCHEDULED,
+                'old_at' => $previousScheduledAt,
+                'new_at' => null,
+                'changed_by' => auth()->id(),
+                'changed_by_role' => auth()->user()?->role?->value ?? auth()->user()?->role,
+                'notes' => $validated['reason'] ?? 'Penugasan dilepas, survey kembali ke antrian.',
+            ]);
+
+            $locked->fill([
+                'surveyor_id' => null,
+                'assigned_by' => null,
+                'assigned_at' => null,
+                'scheduled_at' => null,
+                'location_notes' => null,
+            ]);
+            $locked->transitionTo(Survey::STATE_REQUESTED, 'Manager melepas penugasan surveyor.');
+        });
+
+        $updatedSurvey = $survey->fresh();
+        $this->flushDashboardCache([(int) $updatedSurvey->account_id]);
+
+        $managerName = auth()->user()?->name ?? 'Manager Surveyor';
+        $message = "{$managerName} melepas penugasan survey konsumen {$this->surveyClientArea($updatedSurvey)}. Survey kembali ke antrian.";
+
+        // Surveyor lama sudah tidak menempel di survey, jadi dikirim eksplisit.
+        $this->notifySurvey($updatedSurvey, 'unassigned', $message, array_filter([$previousSurveyorId]));
+
+        return response()->json([
+            'message' => 'Penugasan dilepas. Survey kembali ke antrian.',
+            'data' => $updatedSurvey->load($this->withRelations()),
+        ]);
     }
 
     /**
@@ -196,7 +343,7 @@ class SurveyController extends Controller
 
         $this->flushDashboardCache([(int) $survey->account_id]);
         $adminName = auth()->user()?->name ?? 'Admin';
-        SurveyRealtimeUpdated::dispatch(
+        $this->notifySurvey(
             $survey,
             'rescheduled_by_admin',
             "{$adminName} mengubah jadwal survey konsumen {$this->surveyClientArea($survey)} dari {$this->fmtDt($oldAt)} ke {$this->fmtDt($newRequestedAt)}. Mohon validasi ulang."
@@ -388,9 +535,11 @@ class SurveyController extends Controller
                 abort(422, 'Survey sudah dijadwalkan oleh pengguna lain.');
             }
 
+            // Sertakan in_progress: availability() menghitung state itu sebagai
+            // sibuk, jadi cek bentrok harus memakai daftar yang sama.
             $conflict = Survey::query()
                 ->where('surveyor_id', $surveyor->id)
-                ->where('state', Survey::STATE_SCHEDULED)
+                ->whereIn('state', [Survey::STATE_SCHEDULED, Survey::STATE_IN_PROGRESS])
                 ->where('scheduled_at', $scheduledAt)
                 ->lockForUpdate()
                 ->exists();
@@ -410,7 +559,7 @@ class SurveyController extends Controller
 
         $updatedSurvey = $survey->fresh();
         $this->flushDashboardCache([(int) $updatedSurvey->account_id]);
-        SurveyRealtimeUpdated::dispatch(
+        $this->notifySurvey(
             $updatedSurvey,
             'scheduled',
             "Anda ditugaskan survey konsumen {$this->surveyClientArea($updatedSurvey)} pada {$this->fmtDt($updatedSurvey->scheduled_at)}."
@@ -466,7 +615,7 @@ class SurveyController extends Controller
             $conflict = Survey::query()
                 ->whereKeyNot($lockedSurvey->id)
                 ->where('surveyor_id', $surveyor->id)
-                ->where('state', Survey::STATE_SCHEDULED)
+                ->whereIn('state', [Survey::STATE_SCHEDULED, Survey::STATE_IN_PROGRESS])
                 ->where('scheduled_at', $newAt)
                 ->lockForUpdate()
                 ->exists();
@@ -512,10 +661,16 @@ class SurveyController extends Controller
         $updatedSurvey = $survey->fresh();
         $this->flushDashboardCache([(int) $updatedSurvey->account_id]);
         $managerName = auth()->user()?->name ?? 'Manager Surveyor';
-        SurveyRealtimeUpdated::dispatch(
+        // Bila surveyor diganti, surveyor lama kehilangan jadwal ini dan harus
+        // ikut diberi tahu - penerima default hanya surveyor yang baru.
+        $replacedSurveyorId = (int) $oldSurveyorId !== (int) $surveyor->id
+            ? [(int) $oldSurveyorId]
+            : [];
+        $this->notifySurvey(
             $updatedSurvey,
             'rescheduled_by_manager',
-            "{$managerName} mengubah jadwal survey {$this->surveyClientArea($updatedSurvey)} dari {$this->fmtDt($oldAt)} ke {$this->fmtDt($newAt)}. Surveyor: ".($updatedSurvey->surveyor?->name ?? 'Belum ditentukan').'.'
+            "{$managerName} mengubah jadwal survey {$this->surveyClientArea($updatedSurvey)} dari {$this->fmtDt($oldAt)} ke {$this->fmtDt($newAt)}. Surveyor: ".($updatedSurvey->surveyor?->name ?? 'Belum ditentukan').'.',
+            $replacedSurveyorId
         );
 
         return response()->json([
@@ -538,7 +693,7 @@ class SurveyController extends Controller
         $updatedSurvey = $survey->fresh();
         $this->flushDashboardCache([(int) $updatedSurvey->account_id]);
         $surveyorName = auth()->user()?->name ?? ($updatedSurvey->surveyor?->name ?? 'Surveyor');
-        SurveyRealtimeUpdated::dispatch(
+        $this->notifySurvey(
             $updatedSurvey,
             'started',
             "{$surveyorName} sedang memulai survey konsumen {$this->surveyClientArea($updatedSurvey)}."
@@ -571,10 +726,12 @@ class SurveyController extends Controller
             'result_status_id.required' => 'Status hasil survey wajib dipilih.',
         ]);
 
+        // Jangan mengarang actual_start_at kalau survey tidak pernah di-start:
+        // mengisinya dengan now() membuat durasi tercatat 0 menit dan merusak
+        // metrik durasi. Biarkan null = "tidak terukur".
         $survey->fill([
             'result_status_id' => $validated['result_status_id'],
             'result_notes' => $validated['result_notes'] ?? null,
-            'actual_start_at' => $survey->actual_start_at ?? now(),
             'actual_finish_at' => now(),
             'completed_at' => now(),
         ]);
@@ -583,7 +740,7 @@ class SurveyController extends Controller
         $updatedSurvey = $survey->fresh()->load($this->withRelations());
         $this->flushDashboardCache([(int) $updatedSurvey->account_id]);
         $surveyorName = auth()->user()?->name ?? ($updatedSurvey->surveyor?->name ?? 'Surveyor');
-        SurveyRealtimeUpdated::dispatch(
+        $this->notifySurvey(
             $updatedSurvey,
             'completed',
             "{$surveyorName} selesai survey konsumen {$this->surveyClientArea($updatedSurvey)}. Hasil: ".($updatedSurvey->resultStatus?->name ?? 'Belum ditentukan').'.'
@@ -598,7 +755,7 @@ class SurveyController extends Controller
     /**
      * PATCH /api/v1/surveys/{survey}/cancel
      */
-    public function cancel(Survey $survey): JsonResponse
+    public function cancel(Request $request, Survey $survey): JsonResponse
     {
         $this->authorize('cancel', $survey);
 
@@ -608,19 +765,48 @@ class SurveyController extends Controller
             ], 422);
         }
 
+        // Tanpa guard ini pembatalan bisa diulang: history tidak bertambah
+        // (state sama) tapi activity log dan notifikasi tetap terkirim ganda.
+        if ($survey->state === Survey::STATE_CANCELLED) {
+            return response()->json([
+                'message' => 'Survey sudah dibatalkan sebelumnya.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'cancellation_reason' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $cancellerName = auth()->user()?->name ?? 'Manager Surveyor';
+        $reason = $validated['cancellation_reason'] ?? null;
+
+        $survey->cancelled_at = now();
+        $survey->cancellation_reason = $reason ?: "Dibatalkan oleh {$cancellerName}.";
         $survey->transitionTo(Survey::STATE_CANCELLED);
-        $this->flushDashboardCache([(int) $survey->account_id]);
-        SurveyRealtimeUpdated::dispatch($survey, 'cancelled', 'Survey telah dibatalkan.');
+
+        $updatedSurvey = $survey->fresh();
+        $this->flushDashboardCache([(int) $updatedSurvey->account_id]);
+        $this->notifySurvey(
+            $updatedSurvey,
+            'cancelled',
+            "{$cancellerName} membatalkan survey konsumen {$this->surveyClientArea($updatedSurvey)}."
+                .($reason ? " Alasan: {$reason}" : '')
+        );
 
         return response()->json([
             'message' => 'Survey dibatalkan.',
-            'data' => $survey->load($this->withRelations()),
+            'data' => $updatedSurvey->load($this->withRelations()),
         ]);
     }
 
     private function flushDashboardCache(array $accountIds = []): void
     {
-        Cache::forget('dashboard:super_admin:' . auth()->id());
+        // Cache dashboard super admin di-key per user, jadi menghapus milik
+        // pelaku saja membuat super admin lain melihat data basi.
+        User::query()
+            ->where('role', UserRole::SuperAdmin->value)
+            ->pluck('id')
+            ->each(fn ($id) => Cache::forget("dashboard:super_admin:{$id}"));
 
         foreach (collect($accountIds)->filter(fn ($id) => (int) $id > 0)->unique() as $accountId) {
             Cache::forget("dashboard:admin:{$accountId}");

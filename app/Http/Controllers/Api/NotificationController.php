@@ -10,6 +10,7 @@ use App\Services\NotificationSummaryService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
@@ -24,14 +25,16 @@ class NotificationController extends Controller
     {
         $user = Auth::user();
 
+        // Semua angka diambil dari satu payload yang sudah di-cache 2 menit;
+        // sebelumnya hitungan survey dijalankan mentah pada setiap polling.
         $summary = $this->notificationSummaryService->getCountsForUser($user);
-        $unreadSurveys = SurveyNotification::where('user_id', $user->id)->whereNull('read_at')->count();
 
         return response()->json([
             'unread_notes' => $summary['unreadNotesCount'],
             'upcoming_reminders' => $summary['upcomingRemindersCount'],
-            'unread_surveys' => $unreadSurveys,
-            'total' => $summary['initialTotalAlerts'] + $unreadSurveys,
+            'unread_surveys' => $summary['unreadSurveysCount'],
+            'pending_survey_requests' => $summary['pendingSurveyRequests'],
+            'total' => $summary['initialTotalAlerts'],
             'timestamp' => Carbon::now()->toIso8601String(),
         ]);
     }
@@ -41,17 +44,26 @@ class NotificationController extends Controller
         $user = Auth::user();
         $summary = $this->notificationSummaryService->getForUser($user);
         $surveyNotifications = SurveyNotification::query()
+            ->with([
+                'survey.consultation:id,consultation_id,client_name,district,city,province',
+                'survey.surveyor:id,name',
+            ])
             ->where('user_id', $user->id)
             ->latest()
             ->limit(30)
             ->get();
         $unreadSurveys = $surveyNotifications->whereNull('read_at')->count();
 
+        // `unread_surveys` dihitung dari koleksi yang memang sudah diambil di
+        // atas (gratis, dan lebih segar daripada cache). Karena itu total
+        // disusun ulang dari komponennya - `initialTotalAlerts` sudah memuat
+        // hitungan survey versi cache, memakainya akan menghitung dua kali.
         return response()->json([
             'unread_notes' => $summary['unreadNotesCount'],
             'upcoming_reminders' => $summary['upcomingRemindersCount'],
             'unread_surveys' => $unreadSurveys,
-            'total' => $summary['initialTotalAlerts'] + $unreadSurveys,
+            'pending_survey_requests' => $summary['pendingSurveyRequests'],
+            'total' => $summary['unreadNotesCount'] + $summary['upcomingRemindersCount'] + $unreadSurveys,
             'notes' => $summary['unreadNotes']->map(function (ConsultationNote $note) {
                 return [
                     'id' => $note->id,
@@ -77,14 +89,36 @@ class NotificationController extends Controller
                 ];
             })->values(),
             'surveys' => $surveyNotifications
-                ->map(fn (SurveyNotification $notification) => [
-                    'id' => $notification->id,
-                    'type' => $notification->action,
-                    'title' => $notification->title,
-                    'message' => $notification->message,
-                    'is_read' => $notification->read_at !== null,
-                    'created_human' => $notification->created_at?->diffForHumans(),
-                ]),
+                ->map(function (SurveyNotification $notification) {
+                    $survey = $notification->survey;
+                    $consultation = $survey?->consultation;
+                    $location = collect([
+                        $consultation?->district,
+                        $consultation?->city,
+                        $consultation?->province,
+                    ])->filter()->implode(', ');
+                    $schedule = $survey?->scheduled_at
+                        ?? ($survey?->requested_date
+                            ? Carbon::parse($survey->requested_date->format('Y-m-d').' '.($survey->requested_time ?? '00:00'))
+                            : null);
+
+                    return [
+                        'id' => $notification->id,
+                        'type' => $notification->action,
+                        'title' => $notification->title,
+                        'message' => $notification->message,
+                        'is_read' => $notification->read_at !== null,
+                        'created_human' => $notification->created_at?->diffForHumans(),
+                        'survey_id' => $survey?->id,
+                        'survey_url' => '/surveys',
+                        'state' => $survey?->state,
+                        'client_name' => $consultation?->client_name ?: 'Konsumen tanpa nama',
+                        'consultation_code' => $consultation?->consultation_id,
+                        'location' => $location ?: null,
+                        'schedule_label' => $schedule?->translatedFormat('d M Y, H:i'),
+                        'surveyor_name' => $survey?->surveyor?->name,
+                    ];
+                }),
             'timestamp' => Carbon::now()->toIso8601String(),
         ]);
     }
@@ -127,5 +161,45 @@ class NotificationController extends Controller
         $this->notificationSummaryService->forgetForUser((int) Auth::id());
 
         return response()->json(['success' => true]);
+    }
+
+    public function deleteSurvey(SurveyNotification $notification): JsonResponse
+    {
+        abort_unless($notification->user_id === Auth::id(), 403);
+        $notification->delete();
+        $this->notificationSummaryService->forgetForUser((int) Auth::id());
+
+        return response()->json(['success' => true]);
+    }
+
+    public function clearAll(): JsonResponse
+    {
+        $user = Auth::user();
+
+        $cleared = DB::transaction(function () use ($user) {
+            $notes = ConsultationNote::query()
+                ->where('is_read', false)
+                ->where('user_id', '!=', $user->id)
+                ->whereHas('consultation', fn ($query) => $query->forUser($user))
+                ->update(['is_read' => true]);
+
+            $reminders = Reminder::query()
+                ->forUser($user)
+                ->where('is_read', false)
+                ->update(['is_read' => true]);
+
+            $surveys = SurveyNotification::query()
+                ->where('user_id', $user->id)
+                ->delete();
+
+            return $notes + $reminders + $surveys;
+        });
+
+        $this->notificationSummaryService->forgetForUser((int) $user->id);
+
+        return response()->json([
+            'success' => true,
+            'cleared' => $cleared,
+        ]);
     }
 }

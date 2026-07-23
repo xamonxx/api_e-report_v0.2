@@ -7,7 +7,7 @@ use App\Models\SurveyNotification;
 use App\Models\User;
 use App\Enums\UserRole;
 use App\Services\NotificationSummaryService;
-use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -17,44 +17,82 @@ class SurveyRealtimeUpdated implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
+    /**
+     * @param  array<int|null>  $extraRecipients  penerima tambahan di luar aturan
+     *                                            default, mis. surveyor lama yang
+     *                                            digantikan saat reschedule.
+     */
     public function __construct(
         public Survey $survey,
         public string $action,
         public string $message,
+        public array $extraRecipients = [],
     ) {
         $this->storeNotifications();
     }
 
-    private function storeNotifications(): void
+    /**
+     * Siapa yang menerima kabar untuk sebuah aksi survey.
+     *
+     * Dipakai bersama notifikasi in-app dan Web Push, supaya keduanya tidak
+     * pernah menyasar orang yang berbeda.
+     *
+     * @param  array<int|null>  $extraRecipients
+     * @return list<int>
+     */
+    public static function recipientsFor(Survey $survey, string $action, array $extraRecipients = []): array
     {
-        $recipients = match ($this->action) {
-            'request_created', 'started' => User::query()
-                ->whereIn('role', [UserRole::ManagerSurveyor->value, UserRole::SuperAdmin->value])
-                ->pluck('id')->all(),
-            'scheduled' => [$this->survey->surveyor_id],
-            'completed' => [$this->survey->requested_by, $this->survey->assigned_by],
-            'cancelled' => [$this->survey->surveyor_id, $this->survey->requested_by],
-            'rescheduled_by_admin' => User::query()
-                ->whereIn('role', [UserRole::ManagerSurveyor->value, UserRole::SuperAdmin->value])
-                ->pluck('id')->all(),
-            'rescheduled_by_manager' => [$this->survey->surveyor_id],
+        $managers = fn () => User::query()
+            ->whereIn('role', [UserRole::ManagerSurveyor->value, UserRole::SuperAdmin->value])
+            ->pluck('id')->all();
+
+        $recipients = match ($action) {
+            'request_created', 'started' => $managers(),
+            'scheduled' => [$survey->surveyor_id],
+            'completed' => array_merge(
+                [$survey->requested_by, $survey->assigned_by],
+                $managers(),
+            ),
+            'cancelled' => [$survey->surveyor_id, $survey->requested_by],
+            'rescheduled_by_admin' => $managers(),
+            'rescheduled_by_manager' => [$survey->surveyor_id],
+            'unassigned' => $managers(),
             default => [],
         };
 
-        foreach (array_unique(array_filter($recipients)) as $userId) {
+        return array_values(array_unique(array_filter(
+            array_merge($recipients, $extraRecipients),
+            fn ($id) => (int) $id > 0
+        )));
+    }
+
+    /**
+     * Judul notifikasi per aksi.
+     */
+    public static function titleFor(string $action): string
+    {
+        return match ($action) {
+            'request_created' => 'Request Survey Baru',
+            'scheduled' => 'Survey Dijadwalkan',
+            'rescheduled_by_admin', 'rescheduled_by_manager' => 'Reschedule Survey',
+            'started' => 'Survey Dimulai',
+            'completed' => 'Survey Selesai',
+            'cancelled' => 'Survey Dibatalkan',
+            'unassigned' => 'Penugasan Dilepas',
+            default => 'Pembaruan Survey',
+        };
+    }
+
+    private function storeNotifications(): void
+    {
+        $title = self::titleFor($this->action);
+
+        foreach (self::recipientsFor($this->survey, $this->action, $this->extraRecipients) as $userId) {
             SurveyNotification::create([
                 'survey_id' => $this->survey->id,
                 'user_id' => $userId,
                 'action' => $this->action,
-                'title' => match ($this->action) {
-                    'request_created' => 'Request Survey Baru',
-                    'scheduled' => 'Survey Dijadwalkan',
-                    'rescheduled_by_admin', 'rescheduled_by_manager' => 'Reschedule Survey',
-                    'started' => 'Survey Dimulai',
-                    'completed' => 'Survey Selesai',
-                    'cancelled' => 'Survey Dibatalkan',
-                    default => 'Pembaruan Survey',
-                },
+                'title' => $title,
                 'message' => $this->message,
             ]);
 
@@ -64,9 +102,11 @@ class SurveyRealtimeUpdated implements ShouldBroadcast
 
     public function broadcastOn(): array
     {
-        $channels = [new Channel('survey.managers')];
+        // Channel privat: pesan memuat nama klien, wilayah, dan jadwal, jadi
+        // harus lewat otorisasi routes/channels.php.
+        $channels = [new PrivateChannel('survey.managers')];
         if ($this->survey->surveyor_id && $this->action !== 'rescheduled_by_admin') {
-            $channels[] = new Channel('survey.surveyor.' . $this->survey->surveyor_id);
+            $channels[] = new PrivateChannel('survey.surveyor.' . $this->survey->surveyor_id);
         }
 
         return $channels;

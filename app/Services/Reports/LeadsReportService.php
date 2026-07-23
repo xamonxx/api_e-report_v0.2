@@ -101,10 +101,16 @@ class LeadsReportService
 
     private function buildDetailRows(User $user, array $filters): Collection
     {
+        // Laporan dibaca dari konsultasi terlama ke terbaru, kebalikan dari
+        // halaman Konsultasi yang menaruh lead terbaru di atas. Keduanya
+        // memang beda kebutuhan: layar untuk memantau yang baru masuk,
+        // laporan untuk menelusuri perkembangan berurutan waktu.
+        // Urutan kedua memakai id, bukan updated_at, supaya baris dalam satu
+        // hari tidak berpindah-pindah tiap kali ada lead yang disunting.
         return $this->baseLeadQuery($user, $filters, includeDateFilter: true)
             ->withProductRelations()
-            ->orderByDesc('consultation_date')
-            ->orderByDesc('updated_at')
+            ->orderBy('consultation_date')
+            ->orderBy('id')
             ->get()
             ->map(fn (Consultation $lead) => [
                 'consultation_id' => $lead->consultation_id,
@@ -113,6 +119,7 @@ class LeadsReportService
                 'domicile' => filled($lead->city) ? ($this->isInsideCityLead($lead) ? 'Dalam Kota' : 'Luar Kota') : '',
                 'province' => $lead->province,
                 'city' => $lead->city,
+                'district' => $lead->district,
                 'account' => $lead->account?->name ?? '-',
                 'need' => $lead->product_names_label ?: '-',
                 'product_details' => $lead->product_details,

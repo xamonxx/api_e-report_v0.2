@@ -12,20 +12,35 @@ class SyncWilayah extends Command
      *
      * @var string
      */
-    protected $signature = 'app:sync-wilayah';
+    protected $signature = 'app:sync-wilayah {--force : Timpa dataset dengan data emsifa meski command sudah usang}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Fetch complete Indonesian region data from emsifa/api-wilayah-indonesia and generate PHP config files.';
+    protected $description = '[USANG] Ambil data wilayah dari emsifa/api-wilayah-indonesia. Dataset kini dibangkitkan dari db_wilayah.xlsx lewat tools/generate_wilayah.py.';
 
     /**
      * Execute the console command.
      */
     public function handle()
     {
+        // Sumber emsifa memakai penamaan berbeda dari master Excel milik tim
+        // ("Kabupaten X"/"DKI Jakarta" alih-alih "Kab. X"/"Jakarta") dan hanya
+        // punya 34 provinsi. Menjalankan command ini akan menimpa dataset hasil
+        // generator dan memutus kecocokan dengan template import.
+        $this->warn('Command ini sudah tidak dipakai.');
+        $this->line('Dataset wilayah sekarang dibangkitkan dari master Excel:');
+        $this->line('  python tools/generate_wilayah.py --file "path/ke/db_wilayah.xlsx"');
+        $this->newLine();
+
+        if (! $this->option('force')) {
+            $this->error('Dibatalkan. Tambahkan --force bila Anda benar-benar ingin menimpa dataset dengan data emsifa.');
+
+            return 1;
+        }
+
         $this->info('Memulai pengambilan data wilayah Indonesia dari emsifa/api-wilayah-indonesia (CSV format)...');
 
         // 1. Fetch Provinces

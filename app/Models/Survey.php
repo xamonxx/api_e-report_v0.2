@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Survey extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Auditable;
 
     public const STATE_REQUESTED = 'requested';
     public const STATE_SCHEDULED = 'scheduled';
@@ -62,6 +62,33 @@ class Survey extends Model
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Jaga `active_key` supaya unique index "satu survey aktif per lead" selalu
+     * konsisten tanpa perlu diingat di tiap controller.
+     *
+     * Berisi consultation_id selama survey aktif, NULL saat cancelled atau
+     * soft-deleted - MySQL mengabaikan NULL pada unique index.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $survey) {
+            $survey->active_key = $survey->state === self::STATE_CANCELLED
+                ? null
+                : $survey->consultation_id;
+        });
+
+        // Soft delete memakai query update langsung, tidak melewati `saving`.
+        static::deleted(function (self $survey) {
+            static::withTrashed()->whereKey($survey->getKey())->update(['active_key' => null]);
+        });
+
+        static::restored(function (self $survey) {
+            static::withTrashed()->whereKey($survey->getKey())->update([
+                'active_key' => $survey->state === self::STATE_CANCELLED ? null : $survey->consultation_id,
+            ]);
+        });
     }
 
     // Relations
@@ -119,6 +146,43 @@ class Survey extends Model
                 'to_state' => $toState,
                 'changed_by' => auth()->id(),
             ]);
+
+            // Sync consultation status category
+            $consultation = $this->consultation;
+            if ($consultation) {
+                $targetStatusName = null;
+                if ($toState === self::STATE_IN_PROGRESS) {
+                    $targetStatusName = 'Sedang Survey';
+                } elseif ($toState === self::STATE_COMPLETED) {
+                    $targetStatusName = 'Selesai Survey';
+                } elseif ($toState === self::STATE_CANCELLED) {
+                    $consultation->loadMissing('statusCategory');
+                    $currentStatusName = $consultation->statusCategory?->name;
+                    if ($currentStatusName === 'Sedang Survey' || $currentStatusName === 'Selesai Survey') {
+                        $targetStatusName = 'Request Survey';
+                    }
+                }
+
+                if ($targetStatusName) {
+                    $targetStatusId = \App\Models\StatusCategory::whereRaw('LOWER(name) = ?', [strtolower($targetStatusName)])->value('id');
+                    if ($targetStatusId) {
+                        $consultation->status_category_id = $targetStatusId;
+                        $consultation->save();
+
+                        // Invalidate cache
+                        try {
+                            $superAdmins = \App\Models\User::where('role', \App\Enums\UserRole::SuperAdmin)->pluck('id');
+                            foreach ($superAdmins as $adminId) {
+                                \Illuminate\Support\Facades\Cache::forget("dashboard:super_admin:{$adminId}");
+                            }
+                        } catch (\Throwable $e) {}
+                        if ($consultation->account_id) {
+                            \Illuminate\Support\Facades\Cache::forget("dashboard:admin:{$consultation->account_id}");
+                        }
+                        \Illuminate\Support\Facades\Cache::forever('analytics:last_updated', now()->timestamp);
+                    }
+                }
+            }
         }
 
         $user = auth()->user();

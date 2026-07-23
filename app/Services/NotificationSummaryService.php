@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\Consultation;
 use App\Models\ConsultationNote;
 use App\Models\Reminder;
+use App\Models\SurveyNotification;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -76,10 +78,26 @@ class NotificationSummaryService
             ->where('remind_at', '<=', Carbon::now()->addMinutes(30))
             ->count();
 
+        // Ikut di-cache di sini, bukan dihitung ulang tiap request di
+        // NotificationController. Polling berjalan tiap 30 detik, jadi query
+        // mentah per request langsung menambah beban koneksi DB.
+        $unreadSurveysCount = SurveyNotification::query()
+            ->where('user_id', $user->id)
+            ->whereNull('read_at')
+            ->count();
+
+        // Lead yang sudah masuk tahap survey tapi belum pernah diajukan.
+        // Hanya relevan untuk admin/super admin - surveyor tidak mengajukan.
+        $pendingSurveyRequests = ($user->isAdmin() || $user->isSuperAdmin())
+            ? Consultation::query()->forUser($user)->needsSurveyRequest()->count()
+            : 0;
+
         return [
             'unreadNotesCount' => $unreadNotesCount,
             'upcomingRemindersCount' => $upcomingRemindersCount,
-            'initialTotalAlerts' => $unreadNotesCount + $upcomingRemindersCount,
+            'unreadSurveysCount' => $unreadSurveysCount,
+            'pendingSurveyRequests' => $pendingSurveyRequests,
+            'initialTotalAlerts' => $unreadNotesCount + $upcomingRemindersCount + $unreadSurveysCount,
         ];
     }
 

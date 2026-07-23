@@ -18,6 +18,8 @@ class Consultation extends Model
 {
     use HasFactory, SoftDeletes, Auditable;
 
+    const PLACEHOLDER_NAME_PREFIX = 'Tidak ada nama';
+
     protected $fillable = [
         'consultation_id',
         'client_name',
@@ -97,6 +99,30 @@ class Consultation extends Model
         return $this->hasMany(Reminder::class)->latest();
     }
 
+    /**
+     * Survey yang sedang berjalan untuk lead ini (bukan yang dibatalkan).
+     * Dipakai UI untuk tahu lead sudah diajukan atau belum.
+     */
+    public function activeSurvey()
+    {
+        return $this->hasOne(Survey::class)
+            ->where('state', '!=', Survey::STATE_CANCELLED)
+            ->latestOfMany();
+    }
+
+    /**
+     * Lead yang berada di tahap pengajuan survey tapi belum pernah diajukan.
+     * Sumber angka badge, filter daftar, dan notifikasi pasca-import.
+     */
+    public function scopeNeedsSurveyRequest($query)
+    {
+        $surveyStage = config('statuses.survey', 'Request Survey');
+
+        return $query
+            ->whereHas('statusCategory', fn ($status) => $status->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($surveyStage))]))
+            ->whereDoesntHave('surveys', fn ($survey) => $survey->where('state', '!=', Survey::STATE_CANCELLED));
+    }
+
     public function surveys()
     {
         return $this->hasMany(Survey::class);
@@ -148,9 +174,14 @@ class Consultation extends Model
             ->toString();
     }
 
+    /**
+     * Kunci pembanding nomor telepon. Memakai E.164 (tanpa "+") supaya
+     * "0831...", "+62 831...", dan "62831..." menghasilkan kunci yang sama -
+     * tanpa ini nomor yang sama bisa lolos dari deteksi duplikat.
+     */
     public static function normalizeLeadPhone(?string $value): string
     {
-        return preg_replace('/\D+/', '', (string) $value) ?? '';
+        return \App\Support\PhoneNumber::key($value);
     }
 
     public static function normalizeLeadCategoryIds(mixed $value): array

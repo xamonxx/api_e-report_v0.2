@@ -8,9 +8,15 @@ use App\Models\ConsultationImport;
 use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Models\User;
+use App\Services\NotificationSummaryService;
+use App\Services\WebPushService;
+use App\Support\PendingConfirmation;
+use App\Support\PhoneNumber;
+use App\Support\WilayahNormalizer;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use App\Jobs\ProcessConsultationImportJob;
 use RuntimeException;
@@ -73,6 +79,15 @@ class ConsultationImportService
                 ->get(['id', 'name'])
                 ->mapWithKeys(fn (NeedsCategory $category) => [$this->normalizeLookup($category->name) => $category->id])
                 ->all();
+
+            // File Excel lama masih menuliskan "Belum ada konfirmasi" pada kolom
+            // Jenis Kebutuhan. Petakan ke kategori default yang sudah di-rename
+            // supaya baris tersebut tidak jatuh ke kategori acak.
+            $legacyPendingKey = $this->normalizeLookup(NeedsCategory::PENDING_LEGACY_LABEL);
+            $currentPendingKey = $this->normalizeLookup(NeedsCategory::PENDING_LABEL);
+            if (! isset($needsCategoryMap[$legacyPendingKey]) && isset($needsCategoryMap[$currentPendingKey])) {
+                $needsCategoryMap[$legacyPendingKey] = $needsCategoryMap[$currentPendingKey];
+            }
             $statusCategoryMap = StatusCategory::query()
                 ->get(['id', 'name'])
                 ->mapWithKeys(fn (StatusCategory $status) => [$this->normalizeLookup($status->name) => $status->id])
@@ -163,6 +178,8 @@ class ConsultationImportService
                 'error_preview' => $this->summarizeErrors($errors),
                 'finished_at' => now(),
             ]);
+
+            $this->notifyPendingSurveyRequests($import->user);
         } catch (Throwable $exception) {
             $import->update([
                 'status' => 'failed',
@@ -174,10 +191,58 @@ class ConsultationImportService
         }
     }
 
+    /**
+     * Beri tahu pengimpor bila ada lead yang sudah berada di tahap survey tapi
+     * belum pernah diajukan ke manager surveyor.
+     *
+     * Import sengaja tidak membuat survey otomatis: tanggal dan jam survey
+     * belum diketahui, dan manager tidak bisa menjadwalkan tanpa itu. Jadi
+     * lead-nya ditandai, admin yang menindaklanjuti.
+     */
+    private function notifyPendingSurveyRequests(?User $user): void
+    {
+        if (! $user) {
+            return;
+        }
+
+        $pending = Consultation::query()->forUser($user)->needsSurveyRequest()->count();
+
+        // Hitungan ini ikut dipakai badge, jadi cache-nya harus disegarkan
+        // walaupun tidak ada yang perlu diberitahukan.
+        app(NotificationSummaryService::class)->forgetForUser((int) $user->id);
+
+        if ($pending < 1) {
+            return;
+        }
+
+        app(WebPushService::class)->sendToUsers([$user->id], [
+            'title' => 'Lead menunggu pengajuan survey',
+            'body' => "{$pending} lead sudah berstatus Request Survey tapi belum diajukan ke manager surveyor.",
+            'url' => '/consultations?pending_survey=1',
+            'tag' => 'pending-survey-'.$user->id,
+        ]);
+    }
+
     private function resolveDefaults(): array
     {
-        $defaultStatus = StatusCategory::query()->orderBy('sort_order')->first();
-        $defaultCategory = NeedsCategory::query()->forConsultationOptions()->first() ?? NeedsCategory::query()->orderBy('name')->first();
+        // Dicari eksplisit, bukan lewat urutan sort_order: baris pertama urutan
+        // itu kebetulan "Selesai Survey" - status terminal survei. Baris import
+        // yang statusnya tak dikenali akan mengaku selesai disurvei padahal
+        // tidak punya record survey sama sekali, sekaligus terkunci oleh
+        // ConsultationController::surveyStatusConflict() sehingga tidak bisa
+        // digeser lagi. Status netral jauh lebih aman sebagai jaring terakhir.
+        $defaultStatus = StatusCategory::query()
+            ->whereRaw('LOWER(TRIM(name)) = ?', ['masih konsultasi'])
+            ->first()
+            ?? StatusCategory::query()->orderBy('sort_order')->first();
+
+        // Dicari eksplisit, tidak lagi mengandalkan urutan scope: sejak
+        // whitelist dibuang, baris pertama scope bisa saja kategori lain.
+        $defaultCategory = NeedsCategory::query()
+            ->whereIn('name', [NeedsCategory::PENDING_LABEL, NeedsCategory::PENDING_LEGACY_LABEL])
+            ->orderByRaw('FIELD(name, ?) DESC', [NeedsCategory::PENDING_LABEL])
+            ->first()
+            ?? NeedsCategory::query()->orderBy('name')->first();
 
         if (!$defaultStatus || !$defaultCategory) {
             throw new RuntimeException('Master data Status atau Produk belum tersedia.');
@@ -210,8 +275,12 @@ class ConsultationImportService
             $categoryId = (int) ($row['needs_category_id'] ?? $defaultCategoryId);
             $statusId = (int) ($row['status_category_id'] ?? $defaultStatusId);
 
-            $consultation = DB::transaction(function () use ($createdBy, $categoryId, $statusId, $row) {
-                $existingLead = $this->findImportTarget($row, $categoryId);
+            // Kolom tunggal `needs_category_id` tetap diisi elemen pertama demi
+            // kode lama; pivot-lah yang menyimpan daftar lengkapnya.
+            $categoryIds = $row['needs_category_ids'] ?? [$categoryId];
+
+            $consultation = DB::transaction(function () use ($createdBy, $categoryId, $categoryIds, $statusId, $row) {
+                $existingLead = $this->findImportTarget($row, $categoryIds);
 
                 $attributes = [
                     'client_name' => $row['client_name'],
@@ -252,7 +321,7 @@ class ConsultationImportService
             [$lead, $isNew] = $consultation;
 
             if (Consultation::hasNeedsCategoryPivot()) {
-                $lead->needsCategories()->sync([$categoryId]);
+                $lead->needsCategories()->sync($categoryIds);
             }
 
             if ($isNew) {
@@ -265,7 +334,8 @@ class ConsultationImportService
         return [$inserted, $updated];
     }
 
-    private function findImportTarget(array $row, int $categoryId): ?Consultation
+    /** @param  list<int>  $categoryIds */
+    private function findImportTarget(array $row, array $categoryIds): ?Consultation
     {
         $consultationId = trim((string) ($row['consultation_id'] ?? ''));
 
@@ -290,7 +360,7 @@ class ConsultationImportService
             'district' => $row['district'] ?? null,
             'address' => $row['address'] ?? null,
             'product_details' => $row['product_details'] ?? null,
-            'needs_category_ids' => [$categoryId],
+            'needs_category_ids' => $categoryIds,
         ]);
     }
 
@@ -397,7 +467,7 @@ class ConsultationImportService
         }
 
         $clientName = $this->stripCsvInjection($row[0] ?? '');
-        $phone = $this->formatIndonesiaPhone($this->stripCsvInjection($row[1] ?? ''));
+        $phone = $this->formatIndonesiaPhone($this->sanitizePhoneCell($row[1] ?? ''));
 
         if ($clientName === '' || $phone === '') {
             return "Baris {$rowNumber}: nama klien atau telepon kosong.";
@@ -426,9 +496,11 @@ class ConsultationImportService
         return [
             'client_name' => $clientName,
             'phone' => $phone,
-            'province' => null,
-            'city' => null,
-            'district' => null,
+            // Template sederhana tidak punya kolom wilayah; tetap diberi label
+            // placeholder agar konsisten dengan lead yang dibuat lewat form.
+            'province' => PendingConfirmation::REGION_LABEL,
+            'city' => PendingConfirmation::REGION_LABEL,
+            'district' => PendingConfirmation::REGION_LABEL,
             'address' => null,
             'product_details' => null,
             'account_id' => (int) $accountId,
@@ -452,7 +524,7 @@ class ConsultationImportService
     ): array|string {
         $accountName = preg_replace('/^[=+\-\@\t\r\n]/', '', $row[3] ?? '');
         $clientName = preg_replace('/^[=+\-\@\t\r\n]/', '', $row[4] ?? '');
-        $phone = $this->formatIndonesiaPhone(preg_replace('/^[=+\-\@\t\r\n]/', '', $row[5] ?? ''));
+        $phone = $this->formatIndonesiaPhone($this->sanitizePhoneCell($row[5] ?? ''));
 
         if ($clientName === '' || $phone === '') {
             return "Baris {$rowNumber}: nama konsumen atau WA konsumen kosong.";
@@ -472,24 +544,114 @@ class ConsultationImportService
             }
         }
 
-        $needsCategoryId = $needsCategoryMap[$this->normalizeLookup($row[9] ?? '')] ?? $defaultCategoryId;
-        $statusCategoryId = $statusCategoryMap[$this->normalizeLookup($row[12] ?? '')] ?? $defaultStatusId;
+        // Template terbaru menyisipkan kolom Kecamatan di posisi J, menggeser
+        // kolom setelahnya satu langkah. File lama (14 kolom) tetap diterima.
+        $hasDistrictColumn = $this->hasDistrictColumn($row, $needsCategoryMap);
+        $shift = $hasDistrictColumn ? 1 : 0;
+
+        $needIndex = 9 + $shift;
+        $detailIndex = 10 + $shift;
+        $notesIndex = 11 + $shift;
+        $statusIndex = 12 + $shift;
+
+        $needsCategoryIds = $this->resolveNeedsCategoryIds(
+            $row[$needIndex] ?? '',
+            $needsCategoryMap,
+            $defaultCategoryId
+        );
+        $statusCategoryId = $statusCategoryMap[$this->normalizeLookup($row[$statusIndex] ?? '')] ?? $defaultStatusId;
+
+        // Ejaan wilayah disamakan ke format master; kecamatan yang diketik
+        // manual dirapikan ke ejaan dataset bila ditemukan padanannya.
+        $province = WilayahNormalizer::canonicalProvince($row[7] ?? null) ?? ($row[7] !== '' ? $row[7] : null);
+        $city = WilayahNormalizer::canonicalCity($row[8] ?? null) ?? ($row[8] !== '' ? $row[8] : null);
+
+        $district = null;
+        if ($hasDistrictColumn && ($row[9] ?? '') !== '') {
+            $resolved = WilayahNormalizer::canonicalDistrict($row[9], $city);
+            $district = $resolved['value'];
+
+            if (! $resolved['matched']) {
+                Log::warning('Import lead: kecamatan tidak dikenali, dipakai apa adanya.', [
+                    'row' => $rowNumber,
+                    'kecamatan' => $district,
+                    'kota' => $city,
+                ]);
+            }
+        }
 
         return [
             'consultation_id' => preg_replace('/^[=+\-\@\t\r\n]/', '', $row[1] ?? ''),
             'client_name' => $clientName,
             'phone' => $phone,
-            'province' => $row[7] !== '' ? $row[7] : null,
-            'city' => $row[8] !== '' ? $row[8] : null,
-            'district' => null,
-            'address' => $row[6] !== '' ? $row[6] : null,
-            'product_details' => $row[10] !== '' ? $row[10] : ($row[9] !== '' ? $row[9] : null),
-            'notes' => $row[11] !== '' ? $row[11] : null,
+            'province' => PendingConfirmation::normalizeRegion($province),
+            'city' => PendingConfirmation::normalizeRegion($city),
+            'district' => PendingConfirmation::normalizeRegion($district),
+            // Kolom G template adalah Domisili (Dalam/Luar Kota) yang terisi
+            // rumus otomatis, bukan alamat. Sebelumnya nilai itu tertulis ke
+            // kolom address. Template tidak punya kolom alamat, jadi dikosongkan.
+            'address' => null,
+            'product_details' => ($row[$detailIndex] ?? '') !== ''
+                ? $row[$detailIndex]
+                : (($row[$needIndex] ?? '') !== '' ? $row[$needIndex] : null),
+            'notes' => ($row[$notesIndex] ?? '') !== '' ? $row[$notesIndex] : null,
             'account_id' => (int) $accountId,
-            'needs_category_id' => (int) $needsCategoryId,
+            'needs_category_id' => (int) $needsCategoryIds[0],
+            'needs_category_ids' => $needsCategoryIds,
             'status_category_id' => (int) $statusCategoryId,
             'consultation_date' => $this->parseDate($row[2] ?? null) ?? now()->toDateString(),
         ];
+    }
+
+    /**
+     * Terjemahkan sel Jenis Kebutuhan jadi daftar id kategori.
+     *
+     * Sel boleh memuat lebih dari satu kategori dipisah koma, mis.
+     * "Kitchenset, Backdrop TV" - itu format yang dipakai export aplikasi
+     * sendiri. Sebelumnya sel semacam itu dicocokkan utuh, tidak pernah
+     * ketemu, lalu jatuh ke kategori default sehingga kebutuhannya hilang.
+     *
+     * @param  array<string, int>  $needsCategoryMap
+     * @return list<int> minimal berisi satu id
+     */
+    private function resolveNeedsCategoryIds(
+        string $value,
+        array $needsCategoryMap,
+        int $defaultCategoryId
+    ): array {
+        $ids = [];
+
+        foreach (explode(',', $value) as $part) {
+            $id = $needsCategoryMap[$this->normalizeLookup($part)] ?? null;
+
+            if ($id !== null) {
+                $ids[] = (int) $id;
+            }
+        }
+
+        return array_values(array_unique($ids)) ?: [$defaultCategoryId];
+    }
+
+    /**
+     * Tentukan apakah baris berasal dari template 15 kolom (ada Kecamatan).
+     *
+     * Lebar baris jadi petunjuk utama; bila ambigu, posisi kolom Jenis Kebutuhan
+     * yang menentukan - pada tata letak baru ia ada di indeks 10, pada tata
+     * letak lama di indeks 9.
+     */
+    private function hasDistrictColumn(array $row, array $needsCategoryMap): bool
+    {
+        $needAt = fn (int $index) => isset($needsCategoryMap[$this->normalizeLookup($row[$index] ?? '')]);
+
+        if ($needAt(10) && ! $needAt(9)) {
+            return true;
+        }
+
+        if ($needAt(9) && ! $needAt(10)) {
+            return false;
+        }
+
+        return count($row) >= 15;
     }
 
     private function isDetailedTemplateRow(array $row): bool
@@ -524,7 +686,23 @@ class ConsultationImportService
             return null;
         }
 
-        foreach (['d/m/Y', 'd-m-Y', 'Y-m-d', 'm/d/Y'] as $format) {
+        // Sel tanggal yang diekspor Excel kerap membawa jam ("2026-07-16
+        // 00:00:00") atau memakai tahun dua digit ("16/07/26"). Keduanya
+        // sebelumnya ditolak dan baris ikut memakai tanggal hari ini, sehingga
+        // seluruh lead hasil import kehilangan tanggal konsultasi aslinya.
+        // Format bertahun 4 digit didahulukan supaya "01/02/2026" tidak
+        // keburu tertangkap pola dua digit.
+        foreach ([
+            'Y-m-d',
+            'd/m/Y',
+            'd-m-Y',
+            'm/d/Y',
+            'Y-m-d H:i:s',
+            'Y-m-d H:i',
+            'Y/m/d',
+            'd/m/y',
+            'd-m-y',
+        ] as $format) {
             try {
                 $date = Carbon::createFromFormat($format, $value);
             } catch (Throwable) {
@@ -556,45 +734,21 @@ class ConsultationImportService
         return strtolower(trim((string) preg_replace('/\s+/', ' ', (string) $value)));
     }
 
+    /**
+     * Normalisasi nomor dari file import ke E.164. Nomor tanpa "+" dianggap
+     * nomor Indonesia; nomor asing yang sudah membawa kode negara dipertahankan
+     * apa adanya. Nilai yang tidak bisa diurai dikembalikan setelah dirapikan
+     * supaya baris tetap bisa diimpor dan ditinjau manual.
+     */
     private function formatIndonesiaPhone(?string $value): ?string
     {
         if (! filled($value)) {
             return null;
         }
 
-        $digits = preg_replace('/\D+/', '', $value) ?? '';
+        $tidy = trim((string) $value);
 
-        if ($digits === '') {
-            return null;
-        }
-
-        if (str_starts_with($digits, '620')) {
-            $digits = substr($digits, 3);
-        } elseif (str_starts_with($digits, '62')) {
-            $digits = substr($digits, 2);
-        } elseif (str_starts_with($digits, '0')) {
-            $digits = substr($digits, 1);
-        }
-
-        $digits = ltrim($digits, '0');
-
-        if ($digits === '') {
-            return null;
-        }
-
-        $segments = [substr($digits, 0, 3)];
-        $remaining = substr($digits, 3);
-
-        while (strlen($remaining) > 4) {
-            $segments[] = substr($remaining, 0, 4);
-            $remaining = substr($remaining, 4);
-        }
-
-        if ($remaining !== '') {
-            $segments[] = $remaining;
-        }
-
-        return '+62 ' . implode('-', array_filter($segments));
+        return PhoneNumber::toE164($tidy) ?? ($tidy !== '' ? $tidy : null);
     }
 
     private function summarizeErrors(array $errors): ?string
@@ -614,5 +768,24 @@ class ConsultationImportService
     private function stripCsvInjection(mixed $value): string
     {
         return preg_replace('/^[=+\-\@\t\r\n]/', '', trim((string) ($value ?? '')));
+    }
+
+    /**
+     * Sanitasi kolom telepon.
+     *
+     * stripCsvInjection() membuang "+" di awal, sehingga "+60123456789" berubah
+     * jadi "60123456789" lalu terbaca sebagai nomor Indonesia (+6260...).
+     * Di sini "+" dipertahankan selama sisanya benar-benar berbentuk nomor -
+     * hanya angka dan pemisah - jadi tidak ada rumus yang bisa lolos.
+     */
+    private function sanitizePhoneCell(mixed $value): string
+    {
+        $raw = trim((string) ($value ?? ''));
+
+        if (preg_match('/^\+[0-9()\-.\s]+$/', $raw) === 1) {
+            return $raw;
+        }
+
+        return $this->stripCsvInjection($raw);
     }
 }
