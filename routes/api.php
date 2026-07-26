@@ -58,6 +58,11 @@ Route::prefix('v1')->group(function () {
             ->middleware('role:admin')
             ->name('api.analytics');
 
+        // Geo Analytics — akses super_admin saja
+        Route::get('/geo-analytics', [App\Http\Controllers\Api\GeoAnalyticsController::class, 'index'])
+            ->middleware('role:super_admin')
+            ->name('api.geo-analytics');
+
         // Settings
         Route::post('/settings/profile', [App\Http\Controllers\Api\SettingsController::class, 'updateProfile'])
             ->name('api.settings.profile');
@@ -202,6 +207,8 @@ Route::prefix('v1')->group(function () {
             ->name('api.master-data.surveyors');
         Route::get('/master-data/survey-statuses', [MasterDataController::class, 'surveyStatuses'])
             ->name('api.master-data.survey-statuses');
+        Route::get('/master-data/account-groups', [MasterDataController::class, 'accountGroups'])
+            ->name('api.master-data.account-groups');
 
         // Master Data CRUD — F-008: write operations restricted to super_admin at route level.
         // GET /categories/list and GET /statuses/list are accessible to all authenticated users
@@ -228,6 +235,7 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/survey-statuses/{surveyStatus}', [MasterDataController::class, 'destroySurveyStatus'])->name('survey-statuses.destroy');
 
                 Route::get('/users', [MasterDataController::class, 'listUsers'])->name('users.index');
+                Route::get('/users/export', [MasterDataController::class, 'exportUsers'])->name('users.export');
                 Route::post('/users', [MasterDataController::class, 'storeUser'])->name('users.store');
                 Route::put('/users/{user}', [MasterDataController::class, 'updateUser'])->name('users.update');
                 Route::delete('/users/{user}', [MasterDataController::class, 'destroyUser'])->name('users.destroy');

@@ -8,9 +8,9 @@ use App\Models\NeedsCategory;
 use App\Models\ReportAttendance;
 use App\Models\StatusCategory;
 use App\Models\User;
+use App\Support\ConsultationStatusGroups;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 
 class DashboardService
 {
@@ -55,23 +55,28 @@ class DashboardService
         $cacheKey = "dashboard:admin:{$accountId}";
 
         return Cache::remember($cacheKey, 5 * 60, function () use ($accountId, $user) {
-            $dealStatusId = $this->resolveStatusId('deal');
+            $dealIds = $this->statusIds('deal');
+            $pendingIds = $this->statusIds('pending');
+            $cancelledIds = $this->statusIds('cancelled');
 
             $totalLeads = Consultation::where('account_id', $accountId)->count();
-            $totalDeals = $dealStatusId
-                ? Consultation::where('account_id', $accountId)->where('status_category_id', $dealStatusId)->count()
+            $totalDeals = $dealIds
+                ? Consultation::where('account_id', $accountId)->whereIn('status_category_id', $dealIds)->count()
                 : 0;
             $conversionRate = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
 
             return [
                 'stats' => [
                     'total_leads' => $totalLeads,
-                    'pending_leads' => Consultation::where('account_id', $accountId)->where('status_category_id', $this->resolveStatusId('pending'))->count(),
+                    'pending_leads' => $pendingIds
+                        ? Consultation::where('account_id', $accountId)->whereIn('status_category_id', $pendingIds)->count()
+                        : 0,
                     'completed_this_month' => Consultation::where('account_id', $accountId)
                         ->whereBetween('consultation_date', [now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString()])
                         ->count(),
-                    'cancelled_leads' => Consultation::where('account_id', $accountId)
-                        ->where('status_category_id', $this->resolveStatusId('cancelled'))->count(),
+                    'cancelled_leads' => $cancelledIds
+                        ? Consultation::where('account_id', $accountId)->whereIn('status_category_id', $cancelledIds)->count()
+                        : 0,
                     'conversion_rate' => $conversionRate,
                     'pending_surveys' => $this->countRequestSurveys($accountId),
                 ],
@@ -90,8 +95,8 @@ class DashboardService
     private function buildOverviewStats(): array
     {
         $totalLeads = Consultation::count();
-        $dealStatusId = $this->resolveStatusId('deal');
-        $totalDeals = $dealStatusId ? Consultation::where('status_category_id', $dealStatusId)->count() : 0;
+        $dealIds = $this->statusIds('deal');
+        $totalDeals = $dealIds ? Consultation::whereIn('status_category_id', $dealIds)->count() : 0;
         $avgConversion = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
 
         $now = Carbon::now();
@@ -112,13 +117,14 @@ class DashboardService
 
         return [
             'total_leads' => $totalLeads,
-            'pending_leads' => Consultation::where('status_category_id', $this->resolveStatusId('pending'))->count(),
+            'pending_leads' => ($ids = $this->statusIds('pending')) ? Consultation::whereIn('status_category_id', $ids)->count() : 0,
             'completed_this_month' => $thisMonth,
-            'cancelled_leads' => Consultation::where('status_category_id', $this->resolveStatusId('cancelled'))->count(),
+            'cancelled_leads' => ($ids = $this->statusIds('cancelled')) ? Consultation::whereIn('status_category_id', $ids)->count() : 0,
             'total_accounts' => Account::count(),
             'active_accounts' => Account::has('admins')->count(),
             'avg_conversion' => $avgConversion,
             'growth_percent' => $growthPercent,
+            'total_request_surveys' => ($surveyIds = $this->statusIds('survey')) ? Consultation::whereIn('status_category_id', $surveyIds)->count() : 0,
         ];
     }
 
@@ -150,7 +156,7 @@ class DashboardService
         $query = Consultation::with(['account:id,name'])
             ->whereNotNull('consultation_date')
             ->whereDate('consultation_date', '>=', now()->startOfDay())
-            ->where('status_category_id', '!=', $this->resolveStatusId('cancelled') ?? 0)
+            ->when($this->statusIds('cancelled'), fn ($q, $ids) => $q->whereNotIn('status_category_id', $ids))
             ->orderBy('consultation_date', 'asc');
 
         if ($accountId) {
@@ -170,11 +176,11 @@ class DashboardService
 
     private function findTopAdmin(): ?array
     {
-        $dealStatusId = $this->resolveStatusId('deal');
-        if (!$dealStatusId) return null;
+        $dealIds = $this->statusIds('deal');
+        if (!$dealIds) return null;
 
         $topAdmin = User::where('role', 'admin')
-            ->withCount(['consultations as deal_count' => fn($q) => $q->where('status_category_id', $dealStatusId)])
+            ->withCount(['consultations as deal_count' => fn($q) => $q->whereIn('status_category_id', $dealIds)])
             ->orderByDesc('deal_count')->first();
 
         return ($topAdmin && $topAdmin->deal_count > 0)
@@ -184,11 +190,11 @@ class DashboardService
 
     private function buildAccountRanking(): array
     {
-        $dealStatusId = $this->resolveStatusId('deal');
+        $dealIds = $this->statusIds('deal');
         $query = Account::withCount(['consultations']);
 
-        if ($dealStatusId) {
-            $query->withCount(['consultations as deals_count' => fn($q) => $q->where('status_category_id', $dealStatusId)]);
+        if ($dealIds) {
+            $query->withCount(['consultations as deals_count' => fn($q) => $q->whereIn('status_category_id', $dealIds)]);
         }
 
         return $query->with(['admins:id,name,account_id'])
@@ -227,46 +233,25 @@ class DashboardService
 
     private function countRequestSurveys(int $accountId): int
     {
-        $aliases = collect($this->statusAliases('survey'))
-            ->map(fn (string $name) => str($name)->lower()->squish()->toString())
-            ->unique()
-            ->values();
+        $surveyIds = $this->statusIds('survey');
 
-        if ($aliases->isEmpty()) return 0;
+        if (! $surveyIds) return 0;
 
         return Consultation::query()
             ->where('account_id', $accountId)
-            ->whereHas('statusCategory', fn ($q) => $q->whereIn(DB::raw('LOWER(TRIM(name))'), $aliases->all()))
+            ->whereIn('status_category_id', $surveyIds)
             ->count();
     }
 
-    private function resolveStatusId(string $configKey): ?int
+    /**
+     * ID status untuk sebuah grup, didelegasikan ke satu sumber kebenaran
+     * bersama AnalyticsReportService & Geo Analytics.
+     *
+     * @return list<int>
+     */
+    private function statusIds(string $group): array
     {
-        static $cache = [];
-
-        if (!isset($cache[$configKey])) {
-            $aliases = collect($this->statusAliases($configKey))
-                ->flatten()->filter()->unique()->values();
-
-            $cache[$configKey] = $aliases->isNotEmpty()
-                ? StatusCategory::whereIn('name', $aliases->all())->value('id')
-                : null;
-        }
-
-        return $cache[$configKey];
-    }
-
-    private function statusAliases(string $configKey): array
-    {
-        $configured = config("statuses.{$configKey}");
-
-        return match ($configKey) {
-            'deal' => array_values(array_filter([$configured, 'Selesai/Deal', 'Selesai Deal'])),
-            'survey' => array_values(array_filter([$configured, 'Request Survey', 'Masuk Survey'])),
-            'pending' => array_values(array_filter([$configured, 'Pending', 'Masuk', 'Baru'])),
-            'cancelled' => array_values(array_filter([$configured, 'Batal', 'Cancelled'])),
-            default => array_values(array_filter([$configured])),
-        };
+        return ConsultationStatusGroups::ids($group);
     }
 
     public function invalidateCache(User $user): void

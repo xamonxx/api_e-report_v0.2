@@ -13,6 +13,7 @@ class ReportPeriodResolver
         return match ($type) {
             'weekly' => $this->resolveWeekly($filters),
             'yearly' => $this->resolveYearly($filters),
+            'custom' => $this->resolveCustom($filters),
             default => $this->resolveMonthly($filters),
         };
     }
@@ -97,6 +98,38 @@ class ReportPeriodResolver
             'comparison_start' => $previousStart,
             'comparison_end' => $previousEnd,
             'comparison_label' => 'Tahun ' . $previousStart->year,
+        ];
+    }
+
+    private function resolveCustom(array $filters): array
+    {
+        $start = Carbon::parse($filters['start_date'])->startOfDay();
+        $end = Carbon::parse($filters['end_date'])->endOfDay();
+
+        $days = (int) $start->copy()->startOfDay()->diffInDays($end->copy()->startOfDay()) + 1;
+        $previousEnd = $start->copy()->subDay()->endOfDay();
+        $previousStart = $previousEnd->copy()->subDays($days - 1)->startOfDay();
+
+        return [
+            'type' => 'custom',
+            'start' => $start,
+            'end' => $end,
+            'anchor_date' => $start->toDateString(),
+            'month' => null,
+            'year' => $start->year,
+            'label' => sprintf(
+                '%s - %s',
+                $start->translatedFormat('d M Y'),
+                $end->translatedFormat('d M Y')
+            ),
+            'short_label' => $start->translatedFormat('d M') . ' - ' . $end->translatedFormat('d M Y'),
+            'comparison_start' => $previousStart,
+            'comparison_end' => $previousEnd,
+            'comparison_label' => sprintf(
+                '%s - %s',
+                $previousStart->translatedFormat('d M Y'),
+                $previousEnd->translatedFormat('d M Y')
+            ),
         ];
     }
 }
