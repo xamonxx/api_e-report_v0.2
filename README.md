@@ -202,6 +202,7 @@ Aplikasi ini menggunakan **Cookie-based SPA Authentication** dari Laravel Sanctu
 | `GET` | `/wilayah/provinces` | Mengambil seluruh data provinsi di Indonesia | Logged-in |
 | `GET` | `/wilayah/cities` | Mengambil data kabupaten/kota berdasarkan provinsi | Logged-in |
 | `GET` | `/wilayah/districts` | Mengambil data kecamatan berdasarkan kabupaten/kota | Logged-in |
+| `GET` | `/geo-analytics` | Agregasi data leads per wilayah (provinsi/kabkota) untuk peta analitik | Super Admin |
 
 ### 🛠️ Fitur Debug & Diagnostik Pemeliharaan
 | Method | Endpoint | Keterangan | Akses |
