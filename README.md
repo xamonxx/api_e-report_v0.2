@@ -1,4 +1,4 @@
-# E-Report API Backend (Laravel 11)
+<h1 align="center">🗂️ E-Report API Backend (Laravel 11)</h1>
 
 <p align="center">
   Backend API Headless berbasis Laravel 11 untuk manajemen konsultasi, lead tracking, pengingat (reminders), analitik, absensi harian, dan pelaporan operasional.
@@ -9,6 +9,15 @@
   <img src="https://img.shields.io/badge/PHP-8.2-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.2">
   <img src="https://img.shields.io/badge/MySQL-Ready-4479A1?style=for-the-badge&logo=mysql&logoColor=white" alt="MySQL Ready">
   <img src="https://img.shields.io/badge/Redis-Optional-red?style=for-the-badge&logo=redis" alt="Redis">
+  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License">
+</p>
+
+<p align="center">
+  <a href="#-deskripsi-proyek">Deskripsi</a> •
+  <a href="#️-tech-stack--spesifikasi">Tech Stack</a> •
+  <a href="#-langkah-instalasi--setup-lokal">Instalasi</a> •
+  <a href="#-daftar-api-endpoints-apiv1">API Endpoints</a> •
+  <a href="#-lisensi">Lisensi</a>
 </p>
 
 ---
