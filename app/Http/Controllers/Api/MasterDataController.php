@@ -10,6 +10,9 @@ use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Models\SurveyStatus;
 use App\Models\User;
+use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
+use App\Services\Reports\UsersExcelExporter;
+use App\Support\AccountGroup;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -17,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Enum;
+use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 class MasterDataController extends Controller
@@ -74,6 +78,26 @@ class MasterDataController extends Controller
 
         return response()->json([
             'data' => $accounts,
+        ]);
+    }
+
+    /**
+     * Daftar grup akun untuk dropdown.
+     *
+     * Sengaja diturunkan dari App\Support\AccountGroup, bukan konstanta yang
+     * disalin di frontend: menambah grup baru cukup diurus di satu tempat dan
+     * dropdown ikut berubah tanpa ubah kode TypeScript.
+     */
+    public function accountGroups(): JsonResponse
+    {
+        return response()->json([
+            'data' => collect(AccountGroup::labels())
+                ->map(fn (string $label, string $value) => [
+                    'value' => $value,
+                    'label' => $label,
+                    'subtitle' => AccountGroup::subtitleLabel($value),
+                ])
+                ->values(),
         ]);
     }
 
@@ -410,6 +434,49 @@ class MasterDataController extends Controller
 
         $users = $userQuery->paginate(15);
         return response()->json($users);
+    }
+
+    /**
+     * GET /api/v1/master-data/users/export
+     *
+     * Ekspor SEMUA user ke xlsx berstyle. Menghormati parameter `search` yang
+     * sama dengan listUsers agar hasil ekspor cocok dengan yang di layar.
+     *
+     * KEAMANAN: password TIDAK diekspor (hash bcrypt satu-arah, tak ada
+     * plaintext). Super_admin only via ensureSuperAdmin().
+     */
+    public function exportUsers(
+        Request $request,
+        UsersExcelExporter $exporter,
+        SpreadsheetXmlToXlsxConverter $xlsxConverter
+    ): Response {
+        $this->ensureSuperAdmin();
+
+        $userQuery = User::with('account')->orderBy('name');
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $userQuery->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhereHas('account', function ($aq) use ($search) {
+                        $aq->where('name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        $users = $userQuery->get();
+        $filename = 'daftar-user-' . now()->format('Ymd_His') . '.xlsx';
+
+        return response(
+            $xlsxConverter->convert($exporter->buildWorkbook($users)),
+            200,
+            [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                'Cache-Control' => 'max-age=0',
+            ]
+        );
     }
 
     /**

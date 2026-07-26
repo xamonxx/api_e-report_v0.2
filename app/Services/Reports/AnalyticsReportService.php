@@ -12,6 +12,8 @@ use App\Models\Survey;
 use App\Models\SurveyReschedule;
 use App\Models\SurveyStatus;
 use App\Models\User;
+use App\Support\AccountGroup;
+use App\Support\ConsultationStatusGroups;
 use App\Support\PendingConfirmation;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,6 +23,16 @@ use Illuminate\Support\Str;
 
 class AnalyticsReportService
 {
+    /**
+     * Grup akun terpilih untuk request yang sedang berjalan. Disimpan di
+     * instance (bukan diteruskan lewat parameter) karena hampir 20 method
+     * privat sudah menerima `?int $selectedAccount` — menambah parameter
+     * kedua di semuanya berisiko tinggi untuk perubahan yang sifatnya cuma
+     * "AND-kan satu filter lagi". Aman selama service ini di-resolve baru per
+     * request (tidak di-singleton-kan di container), yang sudah dikonfirmasi.
+     */
+    private ?string $accountGroup = null;
+
     public function __construct(
         private readonly ReportPeriodResolver $periodResolver,
     ) {
@@ -51,7 +63,18 @@ class AnalyticsReportService
     {
         $period = $this->periodResolver->resolve($filters);
         $selectedAccount = $user->isSuperAdmin() ? ($filters['account'] ?? null) : $user->account_id;
+        // Super admin saja yang bisa filter per grup; admin sudah terkunci ke
+        // akunnya sendiri lewat $selectedAccount di atas.
+        $this->accountGroup = $user->isSuperAdmin()
+            ? AccountGroup::normalize($filters['account_group'] ?? null)
+            : null;
         $includeRawRows = (bool) ($options['includeRawRows'] ?? false);
+
+        // Blok analisa berat di bawah ini tidak dipakai UI web maupun export,
+        // dan bersama-sama menghabiskan ~2/3 dari total query per request.
+        // Dibuat opt-in lewat filter `include` supaya request normal tetap
+        // ringan tanpa membuang kodenya.
+        $extras = $this->requestedExtras($filters);
 
         $query = $this->baseQuery($user, $selectedAccount, $period['start'], $period['end']);
 
@@ -82,14 +105,24 @@ class AnalyticsReportService
         $dataQuality = $this->buildDataQuality($query, $period, $totalLeads);
         $pendingConfirmationStats = $this->buildPendingConfirmationStats($query, $totalLeads);
         $funnel = $this->buildFunnel($totalLeads, $totalSurveys, $totalDeals);
-        $diagnosticSnapshot = $this->buildDiagnosticSnapshot($user, $selectedAccount, $period);
-        $comparisonSnapshot = $this->buildDiagnosticSnapshot($user, $selectedAccount, [
-            'type' => $period['type'],
-            'start' => $period['comparison_start'],
-            'end' => $period['comparison_end'],
-            'label' => $period['comparison_label'],
-            'comparison_label' => $period['label'],
-        ]);
+
+        $performanceAnalysis = collect();
+        if (in_array('performance_analysis', $extras, true)) {
+            $performanceAnalysis = $this->buildPerformanceAnalysis(
+                $this->buildDiagnosticSnapshot($user, $selectedAccount, $period),
+                $this->buildDiagnosticSnapshot($user, $selectedAccount, [
+                    'type' => $period['type'],
+                    'start' => $period['comparison_start'],
+                    'end' => $period['comparison_end'],
+                    'label' => $period['comparison_label'],
+                    'comparison_label' => $period['label'],
+                ]),
+                $period,
+                $dataQuality,
+                $pendingConfirmationStats
+            );
+        }
+
         $topPerformers = $this->buildTopPerformers(
             $statusDistribution,
             $needsDistribution,
@@ -130,22 +163,24 @@ class AnalyticsReportService
             'dataQuality' => $dataQuality,
             'pendingConfirmationStats' => $pendingConfirmationStats,
             'funnel' => $funnel,
-            'cohortConversion' => $this->buildCohortConversion($user, $selectedAccount, $period),
-            'stageVelocity' => $this->buildStageVelocity($user, $selectedAccount, $period),
+            'cohortConversion' => in_array('cohort_conversion', $extras, true)
+                ? $this->buildCohortConversion($user, $selectedAccount, $period)
+                : collect(),
+            'stageVelocity' => in_array('stage_velocity', $extras, true)
+                ? $this->buildStageVelocity($user, $selectedAccount, $period)
+                : $this->emptyStageVelocity(),
             'surveyorLeaderboard' => $this->buildSurveyorLeaderboard($user, $selectedAccount, $period),
             'rescheduleAnalytics' => $this->buildRescheduleAnalytics($user, $selectedAccount, $period),
             'surveyBacklog' => $this->buildSurveyBacklog($user, $selectedAccount),
             'topPerformers' => $topPerformers,
             'summaryStats' => $summaryStats,
-            'comparisonMatrix' => $this->buildComparisonMatrix($user, $selectedAccount, $period),
-            'performanceAnalysis' => $this->buildPerformanceAnalysis(
-                $diagnosticSnapshot,
-                $comparisonSnapshot,
-                $period,
-                $dataQuality,
-                $pendingConfirmationStats
-            ),
-            'onlyInquiryAnalysis' => $this->buildOnlyInquiryAnalysis($user, $selectedAccount, $period),
+            'comparisonMatrix' => in_array('comparison_matrix', $extras, true)
+                ? $this->buildComparisonMatrix($user, $selectedAccount, $period)
+                : collect(),
+            'performanceAnalysis' => $performanceAnalysis,
+            'onlyInquiryAnalysis' => in_array('only_inquiry', $extras, true)
+                ? $this->buildOnlyInquiryAnalysis($user, $selectedAccount, $period)
+                : $this->emptyOnlyInquiryAnalysis(),
             'insights' => $this->buildInsights(
                 $statusDistribution,
                 $needsDistribution,
@@ -158,6 +193,70 @@ class AnalyticsReportService
                 $funnel
             ),
             'rawRows' => $rawRows,
+        ];
+    }
+
+    /**
+     * Blok analisa tambahan yang boleh diminta lewat filter `include`.
+     * Semuanya mahal dan tidak dipakai tampilan default, jadi mati kecuali
+     * diminta eksplisit.
+     */
+    public const EXTRA_BLOCKS = [
+        'comparison_matrix',
+        'performance_analysis',
+        'cohort_conversion',
+        'stage_velocity',
+        'only_inquiry',
+    ];
+
+    private function requestedExtras(array $filters): array
+    {
+        $include = $filters['include'] ?? [];
+
+        if (is_string($include)) {
+            $include = explode(',', $include);
+        }
+
+        if (! is_array($include)) {
+            return [];
+        }
+
+        return array_values(array_intersect(
+            array_map(fn ($item) => trim((string) $item), $include),
+            self::EXTRA_BLOCKS
+        ));
+    }
+
+    /**
+     * Jumlah hari kalender dalam periode, inklusif kedua ujungnya.
+     *
+     * Carbon::diffInDays() memakai selisih waktu sebenarnya. Karena `end`
+     * selalu endOfDay, hasilnya pecahan (Juli = 30,9999) sehingga menambah 1
+     * menghasilkan 31,9999 — bukan 31. Bandingkan awal hari ke awal hari
+     * supaya bulat.
+     */
+    private function inclusiveDayCount(Carbon $start, Carbon $end): int
+    {
+        return ((int) $start->copy()->startOfDay()->diffInDays($end->copy()->startOfDay())) + 1;
+    }
+
+    /**
+     * Bentuk kosong stageVelocity — dipakai saat blok tidak diminta, supaya
+     * struktur response tetap sama bagi konsumen manapun.
+     */
+    private function emptyStageVelocity(): array
+    {
+        return [
+            'collecting' => true,
+            'transitions' => 0,
+            'sales_cycle' => [
+                'sample' => 0,
+                'avg_days' => null,
+                'median_days' => null,
+                'fastest_days' => null,
+                'slowest_days' => null,
+            ],
+            'stages' => collect(),
         ];
     }
 
@@ -177,6 +276,13 @@ class AnalyticsReportService
 
         if ($user->isSuperAdmin() && $selectedAccount) {
             $query->where($this->consultationColumn('account_id'), $selectedAccount);
+        }
+
+        if ($user->isSuperAdmin() && $this->accountGroup) {
+            $query->whereIn(
+                $this->consultationColumn('account_id'),
+                Account::query()->where('account_group', $this->accountGroup)->select('id')
+            );
         }
 
         return $query;
@@ -313,10 +419,14 @@ class AnalyticsReportService
         $surveyStatusIds = $this->resolveStatusIds($this->surveyStatusAliases());
         $dealStatusIds = $this->resolveStatusIds($this->dealStatusAliases());
 
-        $query = Account::query();
+        $query = Account::query()->with(['admins:id,name,account_id']);
 
         if ($selectedAccount) {
             $query->whereKey($selectedAccount);
+        }
+
+        if ($this->accountGroup) {
+            $query->where('account_group', $this->accountGroup);
         }
 
         $query->withCount([
@@ -366,6 +476,7 @@ class AnalyticsReportService
                 'rate' => $rate,
                 'deal_rate' => $dealRate,
                 'score' => $score,
+                'admins' => $account->admins->map(fn ($u) => ['id' => $u->id, 'name' => $u->name])->toArray(),
             ];
         })->sortByDesc('score')->values();
     }
@@ -385,6 +496,13 @@ class AnalyticsReportService
 
         if ($selectedAccount) {
             $query->where('account_id', $selectedAccount);
+        }
+
+        if ($this->accountGroup) {
+            $query->whereIn(
+                'account_id',
+                Account::query()->where('account_group', $this->accountGroup)->select('id')
+            );
         }
 
         return $query->get()
@@ -434,26 +552,26 @@ class AnalyticsReportService
     {
         $surveyStatusIds = $this->resolveStatusIds($this->surveyStatusAliases());
         $dealStatusIds = $this->resolveStatusIds($this->dealStatusAliases());
-        $isYearly = $period['type'] === 'yearly';
+        $useMonthlyBuckets = $this->inclusiveDayCount($period['start'], $period['end']) > 90;
 
         $buckets = collect();
         $cursor = $period['start']->copy();
 
         while ($cursor <= $period['end']) {
-            $key = $isYearly ? $cursor->format('Y-m') : $cursor->toDateString();
+            $key = $useMonthlyBuckets ? $cursor->format('Y-m') : $cursor->toDateString();
             $buckets->put($key, [
                 'key' => $key,
-                'label' => $isYearly ? $cursor->translatedFormat('M Y') : $cursor->translatedFormat('d M'),
-                'full_label' => $isYearly ? $cursor->translatedFormat('F Y') : $cursor->translatedFormat('d F Y'),
+                'label' => $useMonthlyBuckets ? $cursor->translatedFormat('M Y') : $cursor->translatedFormat('d M'),
+                'full_label' => $useMonthlyBuckets ? $cursor->translatedFormat('F Y') : $cursor->translatedFormat('d F Y'),
                 'total' => 0,
                 'surveys' => 0,
                 'deals' => 0,
             ]);
 
-            $cursor = $isYearly ? $cursor->addMonth() : $cursor->addDay();
+            $cursor = $useMonthlyBuckets ? $cursor->addMonth() : $cursor->addDay();
         }
 
-        $bucketExpression = $isYearly
+        $bucketExpression = $useMonthlyBuckets
             ? "DATE_FORMAT({$this->consultationColumn('consultation_date')}, '%Y-%m')"
             : 'DATE(' . $this->consultationColumn('consultation_date') . ')';
 
@@ -534,7 +652,7 @@ class AnalyticsReportService
             COUNT(DISTINCT DATE({$cdc})) as active_days,
             MAX({$uac}) as latest_update
         ", array_merge(
-            $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels
+            $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels, $pendingLabels
         ))->first();
 
         $duplicatePhones = (int) (clone $query)
@@ -560,7 +678,7 @@ class AnalyticsReportService
             'active_days' => (int) ($stats->active_days ?? 0),
             'duplicate_phone_rows' => $duplicatePhones,
             'latest_update' => $stats->latest_update ? Carbon::parse($stats->latest_update)->format('d/m/Y H:i') : '-',
-            'period_days' => $period['start']->diffInDays($period['end']) + 1,
+            'period_days' => $this->inclusiveDayCount($period['start'], $period['end']),
         ];
     }
 
@@ -705,6 +823,10 @@ class AnalyticsReportService
      */
     private function buildCohortConversion(User $user, ?int $selectedAccount, array $period): Collection
     {
+        if (($period['type'] ?? null) === 'custom') {
+            return collect();
+        }
+
         $year = (int) ($period['year'] ?? now()->year);
         $column = $this->consultationColumn('consultation_date');
         $statusColumn = $this->consultationColumn('status_category_id');
@@ -776,18 +898,48 @@ class AnalyticsReportService
         $periodStart = $period['start']->copy()->startOfDay();
         $periodEnd = $period['end']->copy()->endOfDay();
 
-        $query = ConsultationStatusHistory::query()
-            ->orderBy('consultation_id')
-            ->orderBy('created_at')
-            ->orderBy('id');
+        $scopeAccount = function ($builder) use ($user, $selectedAccount) {
+            if ($user->isAdmin()) {
+                $builder->where('account_id', $user->account_id);
 
-        if ($user->isAdmin()) {
-            $query->where('account_id', $user->account_id);
-        } elseif ($selectedAccount) {
-            $query->where('account_id', $selectedAccount);
+                return $builder;
+            }
+
+            if ($selectedAccount) {
+                $builder->where('account_id', $selectedAccount);
+            }
+
+            if ($this->accountGroup) {
+                $builder->whereIn(
+                    'account_id',
+                    Account::query()->where('account_group', $this->accountGroup)->select('id')
+                );
+            }
+
+            return $builder;
+        };
+
+        // Batasi dulu ke konsultasi yang punya transisi di dalam periode, baru
+        // ambil riwayat lengkapnya. Tanpa ini seluruh tabel riwayat ditarik ke
+        // memori PHP setiap request dan tumbuh tanpa batas seiring waktu.
+        // Riwayat penuh per konsultasi tetap dibutuhkan karena awal siklus
+        // dihitung dari transisi pertama, dan durasi tiap tahap butuh transisi
+        // sesudahnya sebagai penanda keluar.
+        $consultationIds = $scopeAccount(
+            ConsultationStatusHistory::query()->whereBetween('created_at', [$periodStart, $periodEnd])
+        )->distinct()->pluck('consultation_id');
+
+        if ($consultationIds->isEmpty()) {
+            return $this->emptyStageVelocity();
         }
 
-        $histories = $query->get(['id', 'consultation_id', 'from_status_id', 'to_status_id', 'created_at']);
+        $histories = $scopeAccount(
+            ConsultationStatusHistory::query()->whereIn('consultation_id', $consultationIds)
+        )
+            ->orderBy('consultation_id')
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get(['id', 'consultation_id', 'from_status_id', 'to_status_id', 'created_at']);
 
         $dealIds = $this->resolveStatusIds($this->dealStatusAliases())->all();
 
@@ -864,8 +1016,19 @@ class AnalyticsReportService
     {
         if ($user->isAdmin()) {
             $query->where('account_id', $user->account_id);
-        } elseif ($selectedAccount) {
+
+            return $query;
+        }
+
+        if ($selectedAccount) {
             $query->where('account_id', $selectedAccount);
+        }
+
+        if ($this->accountGroup) {
+            $query->whereIn(
+                'account_id',
+                Account::query()->where('account_group', $this->accountGroup)->select('id')
+            );
         }
 
         return $query;
@@ -1827,11 +1990,17 @@ class AnalyticsReportService
     private function resolveAccountName(User $user, ?int $selectedAccount): string
     {
         if ($user->isSuperAdmin()) {
-            if (! $selectedAccount) {
-                return 'Semua Akun';
+            if ($selectedAccount) {
+                $name = Account::whereKey($selectedAccount)->value('name') ?? 'Akun Tidak Ditemukan';
+
+                return $this->accountGroup ? $name . ' (' . AccountGroup::label($this->accountGroup) . ')' : $name;
             }
 
-            return Account::whereKey($selectedAccount)->value('name') ?? 'Akun Tidak Ditemukan';
+            if ($this->accountGroup) {
+                return AccountGroup::subtitleLabel($this->accountGroup);
+            }
+
+            return 'Semua Akun';
         }
 
         return $user->account?->name ?? 'Akun Admin';
@@ -1893,24 +2062,16 @@ class AnalyticsReportService
             ->squish();
     }
 
-    private function surveyStatusName(): string
-    {
-        return config('statuses.survey', 'Request Survey');
-    }
-
-    private function dealStatusName(): string
-    {
-        return config('statuses.deal', 'Selesai/Deal');
-    }
-
+    // Definisi status survey/deal didelegasikan ke ConsultationStatusGroups
+    // supaya seragam dengan DashboardService dan Geo Analytics.
     private function surveyStatusAliases(): array
     {
-        return [$this->surveyStatusName(), 'Request Survey', 'Masuk Survey'];
+        return ConsultationStatusGroups::names('survey');
     }
 
     private function dealStatusAliases(): array
     {
-        return [$this->dealStatusName(), 'Selesai/Deal', 'Selesai Deal'];
+        return ConsultationStatusGroups::names('deal');
     }
 
     private function toRate(int $count, int $total): float

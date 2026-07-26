@@ -29,8 +29,8 @@ final class AccountGroup
      */
     private const UMBRELLA = [
         self::PC => 'PUTRA CORPORATION',
-        self::NPP1 => 'BISNIS PRIBADI',
-        self::NPP2 => 'BISNIS PRIBADI',
+        self::NPP1 => 'BISNIS PRIBADI 1',
+        self::NPP2 => 'BISNIS PRIBADI 2',
     ];
 
     /** Dipakai saat laporan tidak difilter ke satu grup. */

@@ -2,12 +2,16 @@
 
 namespace App\Http\Requests;
 
-use App\Services\Reports\AnalyticsReportService;
 use App\Support\AccountGroup;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class AnalyticsReportRequest extends FormRequest
+/**
+ * Filter Geo Analytics. Bentuk periode & scope-nya mengikuti
+ * AnalyticsReportRequest, ditambah filter khas peta (provinsi, status,
+ * kategori kebutuhan).
+ */
+class GeoAnalyticsRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -32,15 +36,6 @@ class AnalyticsReportRequest extends FormRequest
             $payload['week_date'] = now()->toDateString();
         }
 
-        // `include` boleh dikirim sebagai "a,b" lewat query string maupun array.
-        if ($this->filled('include') && is_string($this->input('include'))) {
-            $payload['include'] = array_values(array_filter(
-                array_map('trim', explode(',', $this->input('include')))
-            ));
-        }
-
-        // Terima "npp 2" / "NPP 2" / "npp2" -> "NPP2", sama seperti filter
-        // grup akun di halaman lain (rekap jadwal surveyor, absensi).
         if ($this->filled('account_group')) {
             $payload['account_group'] = AccountGroup::normalize($this->input('account_group'))
                 ?? $this->input('account_group');
@@ -52,34 +47,33 @@ class AnalyticsReportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'account' => ['nullable', 'integer', 'exists:accounts,id'],
-            'account_group' => ['nullable', Rule::in(AccountGroup::values())],
             'period_type' => ['required', Rule::in(['weekly', 'monthly', 'yearly', 'custom'])],
             'week_date' => ['nullable', 'date'],
             'month' => ['nullable', 'integer', 'between:1,12'],
             'year' => ['required', 'integer', 'between:2020,' . (now()->year + 1)],
             'start_date' => ['required_if:period_type,custom', 'nullable', 'date', 'after_or_equal:2020-01-01'],
             'end_date' => ['required_if:period_type,custom', 'nullable', 'date', 'after_or_equal:start_date', 'before_or_equal:' . now()->addYear()->toDateString()],
-            'include' => ['nullable', 'array'],
-            'include.*' => [Rule::in(AnalyticsReportService::EXTRA_BLOCKS)],
+            'account' => ['nullable', 'integer', 'exists:accounts,id'],
+            'account_group' => ['nullable', Rule::in(AccountGroup::values())],
+            'status' => ['nullable', 'integer', 'exists:status_categories,id'],
+            'needs_category' => ['nullable', 'integer', 'exists:needs_categories,id'],
+            'province' => ['nullable', 'string', 'max:100'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'account.exists' => 'Akun yang dipilih tidak valid.',
-            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
-                . implode(', ', AccountGroup::labels()) . '.',
-            'period_type.required' => 'Tipe periode wajib dipilih.',
             'period_type.in' => 'Tipe periode laporan tidak valid.',
-            'week_date.date' => 'Tanggal acuan minggu tidak valid.',
-            'month.between' => 'Bulan harus berada di antara 1 sampai 12.',
             'year.between' => 'Tahun yang dipilih tidak valid.',
             'start_date.required_if' => 'Tanggal awal wajib diisi untuk periode kustom.',
             'end_date.required_if' => 'Tanggal akhir wajib diisi untuk periode kustom.',
             'end_date.after_or_equal' => 'Tanggal akhir tidak boleh sebelum tanggal awal.',
-            'include.*.in' => 'Blok analisa tambahan yang diminta tidak dikenali.',
+            'account.exists' => 'Akun yang dipilih tidak valid.',
+            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
+                . implode(', ', AccountGroup::labels()) . '.',
+            'status.exists' => 'Status yang dipilih tidak valid.',
+            'needs_category.exists' => 'Kategori kebutuhan tidak valid.',
         ];
     }
 }
