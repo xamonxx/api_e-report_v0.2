@@ -1673,6 +1673,22 @@ class AnalyticsReportService
         return $current > 0 ? 100.0 : 0.0;
     }
 
+    /**
+     * Kalimat insight untuk kartu "Saran & Insights" di halaman Analitik.
+     *
+     * PERINGATAN — nilai `html` di sini dirender frontend memakai
+     * `dangerouslySetInnerHTML` (`analytics-view.tsx`), jadi string ini adalah
+     * HTML sink, bukan teks biasa. Tag `<mark>` memang disengaja; SEMUA nilai
+     * yang disisipkan WAJIB lewat `e()`.
+     *
+     * Tanpa itu jadi stored XSS: nama wilayah bisa berisi HTML sembarang karena
+     * importer CSV menyimpan sel yang tidak dikenali apa adanya, dan Analitik
+     * dibaca super admin lintas akun — sementara token auth ada di localStorage,
+     * jadi payload yang jalan di sana berarti pengambilalihan akun.
+     *
+     * Kalau butuh menambah kalimat baru, escape argumennya, bukan hasil sprintf,
+     * supaya `<mark>` tidak ikut ter-escape.
+     */
     private function buildInsights(
         Collection $statusDistribution,
         Collection $needsDistribution,
@@ -1692,7 +1708,7 @@ class AnalyticsReportService
                     'icon' => 'analytics',
                     'html' => sprintf(
                         'Status terbesar adalah <mark>%s</mark> dengan <mark>%s</mark> konsultasi.',
-                        $topStatus['name'],
+                        e($topStatus['name']),
                         number_format($topStatus['count'])
                     ),
                 ]);
@@ -1705,7 +1721,7 @@ class AnalyticsReportService
                     'icon' => 'assignment',
                     'html' => sprintf(
                         'Kebutuhan teratas adalah <mark>%s</mark> dengan <mark>%s</mark> lead.',
-                        $topNeed['name'],
+                        e($topNeed['name']),
                         number_format($topNeed['count'])
                     ),
                 ]);
@@ -1718,7 +1734,7 @@ class AnalyticsReportService
                     'icon' => 'flag',
                     'html' => sprintf(
                         'Wilayah dominan datang dari <mark>%s</mark> dengan kontribusi <mark>%s%%</mark>.',
-                        $topProvince['name'],
+                        e($topProvince['name']),
                         $topProvince['percentage']
                     ),
                 ]);
@@ -1731,7 +1747,7 @@ class AnalyticsReportService
                     'icon' => 'groups',
                     'html' => sprintf(
                         'Akun terbaik saat ini adalah <mark>%s</mark> dengan skor performa <mark>%s</mark>.',
-                        $topAccount['name'],
+                        e($topAccount['name']),
                         $topAccount['score']
                     ),
                 ]);
@@ -1744,7 +1760,7 @@ class AnalyticsReportService
                     'icon' => 'person',
                     'html' => sprintf(
                         'Admin paling produktif adalah <mark>%s</mark> dengan <mark>%s</mark> lead.',
-                        $topAdmin['name'],
+                        e($topAdmin['name']),
                         number_format($topAdmin['total'])
                     ),
                 ]);
@@ -1757,7 +1773,7 @@ class AnalyticsReportService
                     'icon' => 'trending_up',
                     'html' => sprintf(
                         'Puncak volume terjadi pada <mark>%s</mark> dengan <mark>%s</mark> konsultasi.',
-                        $peak['full_label'],
+                        e($peak['full_label']),
                         number_format($peak['total'])
                     ),
                 ]);
