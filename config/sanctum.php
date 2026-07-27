@@ -50,7 +50,16 @@ return [
     |
     */
 
-    'expiration' => null,
+    /*
+     * Sebelumnya `null` — token berlaku selamanya. Satu kebocoran (riwayat
+     * browser, Referer, log, screenshot) berarti akses permanen, dan token
+     * disimpan di localStorage sehingga XSS apa pun ikut membawanya.
+     *
+     * 12 jam kira-kira satu hari kerja: pengguna tidak diputus di tengah shift,
+     * tapi token yang terlepas mati dengan sendirinya. Bisa disetel per
+     * lingkungan lewat SANCTUM_EXPIRATION.
+     */
+    'expiration' => (int) env('SANCTUM_EXPIRATION', 720),
 
     /*
     |--------------------------------------------------------------------------
