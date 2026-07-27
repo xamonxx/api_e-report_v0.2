@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\ConsultationStatusGroups;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -116,10 +117,18 @@ class Consultation extends Model
      */
     public function scopeNeedsSurveyRequest($query)
     {
-        $surveyStage = config('statuses.survey', 'Request Survey');
+        // Tahap pengajuan saja, bukan grup pelaporan 'survey' yang berisi tiga
+        // status — lead yang surveynya sudah selesai bukan lead yang menunggu
+        // pengajuan. Membaca config('statuses.survey') langsung di sini juga
+        // fatal sejak grup itu jadi array (trim() atas array).
+        $entryIds = ConsultationStatusGroups::surveyEntryIds();
+
+        if ($entryIds === []) {
+            return $query->whereRaw('1 = 0');
+        }
 
         return $query
-            ->whereHas('statusCategory', fn ($status) => $status->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($surveyStage))]))
+            ->whereIn('status_category_id', $entryIds)
             ->whereDoesntHave('surveys', fn ($survey) => $survey->where('state', '!=', Survey::STATE_CANCELLED));
     }
 

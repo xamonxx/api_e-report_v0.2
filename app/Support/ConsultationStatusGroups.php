@@ -68,6 +68,27 @@ final class ConsultationStatusGroups
     }
 
     /**
+     * Status tempat survey boleh diajukan — satu, bukan grup.
+     *
+     * Berbeda dari names('survey') yang merupakan grup pelaporan berisi tiga
+     * status. Gerbang pengajuan dan scope "menunggu pengajuan" harus memakai
+     * yang ini; kalau memakai grup, survey bisa diajukan pada lead yang
+     * surveynya sudah selesai. Lihat catatan di config/statuses.php.
+     */
+    public static function surveyEntryName(): string
+    {
+        return self::names('survey_entry')[0]
+            ?? self::names('survey')[0]
+            ?? 'Request Survey';
+    }
+
+    /** ID status pengajuan survey; kosong bila namanya tak ada di DB. */
+    public static function surveyEntryIds(): array
+    {
+        return self::ids('survey_entry');
+    }
+
+    /**
      * Nama status mentah dari config untuk sebuah grup, selalu sebagai list.
      *
      * @return list<string>

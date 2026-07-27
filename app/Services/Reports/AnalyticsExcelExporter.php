@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Support\ConsultationStatusGroups;
 use Illuminate\Support\Collection;
 
 class AnalyticsExcelExporter
@@ -94,9 +95,11 @@ class AnalyticsExcelExporter
         $surveyTrendRange = $this->sheetRange('Tren', self::DATA_START_ROW, $trendLastRow, 4);
         $dealTrendRange = $this->sheetRange('Tren', self::DATA_START_ROW, $trendLastRow, 5);
 
-        $surveyStatus = $this->escapeFormulaString($report['topPerformers']['status']['name'] ?? config('statuses.survey', 'Request Survey'));
-        $configuredSurvey = $this->escapeFormulaString(config('statuses.survey', 'Request Survey'));
-        $configuredDeal = $this->escapeFormulaString(config('statuses.deal', 'Selesai/Deal'));
+        // Lewat ConsultationStatusGroups, bukan config() langsung: 'survey' kini
+        // grup tiga status, dan membacanya sebagai string membuat exporter ini
+        // fatal (TypeError di escapeFormulaString) sekaligus mengundercount.
+        $surveyNames = ConsultationStatusGroups::names('survey');
+        $dealNames = ConsultationStatusGroups::names('deal');
 
         $rows = [
             $this->row([
@@ -122,9 +125,9 @@ class AnalyticsExcelExporter
                 $this->cell('Total Lead', 'kpiLabel'),
                 $this->formulaCell("=COUNTA($nameRange)", $report['totalLeads'] ?? 0, 'kpiValueNumber'),
                 $this->cell('Total Survey', 'kpiLabel'),
-                $this->formulaCell("=COUNTIF($statusRange,\"$configuredSurvey\")", $report['totalSurveys'] ?? 0, 'kpiValueNumber'),
+                $this->formulaCell($this->countIfAnyFormula($statusRange, $surveyNames), $report['totalSurveys'] ?? 0, 'kpiValueNumber'),
                 $this->cell('Total Deal', 'kpiLabel'),
-                $this->formulaCell("=COUNTIF($statusRange,\"$configuredDeal\")", $report['totalDeals'] ?? 0, 'kpiValueNumber'),
+                $this->formulaCell($this->countIfAnyFormula($statusRange, $dealNames), $report['totalDeals'] ?? 0, 'kpiValueNumber'),
             ], 24),
             $this->row([
                 $this->cell('Konversi Survey', 'kpiLabel'),
@@ -909,6 +912,29 @@ class AnalyticsExcelExporter
     private function escapeFormulaString(string $value): string
     {
         return str_replace('"', '""', $value);
+    }
+
+    /**
+     * COUNTIF atas sekelompok nama status.
+     *
+     * Dijumlahkan per nama, bukan memakai konstanta array {"a";"b"}: formula di
+     * sini ditulis dalam R1C1 SpreadsheetML, dan penjumlahan biasa pasti terbaca
+     * di semua versi Excel sementara konstanta array belum tentu.
+     *
+     * @param  list<string>  $names
+     */
+    private function countIfAnyFormula(string $range, array $names): string
+    {
+        if ($names === []) {
+            return '=0';
+        }
+
+        $terms = array_map(
+            fn (string $name) => sprintf('COUNTIF(%s,"%s")', $range, $this->escapeFormulaString($name)),
+            $names
+        );
+
+        return '=' . implode('+', $terms);
     }
 
     private function escapeSheetName(string $name): string
