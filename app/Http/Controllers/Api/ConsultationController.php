@@ -14,6 +14,7 @@ use App\Services\ConsultationImportService;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\LeadsExcelExporter;
 use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
+use App\Support\ConsultationStatusGroups;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -408,7 +409,9 @@ class ConsultationController extends Controller
 
         // Menggeser keluar dari tahap pengajuan sementara survey masih menunggu
         // akan meninggalkan survey yatim di antrian manager.
-        $surveyStageName = mb_strtolower(trim(config('statuses.survey', 'Request Survey')));
+        // Tahap pengajuan, bukan grup pelaporan: config('statuses.survey') kini
+        // array, dan trim() atasnya fatal.
+        $surveyStageName = mb_strtolower(trim(ConsultationStatusGroups::surveyEntryName()));
         $currentName = mb_strtolower(trim((string) $consultation->statusCategory?->name));
 
         if ($currentName === $surveyStageName

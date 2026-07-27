@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\SurveyorScheduleRecapService;
 use App\Services\WebPushService;
+use App\Support\ConsultationStatusGroups;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -84,7 +85,10 @@ class SurveyController extends Controller
 
         // Survey hanya boleh diajukan dari tahap pipeline yang tepat, supaya
         // antrian manager tidak terisi lead yang belum siap disurvei.
-        $surveyStatusName = config('statuses.survey', 'Request Survey');
+        // Tahap pengajuan, bukan grup pelaporan 'survey'. Memakai grup akan
+        // mengizinkan pengajuan pada lead yang surveynya sudah selesai, dan
+        // array-nya juga bocor ke pesan 422 sebagai "Array".
+        $surveyStatusName = ConsultationStatusGroups::surveyEntryName();
         if (! $this->consultationIsAtSurveyStage($consultation, $surveyStatusName)) {
             return response()->json([
                 'message' => "Survey hanya dapat diajukan ketika status lead adalah {$surveyStatusName}.",
