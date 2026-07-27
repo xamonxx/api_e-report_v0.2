@@ -582,25 +582,52 @@ class ConsultationImportService
 
         return [
             'consultation_id' => preg_replace('/^[=+\-\@\t\r\n]/', '', $row[1] ?? ''),
-            'client_name' => $clientName,
+            'client_name' => $this->stripHtmlDelimiters($clientName),
             'phone' => $phone,
-            'province' => PendingConfirmation::normalizeRegion($province),
-            'city' => PendingConfirmation::normalizeRegion($city),
-            'district' => PendingConfirmation::normalizeRegion($district),
+            'province' => PendingConfirmation::normalizeRegion($this->stripHtmlDelimiters($province)),
+            'city' => PendingConfirmation::normalizeRegion($this->stripHtmlDelimiters($city)),
+            'district' => PendingConfirmation::normalizeRegion($this->stripHtmlDelimiters($district)),
             // Kolom G template adalah Domisili (Dalam/Luar Kota) yang terisi
             // rumus otomatis, bukan alamat. Sebelumnya nilai itu tertulis ke
             // kolom address. Template tidak punya kolom alamat, jadi dikosongkan.
             'address' => null,
-            'product_details' => ($row[$detailIndex] ?? '') !== ''
-                ? $row[$detailIndex]
-                : (($row[$needIndex] ?? '') !== '' ? $row[$needIndex] : null),
-            'notes' => ($row[$notesIndex] ?? '') !== '' ? $row[$notesIndex] : null,
+            'product_details' => $this->stripHtmlDelimiters(
+                ($row[$detailIndex] ?? '') !== ''
+                    ? $row[$detailIndex]
+                    : (($row[$needIndex] ?? '') !== '' ? $row[$needIndex] : null)
+            ),
+            'notes' => $this->stripHtmlDelimiters(
+                ($row[$notesIndex] ?? '') !== '' ? $row[$notesIndex] : null
+            ),
             'account_id' => (int) $accountId,
             'needs_category_id' => (int) $needsCategoryIds[0],
             'needs_category_ids' => $needsCategoryIds,
             'status_category_id' => (int) $statusCategoryId,
             'consultation_date' => $this->parseDate($row[2] ?? null) ?? now()->toDateString(),
         ];
+    }
+
+    /**
+     * Buang '<' dan '>' dari teks bebas hasil impor.
+     *
+     * Baris CSV tidak melewati ConsultationRequest, jadi aturan karakter di sana
+     * — `regex:/^[\pL0-9\s\-.,]+$/u` untuk wilayah, `/^[^<>]+$/` untuk alamat —
+     * tidak berlaku untuk jalur ini. Nilai wilayah yang tidak dikenali disimpan
+     * apa adanya (lihat canonicalProvince() ?? $row[7] di atas), sehingga jalur
+     * impor bisa menaruh HTML sembarang ke kolom yang jalur API sudah tolak.
+     *
+     * Karakter dibuang, bukan barisnya ditolak: tidak ada nama tempat, produk,
+     * atau catatan sah yang memuat '<' atau '>', jadi ini tidak menggagalkan
+     * impor yang selama ini berhasil. Sejalan dengan pembersihan awalan formula
+     * pada `consultation_id` di fungsi yang sama.
+     */
+    private function stripHtmlDelimiters(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return str_replace(['<', '>'], '', $value);
     }
 
     /**
