@@ -25,6 +25,7 @@ class Consultation extends Model
         'consultation_id',
         'client_name',
         'phone',
+        'emergency_phone',
         'province',
         'city',
         'district',

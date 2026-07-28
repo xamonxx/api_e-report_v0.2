@@ -78,6 +78,15 @@ class SurveyPolicy
         return $user->isAdmin() && (int) $survey->account_id === (int) $user->account_id;
     }
 
+    /**
+     * Admin akun terkait boleh melengkapi/memperbaiki link Google Maps pada
+     * survey aktif yang sudah diajukan.
+     */
+    public function updateMaps(User $user, Survey $survey): bool
+    {
+        return $user->isAdmin() && (int) $survey->account_id === (int) $user->account_id;
+    }
+
     /** Mengubah jadwal final atau surveyor: manager surveyor. */
     public function rescheduleAssignment(User $user, Survey $survey): bool
     {

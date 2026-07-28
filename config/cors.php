@@ -12,7 +12,7 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    'paths' => ['api/*', 'broadcasting/auth', 'sanctum/csrf-cookie'],
 
     // F-010: Restrict to only the HTTP methods actually used by this API.
     // Using ['*'] is overly permissive and exposes unnecessary attack surface.
@@ -27,6 +27,7 @@ return [
         '#^http://192\.168\.\d+\.\d+:3000$#',
         '#^http://10\.\d+\.\d+\.\d+:3000$#',
         '#^http://172\.(1[6-9]|2\d|3[01])\.\d+\.\d+:3000$#',
+        '#^http://100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+:3000$#',
     ],
 
     // F-010: Restrict to only headers actually sent by the Next.js SPA.

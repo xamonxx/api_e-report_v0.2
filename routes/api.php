@@ -132,6 +132,8 @@ Route::prefix('v1')->group(function () {
             ->name('api.surveys.unassign');
         Route::patch('/surveys/{survey}/reschedule', [SurveyController::class, 'reschedule'])
             ->name('api.surveys.reschedule');
+        Route::patch('/surveys/{survey}/maps', [SurveyController::class, 'updateMaps'])
+            ->name('api.surveys.maps');
         Route::patch('/surveys/{survey}/reschedule-assignment', [SurveyController::class, 'rescheduleAssignment'])
             ->name('api.surveys.reschedule-assignment');
         Route::patch('/surveys/{survey}/start', [SurveyController::class, 'start'])

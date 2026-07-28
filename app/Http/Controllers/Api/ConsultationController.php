@@ -40,7 +40,10 @@ class ConsultationController extends Controller
         $user = auth()->user();
         // activeSurvey ikut dimuat supaya UI tahu lead sudah diajukan survey
         // atau belum, tanpa query tambahan per baris.
-        $query = Consultation::query()->withProductRelations()->with('activeSurvey');
+        $query = Consultation::query()->withProductRelations()->with([
+            'activeSurvey.surveyor:id,name',
+            'activeSurvey.resultStatus:id,name,color',
+        ]);
         $query->forUser($user);
 
         // Filters
@@ -86,6 +89,9 @@ class ConsultationController extends Controller
                 if ($normalizedSearch) {
                     $q->orWhereRaw(
                         "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ?",
+                        ["%{$normalizedSearch}%"]
+                    )->orWhereRaw(
+                        "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(emergency_phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ?",
                         ["%{$normalizedSearch}%"]
                     );
                 }

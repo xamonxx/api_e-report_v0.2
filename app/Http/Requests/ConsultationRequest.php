@@ -120,6 +120,10 @@ class ConsultationRequest extends FormRequest
         // bawah yang memberi pesan error, bukan hilang diam-diam.
         $rawPhone = $trimmed($this->input('phone'));
         $phone = PhoneNumber::toE164($rawPhone) ?? $rawPhone;
+        $rawEmergencyPhone = $trimmed($this->input('emergency_phone'));
+        $emergencyPhone = $rawEmergencyPhone
+            ? (PhoneNumber::toE164($rawEmergencyPhone) ?? $rawEmergencyPhone)
+            : null;
 
         if (! $otherNeedsCategoryId || ! in_array($otherNeedsCategoryId, $productIds, true)) {
             $productDetails = null;
@@ -128,6 +132,7 @@ class ConsultationRequest extends FormRequest
         $this->merge([
             'client_name' => $trimmed($this->input('client_name')) ?? Consultation::generatePlaceholderClientName(),
             'phone' => $phone,
+            'emergency_phone' => $emergencyPhone,
             'province' => $province,
             'city' => $city,
             'district' => $district,
@@ -181,6 +186,17 @@ class ConsultationRequest extends FormRequest
 
                     if ($duplicate) {
                         $fail("Nomor telepon ini sudah digunakan pada lead {$duplicate->consultation_id} di akun yang sama. Gunakan nomor lain atau perbarui lead tersebut.");
+                    }
+                },
+            ],
+            'emergency_phone'    => [
+                'nullable',
+                'string',
+                'max:30',
+                'regex:/^([0-9\s\-\+\(\)]*)$/',
+                function ($attribute, $value, $fail) {
+                    if ($value && ! PhoneNumber::isValid($value)) {
+                        $fail('Nomor telepon darurat tidak valid. Untuk nomor luar negeri, awali dengan kode negara, contoh +60 12-345 6789.');
                     }
                 },
             ],
@@ -295,6 +311,8 @@ class ConsultationRequest extends FormRequest
             'phone.required'              => 'Nomor telepon wajib diisi.',
             'phone.max'                   => 'Teks nomor telepon terlalu panjang (maksimal 30 karakter).',
             'phone.regex'                 => 'Format nomor telepon tidak valid (hanya mendukung angka dan simbol spesifik).',
+            'emergency_phone.max'         => 'Teks nomor telepon darurat terlalu panjang (maksimal 30 karakter).',
+            'emergency_phone.regex'       => 'Format nomor telepon darurat tidak valid (hanya mendukung angka dan simbol spesifik).',
             'province.max'                => 'Provinsi terlalu panjang (maksimal 100 karakter).',
             'province.regex'              => 'Provinsi mengandung karakter yang tidak diizinkan.',
             'city.max'                    => 'Kota/Kabupaten terlalu panjang (maksimal 100 karakter).',

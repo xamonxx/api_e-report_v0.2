@@ -14,6 +14,7 @@ use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
 use App\Services\Reports\SurveyorScheduleRecapExcelExporter;
 use App\Services\Reports\SurveyorScheduleRecapService;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\Response;
@@ -186,11 +187,7 @@ class ExportController extends Controller
         Gate::authorize('viewRecap', Survey::class);
 
         $report = $reportService->buildForUser($request->user(), $request->validated());
-        $filename = sprintf(
-            'rekap-jadwal-surveyor-%s-%s.xlsx',
-            $report['period']['start'],
-            $report['period']['end']
-        );
+        $filename = $this->surveyorScheduleRecapFilename($report);
 
         return response(
             $xlsxConverter->convert($excelExporter->buildWorkbook($report)),
@@ -201,6 +198,25 @@ class ExportController extends Controller
                 'Cache-Control' => 'max-age=0',
             ]
         );
+    }
+
+    private function surveyorScheduleRecapFilename(array $report): string
+    {
+        $start = Carbon::parse($report['period']['start']);
+        $end = Carbon::parse($report['period']['end']);
+        $months = ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES'];
+        $startLabel = $start->format('d') . $months[$start->month - 1];
+        $endLabel = $end->format('d') . $months[$end->month - 1] . $end->format('Y');
+        $weekOfMonth = $start->copy()
+            ->startOfMonth()
+            ->startOfWeek(Carbon::MONDAY)
+            ->diffInWeeks($start->copy()->startOfWeek(Carbon::MONDAY)) + 1;
+
+        if ($start->year !== $end->year) {
+            $startLabel .= $start->format('Y');
+        }
+
+        return sprintf('REKAP_JADWAL_%s-%s_M%s.xlsx', $startLabel, $endLabel, $weekOfMonth);
     }
 
     private function analyticsFilename(string $extension, array $report): string
