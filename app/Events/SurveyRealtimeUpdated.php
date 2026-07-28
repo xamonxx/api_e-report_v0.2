@@ -57,6 +57,7 @@ class SurveyRealtimeUpdated implements ShouldBroadcast
             'rescheduled_by_admin' => $managers(),
             'rescheduled_by_manager' => [$survey->surveyor_id],
             'unassigned' => $managers(),
+            'maps_updated' => array_merge([$survey->requested_by, $survey->surveyor_id], $managers()),
             default => [],
         };
 
@@ -79,6 +80,7 @@ class SurveyRealtimeUpdated implements ShouldBroadcast
             'completed' => 'Survey Selesai',
             'cancelled' => 'Survey Dibatalkan',
             'unassigned' => 'Penugasan Dilepas',
+            'maps_updated' => 'Link Maps Survey Diperbarui',
             default => 'Pembaruan Survey',
         };
     }

@@ -19,7 +19,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
+use Throwable;
 
 class SurveyController extends Controller
 {
@@ -29,8 +31,11 @@ class SurveyController extends Controller
     private function withRelations(): array
     {
         return [
-            'consultation:id,consultation_id,client_name,phone,province,city,district,address,account_id,product_details',
+            'consultation:id,consultation_id,client_name,phone,emergency_phone,province,city,district,address,account_id,needs_category_id,product_details',
             'consultation.account:id,name',
+            'consultation.account.admins:id,name,account_id',
+            'consultation.needsCategory:id,name',
+            'consultation.needsCategories:id,name',
             'surveyor:id,name',
             'assigner:id,name',
             'requester:id,name',
@@ -167,7 +172,15 @@ class SurveyController extends Controller
      */
     private function notifySurvey(Survey $survey, string $action, string $message, array $extraRecipients = []): void
     {
-        SurveyRealtimeUpdated::dispatch($survey, $action, $message, $extraRecipients);
+        try {
+            SurveyRealtimeUpdated::dispatch($survey, $action, $message, $extraRecipients);
+        } catch (Throwable $e) {
+            Log::warning('Survey realtime broadcast gagal; aksi survey tetap dilanjutkan.', [
+                'survey_id' => $survey->id,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         // Angka "lead belum diajukan" milik pelaku ikut berubah walau dia bukan
         // penerima notifikasi, jadi cache-nya harus ikut dibersihkan.
@@ -360,6 +373,73 @@ class SurveyController extends Controller
     }
 
     /**
+     * PATCH /api/v1/surveys/{survey}/maps
+     * Admin akun terkait melengkapi/memperbaiki link Google Maps setelah
+     * request survey telanjur diajukan.
+     */
+    public function updateMaps(Request $request, Survey $survey): JsonResponse
+    {
+        $this->authorize('updateMaps', $survey);
+
+        if ($survey->state === Survey::STATE_CANCELLED) {
+            return response()->json([
+                'message' => 'Link Maps tidak dapat diubah pada survey yang sudah dibatalkan.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'google_maps_url' => ['nullable', 'url', 'max:2048'],
+        ], [
+            'google_maps_url.url' => 'Link Google Maps tidak valid. Tempelkan tautan lengkap dari aplikasi Maps.',
+        ]);
+
+        $nextUrl = $validated['google_maps_url'] ?? null;
+        $nextUrl = is_string($nextUrl) ? trim($nextUrl) : null;
+        $nextUrl = $nextUrl === '' ? null : $nextUrl;
+        $oldUrl = $survey->google_maps_url;
+
+        if (($oldUrl ?? null) === $nextUrl) {
+            return response()->json(['message' => 'Link Google Maps belum berubah.'], 422);
+        }
+
+        DB::transaction(function () use ($survey, $nextUrl) {
+            $lockedSurvey = Survey::query()->lockForUpdate()->findOrFail($survey->id);
+            if ($lockedSurvey->state === Survey::STATE_CANCELLED) {
+                abort(422, 'Survey sudah dibatalkan.');
+            }
+
+            $lockedSurvey->google_maps_url = $nextUrl;
+            $lockedSurvey->save();
+
+            SurveyActivityLog::create([
+                'survey_id' => $lockedSurvey->id,
+                'consultation_id' => $lockedSurvey->consultation_id,
+                'user_id' => auth()->id(),
+                'user_role' => auth()->user()?->role?->value ?? auth()->user()?->role,
+                'action' => 'maps_updated',
+                'old_status' => $lockedSurvey->state,
+                'new_status' => $lockedSurvey->state,
+                'notes' => $nextUrl ? 'Admin memperbarui link Google Maps survey.' : 'Admin menghapus link Google Maps survey.',
+            ]);
+        });
+
+        $updatedSurvey = $survey->fresh();
+        $this->flushDashboardCache([(int) $updatedSurvey->account_id]);
+
+        $adminName = auth()->user()?->name ?? 'Admin';
+        $this->notifySurvey(
+            $updatedSurvey,
+            'maps_updated',
+            "{$adminName} memperbarui link Google Maps survey konsumen {$this->surveyClientArea($updatedSurvey)}."
+        );
+
+        return response()->json([
+            'message' => 'Link Google Maps survey berhasil diperbarui.',
+            'data' => $updatedSurvey->load($this->withRelations()),
+        ]);
+    }
+
+    /**
      * GET /api/v1/surveys/recap
      * Rekap jadwal surveyor satu minggu Seninâ€“Minggu.
      */
@@ -387,6 +467,9 @@ class SurveyController extends Controller
 
         if ($user->isSurveyor()) {
             $query->where('surveyor_id', $user->id);
+            if ($user->account_id) {
+                $query->where('account_id', $user->account_id);
+            }
         } elseif ($user->isAdmin()) {
             $query->where('account_id', $user->account_id);
         }
@@ -412,6 +495,7 @@ class SurveyController extends Controller
                             ->where('client_name', 'like', "%{$search}%")
                             ->orWhere('consultation_id', 'like', "%{$search}%")
                             ->orWhere('phone', 'like', "%{$search}%")
+                            ->orWhere('emergency_phone', 'like', "%{$search}%")
                             ->orWhere('address', 'like', "%{$search}%")
                             ->orWhereHas('account', fn ($account) => $account->where('name', 'like', "%{$search}%"));
                     });
@@ -424,9 +508,30 @@ class SurveyController extends Controller
             $query->whereDate('scheduled_at', '<=', $request->end_date);
         }
 
-        // Antrian requested diurut terlama dulu; sisanya terbaru dulu.
-        if ($request->string('state')->value() === Survey::STATE_REQUESTED) {
+        $state = $request->string('state')->value();
+        $sort = $request->string('sort')->value();
+
+        // Request tetap FIFO. State operasional memakai waktu yang paling relevan,
+        // dengan opsi kembali ke urutan update terbaru dari toolbar frontend.
+        if ($state === Survey::STATE_REQUESTED) {
             $query->orderBy('requested_at');
+        } elseif ($sort === 'latest') {
+            $query->latest('updated_at');
+        } elseif ($state === Survey::STATE_SCHEDULED) {
+            $query
+                ->orderByRaw('CASE WHEN scheduled_at IS NULL THEN 1 ELSE 0 END')
+                ->orderBy('scheduled_at')
+                ->orderBy('id');
+        } elseif ($state === Survey::STATE_IN_PROGRESS) {
+            $query
+                ->orderByRaw('CASE WHEN COALESCE(actual_start_at, scheduled_at) IS NULL THEN 1 ELSE 0 END')
+                ->orderByRaw('COALESCE(actual_start_at, scheduled_at) ASC')
+                ->orderBy('id');
+        } elseif ($state === Survey::STATE_COMPLETED) {
+            $query
+                ->orderByRaw('CASE WHEN actual_finish_at IS NULL THEN 1 ELSE 0 END')
+                ->orderByDesc('actual_finish_at')
+                ->latest('updated_at');
         } else {
             $query->latest('updated_at');
         }

@@ -49,6 +49,12 @@ class AccountController extends Controller
             ]);
         }
 
+        if ($surveyStatusId = $this->resolveRequestSurveyStatusId()) {
+            $query->withCount([
+                'consultations as surveys_count' => fn ($builder) => $builder->where('status_category_id', $surveyStatusId),
+            ]);
+        }
+
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -115,6 +121,12 @@ class AccountController extends Controller
             $account->loadCount([
                 'consultations',
                 'consultations as deals_count' => fn ($builder) => $builder->where('status_category_id', $dealStatusId),
+            ]);
+        }
+
+        if ($surveyStatusId = $this->resolveRequestSurveyStatusId()) {
+            $account->loadCount([
+                'consultations as surveys_count' => fn ($builder) => $builder->where('status_category_id', $surveyStatusId),
             ]);
         }
 
@@ -202,5 +214,26 @@ class AccountController extends Controller
         $resolved = true;
 
         return $dealStatusId;
+    }
+
+    private function resolveRequestSurveyStatusId(): ?int
+    {
+        static $surveyStatusId;
+        static $resolved = false;
+
+        if ($resolved) {
+            return $surveyStatusId;
+        }
+
+        $surveyStatusId = StatusCategory::query()
+            ->whereIn('name', array_filter([
+                config('statuses.request_survey'),
+                'Request Survey',
+                'Request survey',
+            ]))
+            ->value('id');
+        $resolved = true;
+
+        return $surveyStatusId;
     }
 }
