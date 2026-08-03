@@ -8,10 +8,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
+    public const SUPER_ADMIN_CACHE_KEY = 'users:super-admin-ids';
+
     use HasApiTokens, HasFactory, Notifiable, SoftDeletes, TracksAuditUser;
 
     /**
@@ -25,6 +28,7 @@ class User extends Authenticatable
         'password',
         'account_id',
         'primary_color',
+        'avatar_path',
         'last_login_at',
         'last_login_ip',
         'last_seen_at',
@@ -92,6 +96,25 @@ class User extends Authenticatable
     public function isSurveyTeam(): bool
     {
         return $this->isSurveyor() || $this->isManagerSurveyor();
+    }
+
+    /**
+     * Dashboard invalidation runs on every operational mutation. Cache this
+     * stable list so completing a survey does not query users again.
+     *
+     * @return list<int>
+     */
+    public static function cachedSuperAdminIds(): array
+    {
+        return Cache::remember(
+            self::SUPER_ADMIN_CACHE_KEY,
+            now()->addHour(),
+            fn () => self::query()
+                ->where('role', UserRole::SuperAdmin->value)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all()
+        );
     }
 
     public function assignedSurveys()

@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\Response;
  * Add security-related HTTP headers to all responses.
  *
  * Addresses:
- * - XSS protection (CSP + legacy X-XSS-Protection)
+ * - XSS protection (CSP)
  * - Clickjacking prevention
  * - MIME type sniffing
  * - Cache control after logout
@@ -21,19 +21,26 @@ class SecurityHeaders
 {
     public function handle(Request $request, Closure $next): Response
     {
+        if (app()->environment('production') && strtolower((string) $request->header('X-Forwarded-Proto')) === 'http') {
+            $baseUrl = rtrim((string) config('app.url'), '/');
+
+            return redirect($baseUrl.$request->getRequestUri(), 308);
+        }
+
         $response = $next($request);
 
         // Prevent MIME type sniffing
         $response->headers->set('X-Content-Type-Options', 'nosniff');
-
-        // Enable XSS filter in older browsers (deprecated but harmless)
-        $response->headers->set('X-XSS-Protection', '1; mode=block');
 
         // Prevent clickjacking
         $response->headers->set('X-Frame-Options', 'SAMEORIGIN');
 
         // Control referrer information
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
+        $response->headers->set(
+            'Permissions-Policy',
+            'camera=(), microphone=(), geolocation=()'
+        );
 
         // F-006: Content-Security-Policy — pure JSON API, no inline scripts needed.
         // frame-ancestors 'none' provides clickjacking defense at CSP level.

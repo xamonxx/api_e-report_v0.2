@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\Consultation;
 use App\Models\NeedsCategory;
-use App\Models\ReportAttendance;
 use App\Models\StatusCategory;
 use App\Models\User;
 use App\Support\ConsultationStatusGroups;
@@ -25,7 +24,7 @@ class DashboardService
 
     public function superAdminDashboard(): array
     {
-        $cacheKey = 'dashboard:super_admin:' . auth()->id();
+        $cacheKey = 'dashboard:super_admin:'.auth()->id();
 
         return Cache::remember($cacheKey, 15 * 60, function () {
             return [
@@ -48,7 +47,7 @@ class DashboardService
     {
         $accountId = $user->account_id;
 
-        if (!$accountId) {
+        if (! $accountId) {
             abort(403, 'Akun belum di-assign ke user Anda. Hubungi Super Admin.');
         }
 
@@ -59,57 +58,72 @@ class DashboardService
             $pendingIds = $this->statusIds('pending');
             $cancelledIds = $this->statusIds('cancelled');
 
-            $totalLeads = Consultation::where('account_id', $accountId)->count();
-            $totalDeals = $dealIds
-                ? Consultation::where('account_id', $accountId)->whereIn('status_category_id', $dealIds)->count()
-                : 0;
+            $monthStart = now()->startOfMonth()->toDateString();
+            $monthEnd = now()->endOfMonth()->toDateString();
+            $stats = Consultation::query()
+                ->where('account_id', $accountId)
+                ->selectRaw('COUNT(*) as total_leads')
+                ->selectRaw($this->sumInIdsSql($dealIds).' as total_deals')
+                ->selectRaw($this->sumInIdsSql($pendingIds).' as pending_leads')
+                ->selectRaw($this->sumInIdsSql($cancelledIds).' as cancelled_leads')
+                ->selectRaw($this->sumInIdsSql($this->statusIds('survey')).' as pending_surveys')
+                ->selectRaw(
+                    'SUM(CASE WHEN consultation_date BETWEEN ? AND ? THEN 1 ELSE 0 END) as completed_this_month',
+                    [$monthStart, $monthEnd]
+                )
+                ->first();
+
+            $totalLeads = (int) ($stats?->total_leads ?? 0);
+            $totalDeals = (int) ($stats?->total_deals ?? 0);
             $conversionRate = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
 
             return [
                 'stats' => [
                     'total_leads' => $totalLeads,
-                    'pending_leads' => $pendingIds
-                        ? Consultation::where('account_id', $accountId)->whereIn('status_category_id', $pendingIds)->count()
-                        : 0,
-                    'completed_this_month' => Consultation::where('account_id', $accountId)
-                        ->whereBetween('consultation_date', [now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString()])
-                        ->count(),
-                    'cancelled_leads' => $cancelledIds
-                        ? Consultation::where('account_id', $accountId)->whereIn('status_category_id', $cancelledIds)->count()
-                        : 0,
+                    'pending_leads' => (int) ($stats?->pending_leads ?? 0),
+                    'completed_this_month' => (int) ($stats?->completed_this_month ?? 0),
+                    'cancelled_leads' => (int) ($stats?->cancelled_leads ?? 0),
                     'conversion_rate' => $conversionRate,
-                    'pending_surveys' => $this->countRequestSurveys($accountId),
+                    'pending_surveys' => (int) ($stats?->pending_surveys ?? 0),
                 ],
                 'recent_consultations' => $this->getRecentConsultations($accountId),
                 'upcoming' => $this->getUpcoming($accountId),
-                'status_distribution' => StatusCategory::withCount(['consultations' => fn($q) => $q->where('account_id', $accountId)])
+                'status_distribution' => StatusCategory::withCount(['consultations' => fn ($q) => $q->where('account_id', $accountId)])
                     ->orderBy('sort_order')->get(),
-                'needs_distribution' => NeedsCategory::withCount(['consultations' => fn($q) => $q->where('account_id', $accountId)])
+                'needs_distribution' => NeedsCategory::withCount(['consultations' => fn ($q) => $q->where('account_id', $accountId)])
                     ->having('consultations_count', '>', 0)
                     ->orderByDesc('consultations_count')->get(),
-                'account' => $user->account,
+                'account' => $user->loadMissing('account')->account,
             ];
         });
     }
 
     private function buildOverviewStats(): array
     {
-        $totalLeads = Consultation::count();
         $dealIds = $this->statusIds('deal');
-        $totalDeals = $dealIds ? Consultation::whereIn('status_category_id', $dealIds)->count() : 0;
-        $avgConversion = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
-
         $now = Carbon::now();
-        $thisMonth = Consultation::whereBetween('consultation_date', [
-            $now->copy()->startOfMonth()->toDateString(),
-            $now->copy()->endOfMonth()->toDateString(),
-        ])->count();
-
         $prev = $now->copy()->subMonth();
-        $lastMonth = Consultation::whereBetween('consultation_date', [
-            $prev->copy()->startOfMonth()->toDateString(),
-            $prev->copy()->endOfMonth()->toDateString(),
-        ])->count();
+        $summary = Consultation::query()
+            ->selectRaw('COUNT(*) as total_leads')
+            ->selectRaw($this->sumInIdsSql($dealIds).' as total_deals')
+            ->selectRaw($this->sumInIdsSql($this->statusIds('pending')).' as pending_leads')
+            ->selectRaw($this->sumInIdsSql($this->statusIds('cancelled')).' as cancelled_leads')
+            ->selectRaw($this->sumInIdsSql($this->statusIds('survey')).' as total_request_surveys')
+            ->selectRaw(
+                'SUM(CASE WHEN consultation_date BETWEEN ? AND ? THEN 1 ELSE 0 END) as this_month',
+                [$now->copy()->startOfMonth()->toDateString(), $now->copy()->endOfMonth()->toDateString()]
+            )
+            ->selectRaw(
+                'SUM(CASE WHEN consultation_date BETWEEN ? AND ? THEN 1 ELSE 0 END) as last_month',
+                [$prev->copy()->startOfMonth()->toDateString(), $prev->copy()->endOfMonth()->toDateString()]
+            )
+            ->first();
+
+        $totalLeads = (int) ($summary?->total_leads ?? 0);
+        $totalDeals = (int) ($summary?->total_deals ?? 0);
+        $thisMonth = (int) ($summary?->this_month ?? 0);
+        $lastMonth = (int) ($summary?->last_month ?? 0);
+        $avgConversion = $totalLeads > 0 ? round(($totalDeals / $totalLeads) * 100, 1) : 0;
 
         $growthPercent = $lastMonth > 0
             ? max(-100, min(round((($thisMonth - $lastMonth) / $lastMonth) * 100, 1), 100))
@@ -117,14 +131,14 @@ class DashboardService
 
         return [
             'total_leads' => $totalLeads,
-            'pending_leads' => ($ids = $this->statusIds('pending')) ? Consultation::whereIn('status_category_id', $ids)->count() : 0,
+            'pending_leads' => (int) ($summary?->pending_leads ?? 0),
             'completed_this_month' => $thisMonth,
-            'cancelled_leads' => ($ids = $this->statusIds('cancelled')) ? Consultation::whereIn('status_category_id', $ids)->count() : 0,
+            'cancelled_leads' => (int) ($summary?->cancelled_leads ?? 0),
             'total_accounts' => Account::count(),
             'active_accounts' => Account::has('admins')->count(),
             'avg_conversion' => $avgConversion,
             'growth_percent' => $growthPercent,
-            'total_request_surveys' => ($surveyIds = $this->statusIds('survey')) ? Consultation::whereIn('status_category_id', $surveyIds)->count() : 0,
+            'total_request_surveys' => (int) ($summary?->total_request_surveys ?? 0),
         ];
     }
 
@@ -177,10 +191,12 @@ class DashboardService
     private function findTopAdmin(): ?array
     {
         $dealIds = $this->statusIds('deal');
-        if (!$dealIds) return null;
+        if (! $dealIds) {
+            return null;
+        }
 
         $topAdmin = User::where('role', 'admin')
-            ->withCount(['consultations as deal_count' => fn($q) => $q->whereIn('status_category_id', $dealIds)])
+            ->withCount(['consultations as deal_count' => fn ($q) => $q->whereIn('status_category_id', $dealIds)])
             ->orderByDesc('deal_count')->first();
 
         return ($topAdmin && $topAdmin->deal_count > 0)
@@ -194,7 +210,7 @@ class DashboardService
         $query = Account::withCount(['consultations']);
 
         if ($dealIds) {
-            $query->withCount(['consultations as deals_count' => fn($q) => $q->whereIn('status_category_id', $dealIds)]);
+            $query->withCount(['consultations as deals_count' => fn ($q) => $q->whereIn('status_category_id', $dealIds)]);
         }
 
         return $query->with(['admins:id,name,account_id'])
@@ -218,7 +234,7 @@ class DashboardService
         $todayStr = Carbon::today()->format('Y-m-d');
 
         return User::where('role', 'admin')
-            ->with(['account:id,name', 'reportAttendances' => fn($q) => $q->where('report_date', $todayStr)])
+            ->with(['account:id,name', 'reportAttendances' => fn ($q) => $q->where('report_date', $todayStr)])
             ->get()
             ->map(fn ($admin) => [
                 'id' => $admin->id,
@@ -235,12 +251,25 @@ class DashboardService
     {
         $surveyIds = $this->statusIds('survey');
 
-        if (! $surveyIds) return 0;
+        if (! $surveyIds) {
+            return 0;
+        }
 
         return Consultation::query()
             ->where('account_id', $accountId)
             ->whereIn('status_category_id', $surveyIds)
             ->count();
+    }
+
+    private function sumInIdsSql(array $ids, string $column = 'status_category_id'): string
+    {
+        if ($ids === []) {
+            return '0';
+        }
+
+        $list = implode(',', array_map('intval', $ids));
+
+        return "SUM(CASE WHEN {$column} IN ({$list}) THEN 1 ELSE 0 END)";
     }
 
     /**
@@ -256,7 +285,7 @@ class DashboardService
 
     public function invalidateCache(User $user): void
     {
-        Cache::forget('dashboard:super_admin:' . $user->id);
+        Cache::forget('dashboard:super_admin:'.$user->id);
         if ($user->account_id) {
             Cache::forget("dashboard:admin:{$user->account_id}");
         }

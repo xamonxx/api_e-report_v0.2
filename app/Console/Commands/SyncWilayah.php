@@ -45,7 +45,7 @@ class SyncWilayah extends Command
 
         // 1. Fetch Provinces
         $this->info('Mengunduh data Provinsi...');
-        $provincesResponse = Http::withoutVerifying()->get('https://raw.githubusercontent.com/emsifa/api-wilayah-indonesia/master/data/provinces.csv');
+        $provincesResponse = Http::timeout(30)->get('https://raw.githubusercontent.com/emsifa/api-wilayah-indonesia/master/data/provinces.csv');
         if (!$provincesResponse->successful()) {
             $this->error('Gagal mengunduh data Provinsi.');
             return 1;
@@ -84,7 +84,7 @@ class SyncWilayah extends Command
 
         // 2. Fetch Regencies/Cities
         $this->info('Mengunduh data Kabupaten/Kota...');
-        $regenciesResponse = Http::withoutVerifying()->get('https://raw.githubusercontent.com/emsifa/api-wilayah-indonesia/master/data/regencies.csv');
+        $regenciesResponse = Http::timeout(30)->get('https://raw.githubusercontent.com/emsifa/api-wilayah-indonesia/master/data/regencies.csv');
         if (!$regenciesResponse->successful()) {
             $this->error('Gagal mengunduh data Kabupaten/Kota.');
             return 1;
@@ -127,7 +127,7 @@ class SyncWilayah extends Command
 
         // 3. Fetch Districts/Kecamatan
         $this->info('Mengunduh data Kecamatan...');
-        $districtsResponse = Http::withoutVerifying()->get('https://raw.githubusercontent.com/emsifa/api-wilayah-indonesia/master/data/districts.csv');
+        $districtsResponse = Http::timeout(30)->get('https://raw.githubusercontent.com/emsifa/api-wilayah-indonesia/master/data/districts.csv');
         if (!$districtsResponse->successful()) {
             $this->error('Gagal mengunduh data Kecamatan.');
             return 1;

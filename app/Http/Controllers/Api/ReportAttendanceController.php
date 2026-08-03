@@ -4,17 +4,22 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Models\AttendanceNotification;
 use App\Models\ReportAttendance;
 use App\Models\User;
+use App\Services\NotificationSummaryService;
 use App\Services\Reports\AdminReportAttendanceExcelExporter;
 use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
+use App\Services\WebPushService;
 use App\Support\AccountGroup;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 class ReportAttendanceController extends Controller
 {
@@ -47,8 +52,12 @@ class ReportAttendanceController extends Controller
             return $this->recapIndex($request, $user, $selectedStatus);
         }
 
-        $dateParam = $request->get('date', Carbon::today()->format('Y-m-d'));
-        $date = Carbon::parse($dateParam);
+        $validatedDate = $request->validate([
+            'date' => ['sometimes', 'date_format:Y-m-d'],
+        ]);
+        $date = isset($validatedDate['date'])
+            ? Carbon::createFromFormat('Y-m-d', $validatedDate['date'])->startOfDay()
+            : Carbon::today();
 
         $dateStr = $date->format('Y-m-d');
 
@@ -196,7 +205,11 @@ class ReportAttendanceController extends Controller
     /**
      * POST /api/v1/report-attendances (Admin Only)
      */
-    public function store(Request $request): JsonResponse
+    public function store(
+        Request $request,
+        NotificationSummaryService $notificationSummaryService,
+        WebPushService $webPush
+    ): JsonResponse
     {
         $user = auth()->user();
         if (!$user->isAdmin()) {
@@ -225,6 +238,24 @@ class ReportAttendanceController extends Controller
             return response()->json([
                 'message' => 'Anda sudah melakukan absensi hari ini.',
             ], 422);
+        }
+
+        $attendance = ReportAttendance::query()
+            ->with(['user:id,name,account_id', 'account:id,name'])
+            ->where('user_id', $user->id)
+            ->where('account_id', $user->account_id)
+            ->where('report_date', $today->toDateString())
+            ->first();
+
+        if ($attendance) {
+            try {
+                $this->notifySuperAdminsForAttendance($attendance, $notificationSummaryService, $webPush);
+            } catch (Throwable $e) {
+                Log::error('Attendance notification failed: '.$e->getMessage(), [
+                    'attendance_id' => $attendance->id,
+                    'admin_id' => $user->id,
+                ]);
+            }
         }
 
         return response()->json([
@@ -346,5 +377,66 @@ class ReportAttendanceController extends Controller
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             'Cache-Control' => 'max-age=0',
         ]);
+    }
+
+    private function notifySuperAdminsForAttendance(
+        ReportAttendance $attendance,
+        NotificationSummaryService $notificationSummaryService,
+        WebPushService $webPush
+    ): void {
+        $superAdminIds = User::cachedSuperAdminIds();
+        if (empty($superAdminIds)) {
+            return;
+        }
+
+        $categoryLabel = $this->reportCategoryLabel((string) $attendance->report_category);
+        $adminName = $attendance->user?->name ?? 'Admin';
+        $accountName = $attendance->account?->name;
+        $dateLabel = $attendance->report_date?->translatedFormat('d M Y') ?? Carbon::today()->translatedFormat('d M Y');
+        $title = 'Absensi admin masuk';
+        $message = trim(sprintf(
+            '%s mengirim absensi %s%s untuk %s.',
+            $adminName,
+            $categoryLabel,
+            $accountName ? " - {$accountName}" : '',
+            $dateLabel
+        ));
+
+        foreach ($superAdminIds as $superAdminId) {
+            AttendanceNotification::query()->firstOrCreate(
+                [
+                    'user_id' => $superAdminId,
+                    'report_attendance_id' => $attendance->id,
+                ],
+                [
+                    'title' => $title,
+                    'message' => $message,
+                    'admin_name' => $adminName,
+                    'account_name' => $accountName,
+                    'report_date' => $attendance->report_date?->toDateString() ?? Carbon::today()->toDateString(),
+                    'report_category' => (string) $attendance->report_category,
+                ]
+            );
+
+            $notificationSummaryService->forgetForUser((int) $superAdminId);
+        }
+
+        $webPush->sendToUsers($superAdminIds, [
+            'title' => $title,
+            'body' => $message,
+            'url' => '/report-attendances',
+            'tag' => 'attendance-'.$attendance->id,
+            'type' => 'attendance',
+        ]);
+    }
+
+    private function reportCategoryLabel(string $category): string
+    {
+        return match ($category) {
+            'ada_wa' => 'Ada WA',
+            'nol_wa' => '0 WA',
+            'libur_susulan' => 'Libur Susulan',
+            default => 'Absensi',
+        };
     }
 }

@@ -21,7 +21,7 @@ class SurveyPolicy
     }
 
     /**
-     * Melihat daftar survey (/surveys): hanya tim survey pusat.
+     * Melihat daftar survey (/surveys): tim survey pusat dan admin terbatas.
      */
     public function viewAny(User $user): bool
     {
@@ -42,7 +42,7 @@ class SurveyPolicy
      * Melihat satu survey:
      * - manager surveyor: semua.
      * - surveyor: hanya miliknya.
-     * - admin: hanya survey lead di akunnya (untuk kartu di detail lead).
+     * - admin: hanya survey yang dia ajukan sendiri di akunnya.
      */
     public function view(User $user, Survey $survey): bool
     {
@@ -55,7 +55,8 @@ class SurveyPolicy
         }
 
         if ($user->isAdmin()) {
-            return (int) $survey->account_id === (int) $user->account_id;
+            return (int) $survey->account_id === (int) $user->account_id
+                && (int) $survey->requested_by === (int) $user->id;
         }
 
         return false;
@@ -75,7 +76,9 @@ class SurveyPolicy
      */
     public function reschedule(User $user, Survey $survey): bool
     {
-        return $user->isAdmin() && (int) $survey->account_id === (int) $user->account_id;
+        return $user->isAdmin()
+            && (int) $survey->account_id === (int) $user->account_id
+            && (int) $survey->requested_by === (int) $user->id;
     }
 
     /**
@@ -84,7 +87,9 @@ class SurveyPolicy
      */
     public function updateMaps(User $user, Survey $survey): bool
     {
-        return $user->isAdmin() && (int) $survey->account_id === (int) $user->account_id;
+        return $user->isAdmin()
+            && (int) $survey->account_id === (int) $user->account_id
+            && (int) $survey->requested_by === (int) $user->id;
     }
 
     /** Mengubah jadwal final atau surveyor: manager surveyor. */
@@ -114,10 +119,22 @@ class SurveyPolicy
     }
 
     /**
-     * Membatalkan survey: manager surveyor.
+     * Membatalkan survey:
+     * - manager surveyor: semua survey operasional.
+     * - admin: survey yang dia ajukan sendiri di akun/cabangnya.
+     * - surveyor: survey yang ditugaskan kepadanya.
      */
     public function cancel(User $user, Survey $survey): bool
     {
-        return $user->isManagerSurveyor();
+        if ($user->isManagerSurveyor()) {
+            return true;
+        }
+
+        if ($user->isAdmin()) {
+            return (int) $survey->account_id === (int) $user->account_id
+                && (int) $survey->requested_by === (int) $user->id;
+        }
+
+        return $user->isSurveyor() && (int) $survey->surveyor_id === (int) $user->id;
     }
 }

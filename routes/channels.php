@@ -25,3 +25,17 @@ Broadcast::channel('survey.surveyor.{surveyorId}', function (User $user, int $su
         || $user->isManagerSurveyor()
         || $user->isSuperAdmin();
 });
+
+// Kanal per akun/cabang agar admin mendapatkan pembaruan survey real-time
+// untuk lead miliknya, termasuk cancel/reschedule dari tim survey.
+Broadcast::channel('survey.account.{accountId}', function (User $user, int $accountId) {
+    return $user->isSuperAdmin()
+        || ($user->isAdmin() && (int) $user->account_id === $accountId);
+});
+
+// Kanal catatan dipisah per pengguna agar payload tidak pernah tersebar ke
+// akun atau role lain, walaupun nama channel berhasil ditebak.
+Broadcast::channel('consultation-notes.user.{userId}', function (User $user, int $userId) {
+    return (int) $user->id === $userId
+        && ($user->isAdmin() || $user->isSuperAdmin());
+});

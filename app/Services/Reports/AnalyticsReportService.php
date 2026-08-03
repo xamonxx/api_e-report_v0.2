@@ -1676,15 +1676,13 @@ class AnalyticsReportService
     /**
      * Kalimat insight untuk kartu "Saran & Insights" di halaman Analitik.
      *
-     * PERINGATAN — nilai `html` di sini dirender frontend memakai
-     * `dangerouslySetInnerHTML` (`analytics-view.tsx`), jadi string ini adalah
-     * HTML sink, bukan teks biasa. Tag `<mark>` memang disengaja; SEMUA nilai
-     * yang disisipkan WAJIB lewat `e()`.
+     * Frontend merender nilai ini sebagai teks dan hanya membuang tag `<mark>`
+     * lama. Nilai dinamis tetap di-escape agar aman bagi konsumen API lain yang
+     * mungkin masih menampilkan markup tersebut.
      *
      * Tanpa itu jadi stored XSS: nama wilayah bisa berisi HTML sembarang karena
      * importer CSV menyimpan sel yang tidak dikenali apa adanya, dan Analitik
-     * dibaca super admin lintas akun — sementara token auth ada di localStorage,
-     * jadi payload yang jalan di sana berarti pengambilalihan akun.
+     * dibaca super admin lintas akun.
      *
      * Kalau butuh menambah kalimat baru, escape argumennya, bukan hasil sprintf,
      * supaya `<mark>` tidak ikut ter-escape.

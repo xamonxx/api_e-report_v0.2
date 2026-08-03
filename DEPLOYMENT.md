@@ -15,7 +15,7 @@ Buat secrets di GitHub repository (`Settings > Secrets and variables > Actions`)
 | `PRODUCTION_APP_URL` | `https://homeputrainterior.com` |
 | `PRODUCTION_DB_DATABASE` | `u603012205_hpi` |
 | `PRODUCTION_DB_USERNAME` | `u603012205_hpi` |
-| `PRODUCTION_DB_PASSWORD` | `Hsn090698@#` |
+| `PRODUCTION_DB_PASSWORD` | Set only in GitHub Secrets; never commit the value |
 
 ### 2. Setup SSH Key di Server
 
@@ -61,7 +61,7 @@ DB_HOST=localhost
 DB_PORT=3306
 DB_DATABASE=u603012205_hpi
 DB_USERNAME=u603012205_hpi
-DB_PASSWORD=Hsn090698@#
+DB_PASSWORD=SET_ON_SERVER_ONLY
 
 CACHE_DRIVER=file
 SESSION_DRIVER=file

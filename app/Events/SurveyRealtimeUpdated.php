@@ -9,11 +9,11 @@ use App\Enums\UserRole;
 use App\Services\NotificationSummaryService;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class SurveyRealtimeUpdated implements ShouldBroadcast
+class SurveyRealtimeUpdated implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
@@ -50,10 +50,10 @@ class SurveyRealtimeUpdated implements ShouldBroadcast
             'request_created', 'started' => $managers(),
             'scheduled' => [$survey->surveyor_id],
             'completed' => array_merge(
-                [$survey->requested_by, $survey->assigned_by],
+                [$survey->requested_by, $survey->assigned_by, $survey->surveyor_id],
                 $managers(),
             ),
-            'cancelled' => [$survey->surveyor_id, $survey->requested_by],
+            'cancelled' => array_merge([$survey->surveyor_id, $survey->requested_by], $managers()),
             'rescheduled_by_admin' => $managers(),
             'rescheduled_by_manager' => [$survey->surveyor_id],
             'unassigned' => $managers(),
@@ -107,6 +107,9 @@ class SurveyRealtimeUpdated implements ShouldBroadcast
         // Channel privat: pesan memuat nama klien, wilayah, dan jadwal, jadi
         // harus lewat otorisasi routes/channels.php.
         $channels = [new PrivateChannel('survey.managers')];
+        if ($this->survey->account_id) {
+            $channels[] = new PrivateChannel('survey.account.' . $this->survey->account_id);
+        }
         if ($this->survey->surveyor_id && $this->action !== 'rescheduled_by_admin') {
             $channels[] = new PrivateChannel('survey.surveyor.' . $this->survey->surveyor_id);
         }

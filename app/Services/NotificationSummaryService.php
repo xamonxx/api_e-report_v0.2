@@ -4,10 +4,12 @@ namespace App\Services;
 
 use App\Models\Consultation;
 use App\Models\ConsultationNote;
+use App\Models\AttendanceNotification;
 use App\Models\Reminder;
 use App\Models\SurveyNotification;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 
 class NotificationSummaryService
@@ -40,11 +42,8 @@ class NotificationSummaryService
     {
         $counts = $this->buildCounts($user);
 
-        $unreadNotes = ConsultationNote::query()
+        $unreadNotes = $this->unreadNotesQuery($user)
             ->with(['user:id,name', 'consultation:id,client_name'])
-            ->where('is_read', false)
-            ->where('user_id', '!=', $user->id)
-            ->whereHas('consultation', fn ($query) => $query->forUser($user))
             ->latest()
             ->take(5)
             ->get();
@@ -66,11 +65,7 @@ class NotificationSummaryService
 
     private function buildCounts(User $user): array
     {
-        $unreadNotesCount = ConsultationNote::query()
-            ->where('is_read', false)
-            ->where('user_id', '!=', $user->id)
-            ->whereHas('consultation', fn ($query) => $query->forUser($user))
-            ->count();
+        $unreadNotesCount = $this->unreadNotesQuery($user)->count();
 
         $upcomingRemindersCount = Reminder::query()
             ->forUser($user)
@@ -86,6 +81,13 @@ class NotificationSummaryService
             ->whereNull('read_at')
             ->count();
 
+        $unreadAttendancesCount = $user->isSuperAdmin()
+            ? AttendanceNotification::query()
+                ->where('user_id', $user->id)
+                ->whereNull('read_at')
+                ->count()
+            : 0;
+
         // Lead yang sudah masuk tahap survey tapi belum pernah diajukan.
         // Hanya relevan untuk admin/super admin - surveyor tidak mengajukan.
         $pendingSurveyRequests = ($user->isAdmin() || $user->isSuperAdmin())
@@ -96,18 +98,42 @@ class NotificationSummaryService
             'unreadNotesCount' => $unreadNotesCount,
             'upcomingRemindersCount' => $upcomingRemindersCount,
             'unreadSurveysCount' => $unreadSurveysCount,
+            'unreadAttendancesCount' => $unreadAttendancesCount,
             'pendingSurveyRequests' => $pendingSurveyRequests,
-            'initialTotalAlerts' => $unreadNotesCount + $upcomingRemindersCount + $unreadSurveysCount,
+            'initialTotalAlerts' => $unreadNotesCount + $upcomingRemindersCount + $unreadSurveysCount + $unreadAttendancesCount,
         ];
+    }
+
+    private function unreadNotesQuery(User $user): Builder
+    {
+        $query = ConsultationNote::query()
+            ->where('is_read', false)
+            ->where('user_id', '!=', $user->id);
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isAdmin()) {
+            return $query->whereHas(
+                'consultation',
+                fn (Builder $consultationQuery) => $consultationQuery
+                    ->where('account_id', $user->account_id)
+            );
+        }
+
+        // Role lain tidak memiliki percakapan konsultasi dan tidak boleh
+        // mengetahui jumlah, pengirim, maupun isi catatan.
+        return $query->whereRaw('1 = 0');
     }
 
     private function detailCacheKey(int $userId): string
     {
-        return "api_notif:detail:{$userId}";
+        return "api_notif:v2:detail:{$userId}";
     }
 
     private function countsCacheKey(int $userId): string
     {
-        return "api_notif:counts:{$userId}";
+        return "api_notif:v2:counts:{$userId}";
     }
 }

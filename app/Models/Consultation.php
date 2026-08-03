@@ -3,21 +3,22 @@
 namespace App\Models;
 
 use App\Support\ConsultationStatusGroups;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Support\PhoneNumber;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Carbon\Carbon;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class Consultation extends Model
 {
-    use HasFactory, SoftDeletes, Auditable;
+    use Auditable, HasFactory, SoftDeletes;
 
     const PLACEHOLDER_NAME_PREFIX = 'Tidak ada nama';
 
@@ -44,6 +45,19 @@ class Consultation extends Model
         return [
             'consultation_date' => 'date',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (Consultation $consultation) {
+            if (! $consultation->exists || $consultation->isDirty('phone')) {
+                $consultation->phone_normalized = static::normalizeLeadPhone($consultation->phone);
+            }
+
+            if (! $consultation->exists || $consultation->isDirty('emergency_phone')) {
+                $consultation->emergency_phone_normalized = static::normalizeLeadPhone($consultation->emergency_phone);
+            }
+        });
     }
 
     public function account()
@@ -153,7 +167,7 @@ class Consultation extends Model
             return collect([$this->needsCategory]);
         }
 
-        if (!static::hasNeedsCategoryPivot()) {
+        if (! static::hasNeedsCategoryPivot()) {
             return $this->needsCategory ? collect([$this->needsCategory]) : collect();
         }
 
@@ -191,7 +205,7 @@ class Consultation extends Model
      */
     public static function normalizeLeadPhone(?string $value): string
     {
-        return \App\Support\PhoneNumber::key($value);
+        return PhoneNumber::key($value);
     }
 
     public static function normalizeLeadCategoryIds(mixed $value): array
@@ -213,14 +227,14 @@ class Consultation extends Model
     public static function isPlaceholderClientName(?string $name): bool
     {
         return (bool) preg_match(
-            '/^' . preg_quote(static::PLACEHOLDER_NAME_PREFIX, '/') . '(\s+\d+)?$/iu',
+            '/^'.preg_quote(static::PLACEHOLDER_NAME_PREFIX, '/').'(\s+\d+)?$/iu',
             trim((string) $name)
         );
     }
 
     public static function buildLeadPhoneKey(int|string|null $accountId, ?string $phone): string
     {
-        return (int) ($accountId ?? 0) . '|' . static::normalizeLeadPhone($phone);
+        return (int) ($accountId ?? 0).'|'.static::normalizeLeadPhone($phone);
     }
 
     public static function buildLeadProfileKey(array $attributes): string
@@ -356,18 +370,18 @@ class Consultation extends Model
     protected static function applyNormalizedPhoneConstraint(Builder $query, ?string $phone): void
     {
         $normalizedPhone = static::normalizeLeadPhone($phone);
-        $expression = static::normalizedPhoneSqlExpression('phone');
 
         if ($normalizedPhone === '') {
-            $query->where(function (Builder $innerQuery) use ($expression) {
+            $query->where(function (Builder $innerQuery) {
                 $innerQuery->whereNull('phone')
-                    ->orWhereRaw("{$expression} = ''");
+                    ->orWhereNull('phone_normalized')
+                    ->orWhere('phone_normalized', '');
             });
 
             return;
         }
 
-        $query->whereRaw("{$expression} = ?", [$normalizedPhone]);
+        $query->where('phone_normalized', $normalizedPhone);
     }
 
     protected static function normalizedPhoneSqlExpression(string $column): string
@@ -380,7 +394,7 @@ class Consultation extends Model
         $normalizedIds = static::normalizeLeadCategoryIds($categoryIds);
         $idsCount = count($normalizedIds);
 
-        if (!static::hasNeedsCategoryPivot()) {
+        if (! static::hasNeedsCategoryPivot()) {
             if ($idsCount === 0) {
                 $query->where(function (Builder $innerQuery) {
                     $innerQuery->whereNull('needs_category_id')
@@ -485,7 +499,7 @@ class Consultation extends Model
                         ->lockForUpdate()
                         ->first();
 
-                    if (!$sequence) {
+                    if (! $sequence) {
                         DB::table('consultation_sequences')->insertOrIgnore([
                             'account_id' => $normalizedAccountId,
                             'year_month' => $yearMonth,
@@ -501,8 +515,8 @@ class Consultation extends Model
                             ->first();
                     }
 
-                    if (!$sequence) {
-                        return $accountPadded . '.' . $yearMonth . '.0001';
+                    if (! $sequence) {
+                        return $accountPadded.'.'.$yearMonth.'.0001';
                     }
 
                     $nextNum = ((int) $sequence->last_number) + 1;
@@ -514,9 +528,9 @@ class Consultation extends Model
                             'updated_at' => $now,
                         ]);
 
-                    return $accountPadded . '.' . $yearMonth . '.' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
+                    return $accountPadded.'.'.$yearMonth.'.'.str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
                 }, 5);
-            } catch (\Illuminate\Database\QueryException $e) {
+            } catch (QueryException $e) {
                 $retryCount++;
                 if ($retryCount >= $maxRetries) {
                     break;
@@ -525,6 +539,6 @@ class Consultation extends Model
             }
         }
 
-        return $accountPadded . '.' . $yearMonth . '.' . str_pad((string) rand(1, 9999), 4, '0', STR_PAD_LEFT);
+        return $accountPadded.'.'.$yearMonth.'.'.str_pad((string) rand(1, 9999), 4, '0', STR_PAD_LEFT);
     }
 }

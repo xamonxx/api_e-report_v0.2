@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PushSubscription;
+use App\Support\PushEndpoint;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class PushSubscriptionController extends Controller
 {
@@ -27,13 +29,22 @@ class PushSubscriptionController extends Controller
     public function subscribe(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'endpoint' => ['required', 'string', 'max:500'],
-            'keys.p256dh' => ['required', 'string'],
-            'keys.auth' => ['required', 'string'],
-            'contentEncoding' => ['nullable', 'string'],
+            'endpoint' => [
+                'required',
+                'string',
+                'max:500',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! PushEndpoint::isAllowed((string) $value)) {
+                        $fail('Endpoint push tidak diizinkan.');
+                    }
+                },
+            ],
+            'keys.p256dh' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9_-]+={0,2}$/'],
+            'keys.auth' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9_-]+={0,2}$/'],
+            'contentEncoding' => ['nullable', 'string', Rule::in(['aesgcm', 'aes128gcm'])],
         ]);
 
-        PushSubscription::updateOrCreate(
+        $subscription = PushSubscription::updateOrCreate(
             ['endpoint' => $data['endpoint']],
             [
                 'user_id' => auth()->id(),
@@ -42,6 +53,25 @@ class PushSubscriptionController extends Controller
                 'content_encoding' => $data['contentEncoding'] ?? 'aesgcm',
             ]
         );
+
+        $maxSubscriptions = max(1, (int) config('webpush.max_subscriptions_per_user', 10));
+        $retainedIds = PushSubscription::query()
+            ->where('user_id', auth()->id())
+            ->whereKeyNot($subscription->id)
+            ->latest('updated_at')
+            ->latest('id')
+            ->limit($maxSubscriptions - 1)
+            ->pluck('id');
+
+        $staleSubscriptions = PushSubscription::query()
+            ->where('user_id', auth()->id())
+            ->whereKeyNot($subscription->id);
+
+        if ($retainedIds->isNotEmpty()) {
+            $staleSubscriptions->whereNotIn('id', $retainedIds);
+        }
+
+        $staleSubscriptions->delete();
 
         return response()->json(['message' => 'Notifikasi perangkat diaktifkan.']);
     }

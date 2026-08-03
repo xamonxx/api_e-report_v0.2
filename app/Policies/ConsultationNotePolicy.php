@@ -14,7 +14,7 @@ class ConsultationNotePolicy
      */
     public function before(User $user, string $ability): ?bool
     {
-        if ($user->role === UserRole::SuperAdmin) {
+        if ($user->role === UserRole::SuperAdmin && $ability !== 'update') {
             return true;
         }
 
@@ -28,7 +28,7 @@ class ConsultationNotePolicy
      */
     public function delete(User $user, ConsultationNote $note): bool
     {
-        $consultation = $note->consultation ?? Consultation::find($note->consultation_id);
+        $consultation = Consultation::query()->find($note->consultation_id);
 
         if (!$consultation) {
             return false;
@@ -40,5 +40,26 @@ class ConsultationNotePolicy
 
         // Admin hanya bisa menghapus catatan miliknya sendiri
         return $note->user_id === $user->id;
+    }
+
+    /**
+     * Isi pesan hanya boleh diubah oleh penulis aslinya, termasuk untuk
+     * super admin. Ini menjaga identitas penulis dan histori percakapan.
+     */
+    public function update(User $user, ConsultationNote $note): bool
+    {
+        if ((int) $note->user_id !== (int) $user->id) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        $consultation = Consultation::query()->find($note->consultation_id);
+
+        return $consultation
+            && $user->isAdmin()
+            && (int) $user->account_id === (int) $consultation->account_id;
     }
 }

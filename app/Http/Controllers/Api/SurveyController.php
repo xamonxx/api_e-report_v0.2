@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\SurveyRealtimeUpdated;
 use App\Enums\UserRole;
+use App\Events\SurveyRealtimeUpdated;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SurveyorScheduleRecapRequest;
 use App\Models\Consultation;
@@ -13,14 +13,15 @@ use App\Models\SurveyReschedule;
 use App\Models\User;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\SurveyorScheduleRecapService;
+use App\Services\SurveyorAssignmentSuggestionService;
 use App\Services\WebPushService;
 use App\Support\ConsultationStatusGroups;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
 use Throwable;
 
 class SurveyController extends Controller
@@ -151,7 +152,7 @@ class SurveyController extends Controller
         $this->notifySurvey(
             $survey,
             'request_created',
-            "{$requesterName} mengajukan survey konsumen {$this->surveyClientArea($survey)}" . ($requestedAt ? '. Jadwal diminta: '.$this->fmtDt($requestedAt).'.' : '.')
+            "{$requesterName} mengajukan survey konsumen {$this->surveyClientArea($survey)}".($requestedAt ? '. Jadwal diminta: '.$this->fmtDt($requestedAt).'.' : '.')
         );
 
         return response()->json([
@@ -457,6 +458,7 @@ class SurveyController extends Controller
     /**
      * GET /api/v1/surveys
      * Manager: semua survey (lintas akun). Surveyor: hanya miliknya.
+     * Admin: hanya survey yang dia ajukan sendiri.
      */
     public function index(Request $request): JsonResponse
     {
@@ -471,7 +473,9 @@ class SurveyController extends Controller
                 $query->where('account_id', $user->account_id);
             }
         } elseif ($user->isAdmin()) {
-            $query->where('account_id', $user->account_id);
+            $query
+                ->where('account_id', $user->account_id)
+                ->where('requested_by', $user->id);
         }
 
         // Filters
@@ -486,18 +490,23 @@ class SurveyController extends Controller
         }
         if ($request->filled('search')) {
             $search = trim((string) $request->input('search'));
-            $query->where(function ($query) use ($search) {
+            $normalizedSearch = Consultation::normalizeLeadPhone($search);
+            $query->where(function ($query) use ($search, $normalizedSearch) {
                 $query
                     ->where('requested_item', 'like', "%{$search}%")
                     ->orWhereHas('surveyor', fn ($surveyor) => $surveyor->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('consultation', function ($consultation) use ($search) {
+                    ->orWhereHas('consultation', function ($consultation) use ($search, $normalizedSearch) {
                         $consultation
                             ->where('client_name', 'like', "%{$search}%")
                             ->orWhere('consultation_id', 'like', "%{$search}%")
-                            ->orWhere('phone', 'like', "%{$search}%")
-                            ->orWhere('emergency_phone', 'like', "%{$search}%")
                             ->orWhere('address', 'like', "%{$search}%")
                             ->orWhereHas('account', fn ($account) => $account->where('name', 'like', "%{$search}%"));
+
+                        if ($normalizedSearch !== '') {
+                            $consultation
+                                ->orWhere('phone_normalized', 'like', "%{$normalizedSearch}%")
+                                ->orWhere('emergency_phone_normalized', 'like', "%{$normalizedSearch}%");
+                        }
                     });
             });
         }
@@ -571,12 +580,20 @@ class SurveyController extends Controller
     {
         $this->authorize('viewAvailability', Survey::class);
 
-        $date = $request->validate(['date' => ['required', 'date']])['date'];
+        $validated = $request->validate([
+            'date' => ['required', 'date'],
+            'exclude_survey_id' => ['nullable', 'integer', 'exists:surveys,id'],
+        ]);
+        $date = $validated['date'];
         $surveyors = User::query()
             ->where('role', UserRole::Surveyor->value)
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
         $busy = Survey::query()
+            ->when(
+                isset($validated['exclude_survey_id']),
+                fn ($query) => $query->whereKeyNot((int) $validated['exclude_survey_id'])
+            )
             ->whereDate('scheduled_at', $date)
             ->whereIn('state', [Survey::STATE_SCHEDULED, Survey::STATE_IN_PROGRESS])
             ->get(['surveyor_id', 'scheduled_at']);
@@ -588,8 +605,31 @@ class SurveyController extends Controller
                 'email' => $surveyor->email,
                 'schedule_count' => $busy->where('surveyor_id', $surveyor->id)->count(),
                 'schedules' => $busy->where('surveyor_id', $surveyor->id)
-                    ->pluck('scheduled_at')->values(),
+                    ->pluck('scheduled_at')->unique()->sort()->values(),
             ]),
+        ]);
+    }
+
+    /** Smart assignment ranking for a selected survey/date/time. */
+    public function assignmentSuggestions(
+        Request $request,
+        Survey $survey,
+        SurveyorAssignmentSuggestionService $suggestions
+    ): JsonResponse {
+        $this->authorize('viewAvailability', Survey::class);
+        $this->authorize('view', $survey);
+
+        $validated = $request->validate([
+            'date' => ['required', 'date'],
+            'time' => ['nullable', 'date_format:H:i'],
+            'limit' => ['nullable', 'integer', 'min:2', 'max:10'],
+        ]);
+
+        $time = $validated['time'] ?? '09:00';
+        $targetAt = Carbon::parse("{$validated['date']} {$time}");
+
+        return response()->json([
+            'data' => $suggestions->suggest($survey, $targetAt, (int) ($validated['limit'] ?? 5)),
         ]);
     }
 
@@ -598,8 +638,19 @@ class SurveyController extends Controller
     {
         $this->authorize('view', $survey);
 
+        // Timeline operasional tidak boleh tumbuh menjadi payload tanpa batas.
+        // Ambil 100 aktivitas terbaru, lalu susun kembali secara kronologis.
+        $activities = $survey->activityLogs()
+            ->reorder()
+            ->with('user:id,name,role')
+            ->latest()
+            ->limit(100)
+            ->get()
+            ->sortBy('created_at')
+            ->values();
+
         return response()->json([
-            'data' => $survey->activityLogs()->with('user:id,name,role')->get(),
+            'data' => $activities,
         ]);
     }
 
@@ -912,10 +963,9 @@ class SurveyController extends Controller
     {
         // Cache dashboard super admin di-key per user, jadi menghapus milik
         // pelaku saja membuat super admin lain melihat data basi.
-        User::query()
-            ->where('role', UserRole::SuperAdmin->value)
-            ->pluck('id')
-            ->each(fn ($id) => Cache::forget("dashboard:super_admin:{$id}"));
+        foreach (User::cachedSuperAdminIds() as $id) {
+            Cache::forget("dashboard:super_admin:{$id}");
+        }
 
         foreach (collect($accountIds)->filter(fn ($id) => (int) $id > 0)->unique() as $accountId) {
             Cache::forget("dashboard:admin:{$accountId}");

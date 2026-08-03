@@ -20,15 +20,16 @@ class DatabaseSeeder extends Seeder
         $superAdminEmail = env('SEED_SUPER_ADMIN_EMAIL', 'superadmin@example.test');
         $superAdminName = env('SEED_SUPER_ADMIN_NAME', 'Super Admin');
 
-        User::firstOrCreate(
-            ['email' => $superAdminEmail],
-            [
+        if (! User::where('email', $superAdminEmail)->exists()) {
+            $superAdmin = new User([
                 'name' => $superAdminName,
+                'email' => $superAdminEmail,
                 'password' => $hashedPassword,
-                'role' => UserRole::SuperAdmin,
-                'account_id' => null,
-            ]
-        );
+            ]);
+            $superAdmin->role = UserRole::SuperAdmin;
+            $superAdmin->account_id = null;
+            $superAdmin->save();
+        }
 
         $accounts = [
             ['HOME INTERIOR BANDUNG', 'HASAN', 'hasan@homeinteriorbdg.com'],
@@ -75,15 +76,16 @@ class DatabaseSeeder extends Seeder
                 continue;
             }
 
-            User::firstOrCreate(
-                ['email' => $adminEmail],
-                [
+            if (! User::where('email', $adminEmail)->exists()) {
+                $admin = new User([
                     'name' => $adminName,
+                    'email' => $adminEmail,
                     'password' => $hashedPassword,
-                    'role' => UserRole::Admin,
-                    'account_id' => $account->id,
-                ]
-            );
+                ]);
+                $admin->role = UserRole::Admin;
+                $admin->account_id = $account->id;
+                $admin->save();
+            }
         }
 
         $categoryRenames = [

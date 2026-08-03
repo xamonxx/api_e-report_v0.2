@@ -7,14 +7,21 @@ use App\Models\Consultation;
 use App\Models\ConsultationNote;
 use App\Models\Reminder;
 use App\Models\ReportAttendance;
+use App\Models\Survey;
+use App\Models\SurveyReschedule;
+use App\Models\SurveyStatus;
+use App\Models\User;
 use App\Observers\AuditObserver;
 use App\Policies\ConsultationNotePolicy;
 use App\Policies\ConsultationPolicy;
 use App\Policies\ReminderPolicy;
 use App\Services\NotificationSummaryService;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -27,22 +34,37 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if ($this->app->isProduction() && config('app.debug')) {
+            throw new \LogicException('APP_DEBUG must be false in production.');
+        }
+
         Model::shouldBeStrict(! $this->app->isProduction());
+
+        RateLimiter::for('bug-reports', function (Request $request) {
+            $key = 'bug-report:'.$request->ip();
+
+            return [
+                Limit::perMinute(5)->by($key),
+                Limit::perDay(20)->by($key),
+            ];
+        });
 
         Gate::policy(Consultation::class, ConsultationPolicy::class);
         Gate::policy(ConsultationNote::class, ConsultationNotePolicy::class);
         Gate::policy(Reminder::class, ReminderPolicy::class);
 
         Consultation::observe(AuditObserver::class);
-        \App\Models\Survey::observe(AuditObserver::class);
-        \App\Models\SurveyStatus::observe(AuditObserver::class);
-        \App\Models\SurveyReschedule::observe(AuditObserver::class);
+        Survey::observe(AuditObserver::class);
+        SurveyStatus::observe(AuditObserver::class);
+        SurveyReschedule::observe(AuditObserver::class);
+
+        User::saved(fn () => Cache::forget(User::SUPER_ADMIN_CACHE_KEY));
+        User::deleted(fn () => Cache::forget(User::SUPER_ADMIN_CACHE_KEY));
 
         $clearDashboardCache = function ($model = null) {
             // Clear all super admin dashboard caches (as key includes user ID)
             try {
-                $superAdmins = \App\Models\User::where('role', \App\Enums\UserRole::SuperAdmin)->pluck('id');
-                foreach ($superAdmins as $adminId) {
+                foreach (User::cachedSuperAdminIds() as $adminId) {
                     Cache::forget("dashboard:super_admin:{$adminId}");
                 }
             } catch (\Throwable $e) {
@@ -77,7 +99,7 @@ class AppServiceProvider extends ServiceProvider
             }
 
             $accountId = $consultation->account_id;
-            $users = \App\Models\User::query()
+            $users = User::query()
                 ->where(function ($query) use ($accountId, $ownerUserId) {
                     $query->where('account_id', $accountId)
                         ->orWhere('role', UserRole::SuperAdmin);
@@ -97,7 +119,24 @@ class AppServiceProvider extends ServiceProvider
         };
 
         ConsultationNote::created(function (ConsultationNote $note) use ($forgetNotificationCaches) {
-            $forgetNotificationCaches($note->consultation, $note->user_id);
+            $forgetNotificationCaches(
+                Consultation::query()->find($note->consultation_id),
+                $note->user_id
+            );
+        });
+
+        ConsultationNote::updated(function (ConsultationNote $note) use ($forgetNotificationCaches) {
+            $forgetNotificationCaches(
+                Consultation::query()->find($note->consultation_id),
+                $note->user_id
+            );
+        });
+
+        ConsultationNote::deleted(function (ConsultationNote $note) use ($forgetNotificationCaches) {
+            $forgetNotificationCaches(
+                Consultation::query()->find($note->consultation_id),
+                $note->user_id
+            );
         });
 
         Reminder::created(function (Reminder $reminder) use ($forgetNotificationCaches) {

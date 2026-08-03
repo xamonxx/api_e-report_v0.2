@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\PushSubscription;
+use App\Support\PushEndpoint;
 use Illuminate\Support\Facades\Log;
 use Minishlink\WebPush\Subscription;
 use Minishlink\WebPush\WebPush;
@@ -33,6 +34,15 @@ class WebPushService
         }
 
         $subscriptions = PushSubscription::whereIn('user_id', $userIds)->get();
+        $invalidSubscriptions = $subscriptions->reject(
+            fn (PushSubscription $subscription) => PushEndpoint::isAllowed($subscription->endpoint)
+        );
+
+        if ($invalidSubscriptions->isNotEmpty()) {
+            PushSubscription::query()->whereIn('id', $invalidSubscriptions->pluck('id'))->delete();
+            $subscriptions = $subscriptions->diff($invalidSubscriptions);
+        }
+
         if ($subscriptions->isEmpty()) {
             return;
         }
@@ -68,7 +78,7 @@ class WebPushService
                         PushSubscription::where('endpoint', $report->getEndpoint())->delete();
                     } else {
                         Log::info('WebPush delivery failed', [
-                            'endpoint' => $report->getEndpoint(),
+                            'endpoint_hash' => substr(hash('sha256', $report->getEndpoint()), 0, 16),
                             'reason' => $report->getReason(),
                         ]);
                     }

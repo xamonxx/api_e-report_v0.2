@@ -27,14 +27,21 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.INTERIORCUSTOM_SSH_KEY }}
 
-      - name: Add server to known hosts
+      - name: Configure verified SSH host
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.INTERIORCUSTOM_SSH_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh
+          test -n "$SSH_KNOWN_HOSTS" || { echo "INTERIORCUSTOM_SSH_KNOWN_HOSTS is required"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
           echo "Host ${{ secrets.INTERIORCUSTOM_SSH_HOST }}
             HostName ${{ secrets.INTERIORCUSTOM_SSH_HOST }}
             Port ${{ secrets.INTERIORCUSTOM_SSH_PORT }}
             User ${{ secrets.INTERIORCUSTOM_SSH_USER }}
-            StrictHostKeyChecking no" > ~/.ssh/config
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       - name: Deploy via SSH
         env:
@@ -43,7 +50,7 @@ jobs:
           DB_PASSWORD: ${{ secrets.INTERIORCUSTOM_DB_PASS }}
           APP_URL: ${{ secrets.INTERIORCUSTOM_APP_URL }}
         run: |
-          ssh -o StrictHostKeyChecking=no \
+          ssh -o StrictHostKeyChecking=yes \
             -p ${{ secrets.INTERIORCUSTOM_SSH_PORT }} \
             ${{ secrets.INTERIORCUSTOM_SSH_USER }}@${{ secrets.INTERIORCUSTOM_SSH_HOST }} << 'SSHEOF'
             set -e
@@ -116,7 +123,7 @@ jobs:
 
             echo "=== Deploy Complete ==="
             date
-SSHEOF
+          SSHEOF
 
       - name: Verify deployment
         run: |
