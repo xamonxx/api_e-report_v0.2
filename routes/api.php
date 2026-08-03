@@ -37,7 +37,7 @@ Route::prefix('v1')->group(function () {
     // Bug reports — publicly submittable (reachable from the login screen).
     // Tightly throttled to 5/min per IP to prevent spam / storage-exhaustion abuse.
     Route::post('/bug-reports', [App\Http\Controllers\Api\BugReportController::class, 'store'])
-        ->middleware('throttle:5,1')
+        ->middleware('throttle:bug-reports')
         ->name('api.bug-reports.store');
 
     // ── Authenticated ──────────────────────────────────────────────────────────
@@ -68,6 +68,9 @@ Route::prefix('v1')->group(function () {
             ->name('api.settings.profile');
         Route::post('/settings/theme', [App\Http\Controllers\Api\SettingsController::class, 'updateTheme'])
             ->name('api.settings.theme');
+        Route::post('/settings/avatar', [App\Http\Controllers\Api\SettingsController::class, 'updateAvatar'])
+            ->middleware('throttle:20,1')
+            ->name('api.settings.avatar');
 
         // Audit Logs
         Route::get('/audit-logs', [App\Http\Controllers\Api\AuditLogController::class, 'index'])
@@ -79,6 +82,7 @@ Route::prefix('v1')->group(function () {
 
         // Online Users (realtime presence via last_seen_at polling)
         Route::get('/online-users', [App\Http\Controllers\Api\AuditLogController::class, 'onlineUsers'])
+            ->middleware('role:super_admin')
             ->name('api.online-users');
 
         // Accounts CRUD (Super Admin Only)
@@ -124,6 +128,8 @@ Route::prefix('v1')->group(function () {
             ->name('api.surveys.availability');
         Route::get('/surveys', [SurveyController::class, 'index'])->name('api.surveys.index');
         Route::get('/surveys/{survey}', [SurveyController::class, 'show'])->name('api.surveys.show');
+        Route::get('/surveys/{survey}/assignment-suggestions', [SurveyController::class, 'assignmentSuggestions'])
+            ->name('api.surveys.assignment-suggestions');
         Route::get('/surveys/{survey}/history', [SurveyController::class, 'history'])
             ->name('api.surveys.history');
         Route::patch('/surveys/{survey}/assign', [SurveyController::class, 'assign'])
@@ -161,6 +167,12 @@ Route::prefix('v1')->group(function () {
             // Nested Consultations Notes & Reminders
             Route::post('/consultations/{consultation}/notes', [App\Http\Controllers\Api\ConsultationNoteController::class, 'store'])
                 ->name('api.consultations.notes.store');
+            Route::delete('/consultations/{consultation}/notes/clear', [App\Http\Controllers\Api\ConsultationNoteController::class, 'clear'])
+                ->name('api.consultations.notes.clear');
+            Route::delete('/consultations/{consultation}/notes', [App\Http\Controllers\Api\ConsultationNoteController::class, 'destroySelected'])
+                ->name('api.consultations.notes.destroy-selected');
+            Route::patch('/consultations/{consultation}/notes/{note}', [App\Http\Controllers\Api\ConsultationNoteController::class, 'update'])
+                ->name('api.consultations.notes.update');
             Route::delete('/consultations/{consultation}/notes/{note}', [App\Http\Controllers\Api\ConsultationNoteController::class, 'destroy'])
                 ->name('api.consultations.notes.destroy');
             Route::post('/consultations/{consultation}/reminders', [App\Http\Controllers\Api\ReminderController::class, 'store'])
@@ -170,21 +182,26 @@ Route::prefix('v1')->group(function () {
         });
 
         // Web Push subscriptions (PWA notifications)
-        Route::get('/push/public-key', [App\Http\Controllers\Api\PushSubscriptionController::class, 'publicKey'])
-            ->name('api.push.public-key');
-        Route::post('/push/subscribe', [App\Http\Controllers\Api\PushSubscriptionController::class, 'subscribe'])
-            ->name('api.push.subscribe');
-        Route::post('/push/unsubscribe', [App\Http\Controllers\Api\PushSubscriptionController::class, 'unsubscribe'])
-            ->name('api.push.unsubscribe');
+        Route::middleware('throttle:20,1')->group(function () {
+            Route::get('/push/public-key', [App\Http\Controllers\Api\PushSubscriptionController::class, 'publicKey'])
+                ->name('api.push.public-key');
+            Route::post('/push/subscribe', [App\Http\Controllers\Api\PushSubscriptionController::class, 'subscribe'])
+                ->name('api.push.subscribe');
+            Route::post('/push/unsubscribe', [App\Http\Controllers\Api\PushSubscriptionController::class, 'unsubscribe'])
+                ->name('api.push.unsubscribe');
+        });
 
         // Debug & Testing — Security: restricted to super_admin only (F-005)
         // These endpoints perform destructive data operations and expose internal metrics.
-        Route::prefix('debug')->middleware('role:super_admin')->group(function () {
-            Route::get('/stats', [DebugController::class, 'stats'])->name('api.debug.stats');
-            Route::post('/generate-dummy', [DebugController::class, 'generateDummy'])->name('api.debug.generate-dummy');
-            Route::post('/clear-dummy', [DebugController::class, 'clearDummy'])->name('api.debug.clear-dummy');
-            Route::post('/clear-logs', [DebugController::class, 'clearLogs'])->name('api.debug.clear-logs');
-        });
+        // SECURITY FIX 2026-07-29: Only register debug routes in local/testing environments
+        if (app()->environment('local', 'testing')) {
+            Route::prefix('debug')->middleware('role:super_admin')->group(function () {
+                Route::get('/stats', [DebugController::class, 'stats'])->name('api.debug.stats');
+                Route::post('/generate-dummy', [DebugController::class, 'generateDummy'])->name('api.debug.generate-dummy');
+                Route::post('/clear-dummy', [DebugController::class, 'clearDummy'])->name('api.debug.clear-dummy');
+                Route::post('/clear-logs', [DebugController::class, 'clearLogs'])->name('api.debug.clear-logs');
+            });
+        }
 
         // Bug Reports — viewing restricted to super_admin (may contain PII in screenshots)
         Route::middleware('role:super_admin')->group(function () {
@@ -246,7 +263,8 @@ Route::prefix('v1')->group(function () {
         });
 
         // Wilayah (geographic hierarchy)
-        Route::prefix('wilayah')->name('api.wilayah.')->group(function () {
+        // SECURITY FIX 2026-07-29: Rate limit to prevent DoS via large payload abuse
+        Route::prefix('wilayah')->middleware('throttle:30,1')->name('api.wilayah.')->group(function () {
             Route::get('/provinces', [WilayahController::class, 'provinces'])->name('provinces');
             Route::get('/cities', [WilayahController::class, 'cities'])->name('cities');
             Route::get('/districts', [WilayahController::class, 'districts'])->name('districts');
@@ -260,6 +278,8 @@ Route::prefix('v1')->group(function () {
             Route::patch('/reminders/{reminder}/read', [NotificationController::class, 'markReminderRead'])->name('reminders.read');
             Route::patch('/surveys/{notification}/read', [NotificationController::class, 'markSurveyRead'])->name('surveys.read');
             Route::delete('/surveys/{notification}', [NotificationController::class, 'deleteSurvey'])->name('surveys.delete');
+            Route::patch('/attendances/{notification}/read', [NotificationController::class, 'markAttendanceRead'])->name('attendances.read');
+            Route::delete('/attendances/{notification}', [NotificationController::class, 'deleteAttendance'])->name('attendances.delete');
             Route::delete('/clear', [NotificationController::class, 'clearAll'])->name('clear');
         });
     });

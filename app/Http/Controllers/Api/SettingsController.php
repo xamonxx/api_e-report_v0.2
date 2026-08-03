@@ -7,6 +7,7 @@ use App\Support\ThemePalette;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class SettingsController extends Controller
@@ -66,6 +67,61 @@ class SettingsController extends Controller
         return response()->json([
             'message' => $message,
             'user' => $user,
+        ]);
+    }
+
+    /**
+     * POST /api/v1/settings/avatar
+     *
+     * Terima file `avatar` (ganti/unggah) ATAU flag `remove_avatar=1` (hapus).
+     * Mengembalikan path mentah — frontend memprefiks base URL + /storage,
+     * konsisten dengan account.logo. SVG sengaja ditolak (risiko stored-XSS).
+     */
+    public function updateAvatar(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+
+        $validated = $request->validate([
+            'avatar' => [
+                'nullable',
+                'image',
+                'mimes:jpeg,png,jpg,gif,webp',
+                'max:2048',
+                'dimensions:max_width=2000,max_height=2000',
+            ],
+            'remove_avatar' => ['nullable', 'boolean'],
+        ], [
+            'avatar.image' => 'Berkas harus berupa gambar.',
+            'avatar.mimes' => 'Format foto harus JPG, PNG, GIF, atau WEBP.',
+            'avatar.max' => 'Ukuran foto maksimal 2 MB.',
+            'avatar.dimensions' => 'Dimensi foto maksimal 2000 x 2000 piksel.',
+        ]);
+
+        if ($request->boolean('remove_avatar')) {
+            if ($user->avatar_path) {
+                Storage::disk('public')->delete($user->avatar_path);
+            }
+            $user->avatar_path = null;
+        } elseif ($request->hasFile('avatar') && $request->file('avatar')->isValid()) {
+            if ($user->avatar_path) {
+                Storage::disk('public')->delete($user->avatar_path);
+            }
+            // Nama file diacak oleh Laravel (hashName) — bukan dari input klien.
+            $user->avatar_path = $request->file('avatar')->store('avatars', 'public');
+        } else {
+            return response()->json([
+                'message' => 'Tidak ada foto untuk diperbarui.',
+                'errors' => ['avatar' => ['Pilih foto terlebih dahulu.']],
+            ], 422);
+        }
+
+        $user->save();
+
+        return response()->json([
+            'message' => $request->boolean('remove_avatar')
+                ? 'Foto profil berhasil dihapus.'
+                : 'Foto profil berhasil diperbarui.',
+            'avatar' => $user->avatar_path,
         ]);
     }
 

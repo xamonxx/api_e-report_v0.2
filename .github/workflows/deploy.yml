@@ -28,16 +28,21 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
 
-      - name: Add known hosts
+      - name: Configure verified SSH host
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
         run: |
-          echo "${{ secrets.HOSTINGER_SSH_HOST }} ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..." >> ~/.ssh/known_hosts
-          mkdir -p ~/.ssh
+          test -n "$SSH_KNOWN_HOSTS" || { echo "HOSTINGER_SSH_KNOWN_HOSTS is required"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
           echo "Host ${{ secrets.HOSTINGER_SSH_HOST }}
             HostName ${{ secrets.HOSTINGER_SSH_HOST }}
             Port ${{ secrets.HOSTINGER_SSH_PORT }}
             User ${{ secrets.HOSTINGER_SSH_USER }}
-            StrictHostKeyChecking no
+            StrictHostKeyChecking yes
             UserKnownHostsFile ~/.ssh/known_hosts" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       - name: Deploy via SSH
         env:
@@ -47,7 +52,7 @@ jobs:
           DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
           APP_URL: ${{ secrets.PRODUCTION_APP_URL }}
         run: |
-          ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_SSH_PORT }} ${{ secrets.HOSTINGER_SSH_USER }}@${{ secrets.HOSTINGER_SSH_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=yes -p ${{ secrets.HOSTINGER_SSH_PORT }} ${{ secrets.HOSTINGER_SSH_USER }}@${{ secrets.HOSTINGER_SSH_HOST }} << 'EOF'
             set -e
             
             echo "=== Starting Deployment ==="
@@ -79,18 +84,17 @@ jobs:
             
             # Install dependencies
             echo "Installing composer dependencies..."
-            composer install --no-dev --optimize-autoloader --no-interaction || true
+            composer install --no-dev --optimize-autoloader --no-interaction
             
             # Install npm and build
             if command -v npm >/dev/null 2>&1; then
               echo "Building frontend..."
-              npm ci --legacy-peer-deps || true
-              npm run build || true
+              npm ci --legacy-peer-deps
             fi
             
             # Laravel commands
             echo "Running Laravel migrations..."
-            php artisan migrate --force --no-interaction || true
+            php artisan migrate --force --no-interaction
             
             echo "Clearing and caching..."
             php artisan config:clear

@@ -91,7 +91,15 @@ class SurveyorScheduleRecapService
             // join, bukan with(): satu baris per survey dengan nama sudah rata.
             // Inner join sekaligus menjamin surveyor_id tidak null.
             ->join('users as surveyors', 'surveyors.id', '=', 'surveys.surveyor_id')
-            ->addSelect(['surveyors.name as surveyor_name'])
+            ->leftJoin('accounts', 'accounts.id', '=', 'surveys.account_id')
+            ->leftJoin('consultations', 'consultations.id', '=', 'surveys.consultation_id')
+            ->addSelect([
+                'surveyors.name as surveyor_name',
+                'accounts.account_group as account_group',
+                'consultations.consultation_id as consumer_id',
+                'consultations.client_name as client_name',
+                'consultations.city as city',
+            ])
             ->whereIn('surveys.state', self::COUNTED_STATES)
             ->whereNotNull('surveys.scheduled_at')
             ->whereBetween('surveys.scheduled_at', [$period['start'], $period['end']])
@@ -118,8 +126,12 @@ class SurveyorScheduleRecapService
 
         return collect(CarbonPeriod::create($period['start']->copy()->startOfDay(), $period['end']))
             ->map(function ($date, int $index) use ($byDate) {
-                $names = $byDate->get($date->format('Y-m-d'), collect())
-                    ->pluck('surveyor_name')
+                $items = $byDate->get($date->format('Y-m-d'), collect())
+                    ->map(fn (Survey $survey) => $this->scheduleItem($survey))
+                    ->values()
+                    ->all();
+                $names = collect($items)
+                    ->pluck('displayLabel')
                     ->all();
 
                 return [
@@ -131,6 +143,7 @@ class SurveyorScheduleRecapService
                     // benar tanpa bergantung locale.
                     'isFirstDay' => $index === 0,
                     'isLastDay' => $index === self::DAYS_IN_WEEK - 1,
+                    'scheduleItems' => $items,
                     'surveyorNames' => $names,
                     'count' => count($names),
                 ];
@@ -150,6 +163,53 @@ class SurveyorScheduleRecapService
                 fn (array $left, array $right) => $right['count'] <=> $left['count'],
                 fn (array $left, array $right) => strcasecmp($left['surveyorName'], $right['surveyorName']),
             ]);
+    }
+
+    private function scheduleItem(Survey $survey): array
+    {
+        $surveyorName = $this->displayPart($survey->surveyor_name ?? null, 'SURVEYOR');
+        $groupLabel = $this->displayPart(AccountGroup::label($survey->account_group ?? null) ?? $survey->account_group ?? null, 'GRUP');
+        $consumerId = $this->displayPart($survey->consumer_id ?? null, '-');
+        $clientName = $this->displayPart($survey->client_name ?? null, 'KONSUMEN');
+        $city = $this->displayPart($survey->city ?? null, 'KOTA/KAB');
+        $timeLabel = $survey->scheduled_at?->format('H:i') ?? '-';
+
+        return [
+            'surveyorName' => $surveyorName,
+            'groupLabel' => $groupLabel,
+            'consumerId' => $consumerId,
+            'clientName' => $clientName,
+            'city' => $city,
+            'timeLabel' => $timeLabel,
+            'displayLabel' => $this->scheduleLabel($surveyorName, $groupLabel, $consumerId, $clientName, $city, $timeLabel),
+        ];
+    }
+
+    private function scheduleLabel(
+        string $surveyorName,
+        string $groupLabel,
+        string $consumerId,
+        string $clientName,
+        string $city,
+        string $timeLabel
+    ): string
+    {
+        return sprintf(
+            'Surveyor: %s | Grup: %s | ID Konsumen: %s | Konsumen: %s | Kota/Kab: %s | Jam: %s',
+            $surveyorName,
+            $groupLabel,
+            $consumerId,
+            $clientName,
+            $city,
+            $timeLabel
+        );
+    }
+
+    private function displayPart(?string $value, string $fallback): string
+    {
+        $clean = trim(preg_replace('/\s+/u', ' ', (string) $value));
+
+        return $clean !== '' ? $clean : $fallback;
     }
 
     /**

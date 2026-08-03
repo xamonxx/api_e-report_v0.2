@@ -120,12 +120,16 @@ class SurveyorScheduleRecapExcelExporter
             $this->put(self::ROW_DATES, $column, $this->cell($day['dateLabel'], 'dateHeader' . $suffix));
 
             for ($slot = 0; $slot < $rowCount; $slot++) {
+                $surveyorName = $day['scheduleItems'][$slot]['surveyorName']
+                    ?? $day['surveyorNames'][$slot]
+                    ?? '';
+
                 // Selalu tulis sel bergaya, walau kosong: melewatkannya membuat
                 // kotak-kotak border grid bolong di hari yang sepi.
                 $this->put(
                     self::ROW_BODY_START + $slot,
                     $column,
-                    $this->cell($day['surveyorNames'][$slot] ?? '', 'nameCell')
+                    $this->cell($surveyorName, 'nameCell')
                 );
             }
         }

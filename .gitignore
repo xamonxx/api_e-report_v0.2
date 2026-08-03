@@ -6,6 +6,9 @@
 .env
 .env.backup
 .env.production
+.env.*
+!.env.example
+!.env.production.example
 
 # Laravel specific
 public/storage
@@ -24,9 +27,7 @@ storage/logs/*.log
 bootstrap/cache/*.php
 
 # Testing
-/tests/
 /testsprite_tests/
-phpunit.xml
 
 # Development tools
 /tools/
@@ -68,6 +69,8 @@ composer.phar
 /storage/app/imports/
 /storage/app/public/accounts/*
 /storage/app/public/bug-reports/*
+/storage/app/public/avatars/*
+/storage/backup_*.sql
 
 # Internal review notes
 /docs/SECURITY-REVIEW-*.md

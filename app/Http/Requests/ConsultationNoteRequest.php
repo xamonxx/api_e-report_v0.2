@@ -13,7 +13,10 @@ class ConsultationNoteRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $body = trim(preg_replace('/\s+/u', ' ', (string) $this->input('body', '')));
+        $body = str_replace(["\r\n", "\r"], "\n", (string) $this->input('body', ''));
+        $body = preg_replace('/[ \t]+/u', ' ', $body);
+        $body = preg_replace('/ *\n */u', "\n", $body);
+        $body = trim(preg_replace('/\n{3,}/u', "\n\n", $body));
 
         $this->merge([
             'body' => $body === '' ? null : $body,

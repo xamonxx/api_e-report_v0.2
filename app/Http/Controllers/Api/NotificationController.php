@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AttendanceNotification;
+use App\Models\Consultation;
 use App\Models\ConsultationNote;
 use App\Models\Reminder;
 use App\Models\SurveyNotification;
@@ -33,6 +35,7 @@ class NotificationController extends Controller
             'unread_notes' => $summary['unreadNotesCount'],
             'upcoming_reminders' => $summary['upcomingRemindersCount'],
             'unread_surveys' => $summary['unreadSurveysCount'],
+            'unread_attendances' => $summary['unreadAttendancesCount'],
             'pending_survey_requests' => $summary['pendingSurveyRequests'],
             'total' => $summary['initialTotalAlerts'],
             'timestamp' => Carbon::now()->toIso8601String(),
@@ -52,18 +55,35 @@ class NotificationController extends Controller
             ->latest()
             ->limit(30)
             ->get();
-        $unreadSurveys = $surveyNotifications->whereNull('read_at')->count();
+        $unreadSurveys = SurveyNotification::query()
+            ->where('user_id', $user->id)
+            ->whereNull('read_at')
+            ->count();
+        $attendanceNotifications = $user->isSuperAdmin()
+            ? AttendanceNotification::query()
+                ->where('user_id', $user->id)
+                ->latest()
+                ->limit(30)
+                ->get()
+            : collect();
+        $unreadAttendances = $user->isSuperAdmin()
+            ? AttendanceNotification::query()
+                ->where('user_id', $user->id)
+                ->whereNull('read_at')
+                ->count()
+            : 0;
 
-        // `unread_surveys` dihitung dari koleksi yang memang sudah diambil di
-        // atas (gratis, dan lebih segar daripada cache). Karena itu total
-        // disusun ulang dari komponennya - `initialTotalAlerts` sudah memuat
-        // hitungan survey versi cache, memakainya akan menghitung dua kali.
+        // List survey sengaja dibatasi 30 item terbaru agar panel tetap ringan,
+        // tetapi angka unread harus menghitung seluruh notifikasi yang belum
+        // dibaca. Kalau dihitung dari koleksi 30 item, badge bisa turun saat
+        // dropdown dibuka walau unread lama masih ada.
         return response()->json([
             'unread_notes' => $summary['unreadNotesCount'],
             'upcoming_reminders' => $summary['upcomingRemindersCount'],
             'unread_surveys' => $unreadSurveys,
+            'unread_attendances' => $unreadAttendances,
             'pending_survey_requests' => $summary['pendingSurveyRequests'],
-            'total' => $summary['unreadNotesCount'] + $summary['upcomingRemindersCount'] + $unreadSurveys,
+            'total' => $summary['unreadNotesCount'] + $summary['upcomingRemindersCount'] + $unreadSurveys + $unreadAttendances,
             'notes' => $summary['unreadNotes']->map(function (ConsultationNote $note) {
                 return [
                     'id' => $note->id,
@@ -119,6 +139,21 @@ class NotificationController extends Controller
                         'surveyor_name' => $survey?->surveyor?->name,
                     ];
                 }),
+            'attendances' => $attendanceNotifications
+                ->map(fn (AttendanceNotification $notification) => [
+                    'id' => $notification->id,
+                    'title' => $notification->title,
+                    'message' => $notification->message,
+                    'is_read' => $notification->read_at !== null,
+                    'created_human' => $notification->created_at?->diffForHumans(),
+                    'admin_name' => $notification->admin_name,
+                    'account_name' => $notification->account_name,
+                    'report_date' => $notification->report_date?->toDateString(),
+                    'report_date_label' => $notification->report_date?->translatedFormat('d M Y'),
+                    'report_category' => $notification->report_category,
+                    'report_category_label' => $this->attendanceCategoryLabel((string) $notification->report_category),
+                    'url' => '/report-attendances',
+                ]),
             'timestamp' => Carbon::now()->toIso8601String(),
         ]);
     }
@@ -128,7 +163,7 @@ class NotificationController extends Controller
         $user = Auth::user();
 
         // Otorisasi via Policy: cek akses terhadap konsultasi terkait
-        $consultation = $note->consultation;
+        $consultation = Consultation::query()->find($note->consultation_id);
         if (!$consultation || Gate::denies('view', $consultation)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
@@ -172,16 +207,47 @@ class NotificationController extends Controller
         return response()->json(['success' => true]);
     }
 
+    public function markAttendanceRead(AttendanceNotification $notification): JsonResponse
+    {
+        $user = Auth::user();
+        abort_unless($user->isSuperAdmin() && $notification->user_id === $user->id, 403);
+        $notification->update(['read_at' => now()]);
+        $this->notificationSummaryService->forgetForUser((int) $user->id);
+
+        return response()->json(['success' => true]);
+    }
+
+    public function deleteAttendance(AttendanceNotification $notification): JsonResponse
+    {
+        $user = Auth::user();
+        abort_unless($user->isSuperAdmin() && $notification->user_id === $user->id, 403);
+        $notification->delete();
+        $this->notificationSummaryService->forgetForUser((int) $user->id);
+
+        return response()->json(['success' => true]);
+    }
+
     public function clearAll(): JsonResponse
     {
         $user = Auth::user();
 
         $cleared = DB::transaction(function () use ($user) {
-            $notes = ConsultationNote::query()
-                ->where('is_read', false)
-                ->where('user_id', '!=', $user->id)
-                ->whereHas('consultation', fn ($query) => $query->forUser($user))
-                ->update(['is_read' => true]);
+            $notes = 0;
+
+            if ($user->isAdmin() || $user->isSuperAdmin()) {
+                $noteQuery = ConsultationNote::query()
+                    ->where('is_read', false)
+                    ->where('user_id', '!=', $user->id);
+
+                if ($user->isAdmin()) {
+                    $noteQuery->whereHas(
+                        'consultation',
+                        fn ($query) => $query->where('account_id', $user->account_id)
+                    );
+                }
+
+                $notes = $noteQuery->update(['is_read' => true]);
+            }
 
             $reminders = Reminder::query()
                 ->forUser($user)
@@ -192,7 +258,11 @@ class NotificationController extends Controller
                 ->where('user_id', $user->id)
                 ->delete();
 
-            return $notes + $reminders + $surveys;
+            $attendances = AttendanceNotification::query()
+                ->where('user_id', $user->id)
+                ->delete();
+
+            return $notes + $reminders + $surveys + $attendances;
         });
 
         $this->notificationSummaryService->forgetForUser((int) $user->id);
@@ -201,5 +271,15 @@ class NotificationController extends Controller
             'success' => true,
             'cleared' => $cleared,
         ]);
+    }
+
+    private function attendanceCategoryLabel(string $category): string
+    {
+        return match ($category) {
+            'ada_wa' => 'Ada WA',
+            'nol_wa' => '0 WA',
+            'libur_susulan' => 'Libur Susulan',
+            default => 'Absensi',
+        };
     }
 }

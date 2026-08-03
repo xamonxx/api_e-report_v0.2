@@ -204,62 +204,97 @@ class LeadsReportService
 
     private function buildSurveyorRows(User $user, array $filters, array $period): Collection
     {
-        $periodLeads = $this->baseLeadQuery($user, $filters, includeDateFilter: false)
-            ->with(['creator:id,name,account_id,role', 'statusCategory:id,name'])
-            ->whereDate('consultation_date', '>=', $period['start']->toDateString())
-            ->whereDate('consultation_date', '<=', $period['end']->toDateString())
-            ->get();
+        $start = $period['start']->copy()->startOfDay();
+        $end = $period['end']->copy()->endOfDay();
 
-        $previousDeals = $this->baseLeadQuery($user, $filters, includeDateFilter: false)
-            ->with(['creator:id,name,account_id,role', 'statusCategory:id,name'])
-            ->whereDate('consultation_date', '<', $period['start']->toDateString())
-            ->get()
-            ->filter(fn (Consultation $lead) => $this->statusBucket($lead->statusCategory?->name) === 'deal');
+        $dealStatusIds = $this->resolveSurveyDealStatusIds();
 
-        $nextDeals = $this->baseLeadQuery($user, $filters, includeDateFilter: false)
-            ->with(['creator:id,name,account_id,role', 'statusCategory:id,name'])
-            ->whereDate('consultation_date', '>', $period['end']->toDateString())
-            ->get()
-            ->filter(fn (Consultation $lead) => $this->statusBucket($lead->statusCategory?->name) === 'deal');
+        // 1. Ambil surveys periode aktif (dijadwalkan di antara start dan end)
+        $activeSurveysQuery = \App\Models\Survey::query()
+            ->whereNotNull('surveyor_id')
+            ->whereBetween('scheduled_at', [$start, $end])
+            ->with(['consultation', 'surveyor:id,name', 'resultStatus']);
 
-        $periodByCreator = $periodLeads->groupBy('created_by');
-        $previousDealsByCreator = $previousDeals->groupBy('created_by');
-        $nextDealsByCreator = $nextDeals->groupBy('created_by');
-        $surveyors = $this->surveyorsForUser($user, $filters, collect([
-            ...$periodByCreator->keys(),
-            ...$previousDealsByCreator->keys(),
-            ...$nextDealsByCreator->keys(),
-        ])->filter()->map(fn ($id) => (int) $id));
+        // Filter user access
+        if ($user->isAdmin()) {
+            $activeSurveysQuery->where('account_id', $user->account_id);
+        } elseif (! empty($filters['account'])) {
+            $activeSurveysQuery->where('account_id', (int) $filters['account']);
+        }
 
-        $rows = $surveyors->map(function (User $surveyor) use ($periodByCreator, $previousDealsByCreator, $nextDealsByCreator) {
-            $items = $periodByCreator->get($surveyor->id, collect());
-            $statusGroups = $items->groupBy(fn (Consultation $lead) => $this->statusBucket($lead->statusCategory?->name));
-            $currentDeals = $statusGroups->get('deal', collect());
+        $activeSurveys = $activeSurveysQuery->get();
+
+        // 2. Ambil surveys periode lalu (sebelum start) yang deals
+        $prevDealsQuery = \App\Models\Survey::query()
+            ->whereNotNull('surveyor_id')
+            ->where('state', \App\Models\Survey::STATE_COMPLETED)
+            ->whereIn('result_status_id', $dealStatusIds->all())
+            ->where('scheduled_at', '<', $start)
+            ->with(['consultation']);
+
+        if ($user->isAdmin()) {
+            $prevDealsQuery->where('account_id', $user->account_id);
+        } elseif (! empty($filters['account'])) {
+            $prevDealsQuery->where('account_id', (int) $filters['account']);
+        }
+        $prevDeals = $prevDealsQuery->get()->groupBy('surveyor_id');
+
+        // 3. Ambil surveys periode depan (sesudah end) yang deals
+        $nextDealsQuery = \App\Models\Survey::query()
+            ->whereNotNull('surveyor_id')
+            ->where('state', \App\Models\Survey::STATE_COMPLETED)
+            ->whereIn('result_status_id', $dealStatusIds->all())
+            ->where('scheduled_at', '>', $end)
+            ->with(['consultation']);
+
+        if ($user->isAdmin()) {
+            $nextDealsQuery->where('account_id', $user->account_id);
+        } elseif (! empty($filters['account'])) {
+            $nextDealsQuery->where('account_id', (int) $filters['account']);
+        }
+        $nextDeals = $nextDealsQuery->get()->groupBy('surveyor_id');
+
+        // Group active surveys by surveyor
+        $surveysBySurveyor = $activeSurveys->groupBy('surveyor_id');
+
+        // Dapatkan semua surveyor rill yang ada penugasan atau history
+        $surveyorIds = collect([
+            ...$surveysBySurveyor->keys(),
+            ...$prevDeals->keys(),
+            ...$nextDeals->keys(),
+        ])->filter()->unique()->values();
+
+        // Ambil info nama surveyor dari database
+        $surveyors = \App\Models\User::whereIn('id', $surveyorIds->all())->orderBy('name')->get();
+
+        $rows = $surveyors->map(function (\App\Models\User $surveyor) use ($surveysBySurveyor, $prevDeals, $nextDeals, $dealStatusIds) {
+            $mySurveys = $surveysBySurveyor->get($surveyor->id, collect());
+
+            // Pengelompokan status survey periode ini
+            $surveyItems = $mySurveys->filter(fn ($s) => $s->state !== \App\Models\Survey::STATE_CANCELLED);
+            $holdItems = $mySurveys->filter(fn ($s) => $s->state === \App\Models\Survey::STATE_COMPLETED
+                && $s->result_status_id && ! $dealStatusIds->contains((int)$s->result_status_id));
+            $cancelItems = $mySurveys->filter(fn ($s) => $s->state === \App\Models\Survey::STATE_CANCELLED);
+            $currentDeals = $mySurveys->filter(fn ($s) => $s->state === \App\Models\Survey::STATE_COMPLETED
+                && $s->result_status_id && $dealStatusIds->contains((int)$s->result_status_id));
 
             return [
                 'surveyor_id' => $surveyor->id,
                 'surveyor_name' => $surveyor->name,
-                'survey' => $this->locationTotals($statusGroups->get('survey', collect())),
-                'hold' => $this->locationTotals($statusGroups->get('hold', collect())),
-                'cancel' => $this->locationTotals($statusGroups->get('cancel', collect())),
-                'deal_survey_current' => $this->locationTotals($currentDeals),
-                'deal_survey_previous' => $this->locationTotals($previousDealsByCreator->get($surveyor->id, collect())),
-                'deal_omset_current' => $this->locationTotals($currentDeals),
-                'deal_omset_next' => $this->locationTotals($nextDealsByCreator->get($surveyor->id, collect())),
+                'survey' => $this->locationTotalsForSurveys($surveyItems),
+                'hold' => $this->locationTotalsForSurveys($holdItems),
+                'cancel' => $this->locationTotalsForSurveys($cancelItems),
+                'deal_survey_current' => $this->locationTotalsForSurveys($currentDeals),
+                'deal_survey_previous' => $this->locationTotalsForSurveys($prevDeals->get($surveyor->id, collect())),
+                'deal_omset_current' => $this->locationTotalsForSurveys($currentDeals),
+                'deal_omset_next' => $this->locationTotalsForSurveys($nextDeals->get($surveyor->id, collect())),
             ];
         });
 
-        if ($periodByCreator->has('')) {
-            $rows->push(array_merge($this->emptySurveyorRow('TANPA SURVEYOR'), [
-                'survey' => $this->locationTotals($periodByCreator->get('', collect())->filter(fn (Consultation $lead) => $this->statusBucket($lead->statusCategory?->name) === 'survey')),
-                'hold' => $this->locationTotals($periodByCreator->get('', collect())->filter(fn (Consultation $lead) => $this->statusBucket($lead->statusCategory?->name) === 'hold')),
-                'cancel' => $this->locationTotals($periodByCreator->get('', collect())->filter(fn (Consultation $lead) => $this->statusBucket($lead->statusCategory?->name) === 'cancel')),
-            ]));
-        }
+        // Urutkan berdasarkan deal count tertinggi untuk memberikan visual ranking! (Rank surveyor based on deal-survey)
+        $rows = $rows->sortByDesc(fn ($r) => $r['deal_survey_current']['total'])->values();
 
-        $rows = $rows->sortBy('surveyor_name')->values();
         $minimumRows = max(150, $rows->count());
-
         while ($rows->count() < $minimumRows) {
             $rows->push($this->emptySurveyorRow(''));
         }
@@ -485,19 +520,18 @@ class LeadsReportService
             return;
         }
 
-        $phoneSearchSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')";
         $phoneSearchTokens = collect([
             Consultation::normalizeLeadPhone($search),
             ltrim(preg_replace('/^(?:62|0)/', '', Consultation::normalizeLeadPhone($search)) ?? '', '0'),
         ])->filter()->unique()->values();
 
-        $query->where(function (Builder $innerQuery) use ($search, $phoneSearchSql, $phoneSearchTokens) {
+        $query->where(function (Builder $innerQuery) use ($search, $phoneSearchTokens) {
             $innerQuery->where('client_name', 'like', "%{$search}%")
                 ->orWhere('phone', 'like', "%{$search}%")
                 ->orWhere('consultation_id', 'like', "%{$search}%");
 
             foreach ($phoneSearchTokens as $token) {
-                $innerQuery->orWhereRaw("{$phoneSearchSql} like ?", ["%{$token}%"]);
+                $innerQuery->orWhere('phone_normalized', 'like', "%{$token}%");
             }
         });
     }
@@ -583,7 +617,7 @@ class LeadsReportService
             return sprintf('%s %s-%s %s', $this->monthName($start), $start->format('d'), $end->format('d'), $start->year);
         }
 
-        return $this->fullDate($start) . ' - ' . $this->fullDate($end);
+        return $this->fullDate($start).' - '.$this->fullDate($end);
     }
 
     private function periodTitle(Carbon $start, Carbon $end): string
@@ -609,5 +643,29 @@ class LeadsReportService
     public function monthName(Carbon $date): string
     {
         return self::MONTH_NAMES[(int) $date->format('n')] ?? $date->format('F');
+    }
+
+    private function resolveSurveyDealStatusIds(): Collection
+    {
+        return \App\Models\SurveyStatus::query()
+            ->get(['id', 'name'])
+            ->filter(fn ($status) => str_contains(strtolower($status->name), 'deal')
+                || str_contains(strtolower($status->name), 'closing')
+                || str_contains(strtolower($status->name), 'selesai'))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+    }
+
+    private function locationTotalsForSurveys(Collection $surveys): array
+    {
+        $dk = $surveys->filter(fn ($s) => $s->consultation && $this->isInsideCityLead($s->consultation))->count();
+        $total = $surveys->count();
+
+        return [
+            'total' => $total,
+            'dk' => $dk,
+            'lk' => max($total - $dk, 0),
+        ];
     }
 }

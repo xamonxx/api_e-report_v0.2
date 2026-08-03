@@ -1,10 +1,14 @@
 <?php
 
+use App\Http\Middleware\PreventBackHistory;
+use App\Http\Middleware\RoleMiddleware;
+use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\UpdateLastSeen;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -24,33 +28,34 @@ return Application::configure(basePath: dirname(__DIR__))
         ['middleware' => ['api', 'auth:sanctum']],
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // $middleware->statefulApi();
+        // First-party SPA authentication uses Laravel's encrypted HttpOnly
+        // session cookie and CSRF protection instead of browser-stored tokens.
+        $middleware->statefulApi();
 
         $middleware->alias([
-            'role' => \App\Http\Middleware\RoleMiddleware::class,
+            'role' => RoleMiddleware::class,
         ]);
 
-        $middleware->api(prepend: [
-            \App\Http\Middleware\QueryTokenToHeader::class,
-        ], append: [
-            \App\Http\Middleware\UpdateLastSeen::class,
+        $middleware->api(append: [
+            UpdateLastSeen::class,
+            SecurityHeaders::class,
         ]);
 
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');
 
         // Security Headers: applied to all web requests
         $middleware->web(append: [
-            \App\Http\Middleware\SecurityHeaders::class,
-            \App\Http\Middleware\PreventBackHistory::class,
-            \App\Http\Middleware\UpdateLastSeen::class,
+            SecurityHeaders::class,
+            PreventBackHistory::class,
+            UpdateLastSeen::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         $exceptions->shouldRenderJsonWhen(fn (Request $request) => $request->is('api/*') || $request->expectsJson());
 
         // Production Error Handling
-        $exceptions->renderable(function (\Throwable $e, $request) {
-            if (($request->is('api/*') || $request->expectsJson()) && !config('app.debug')) {
+        $exceptions->renderable(function (Throwable $e, $request) {
+            if (($request->is('api/*') || $request->expectsJson()) && ! config('app.debug')) {
                 $status = match (true) {
                     $e instanceof AuthenticationException => 401,
                     $e instanceof AuthorizationException => 403,

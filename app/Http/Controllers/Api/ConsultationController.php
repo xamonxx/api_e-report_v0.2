@@ -7,7 +7,6 @@ use App\Http\Requests\ConsultationRequest;
 use App\Models\Account;
 use App\Models\Consultation;
 use App\Models\ConsultationStatusHistory;
-use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Models\Survey;
 use App\Services\ConsultationImportService;
@@ -76,24 +75,21 @@ class ConsultationController extends Controller
         }
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
+            // SECURITY FIX 2026-07-29: Escape LIKE wildcards to prevent wildcard injection
+            $searchEscaped = str_replace(['%', '_'], ['\\%', '\\_'], $search);
             $normalizedSearch = Consultation::normalizeLeadPhone($search);
 
-            $query->where(function ($q) use ($search, $normalizedSearch) {
-                $q->where('client_name', 'like', "%{$search}%")
-                  ->orWhere('consultation_id', 'like', "%{$search}%")
+            $query->where(function ($q) use ($searchEscaped, $normalizedSearch) {
+                $q->where('client_name', 'like', "%{$searchEscaped}%")
+                    ->orWhere('consultation_id', 'like', "%{$searchEscaped}%")
                   // Nama akun/cabang ikut dicari. Aman dari kebocoran lintas
                   // akun karena forUser() di atas sudah membatasi admin ke
                   // akunnya sendiri.
-                  ->orWhereHas('account', fn ($account) => $account->where('name', 'like', "%{$search}%"));
+                    ->orWhereHas('account', fn ($account) => $account->where('name', 'like', "%{$searchEscaped}%"));
 
                 if ($normalizedSearch) {
-                    $q->orWhereRaw(
-                        "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ?",
-                        ["%{$normalizedSearch}%"]
-                    )->orWhereRaw(
-                        "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(emergency_phone, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ?",
-                        ["%{$normalizedSearch}%"]
-                    );
+                    $q->orWhere('phone_normalized', 'like', "%{$normalizedSearch}%")
+                        ->orWhere('emergency_phone_normalized', 'like', "%{$normalizedSearch}%");
                 }
             });
         }
@@ -150,7 +146,7 @@ class ConsultationController extends Controller
                 'timelineNotes.user',
                 'reminders' => function ($query) use ($user) {
                     $query->forUser($user)->with(['user', 'creator']);
-                }
+                },
             ],
             Consultation::productRelations()
         ));
@@ -317,7 +313,7 @@ class ConsultationController extends Controller
 
         return response($xlsxConverter->convert($excelExporter->buildTemplateWorkbook(auth()->user())), 200, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
             'Cache-Control' => 'max-age=0',
         ]);
     }
@@ -432,7 +428,7 @@ class ConsultationController extends Controller
 
     private function flushDashboardCache(array $accountIds = []): void
     {
-        Cache::forget('dashboard:super_admin:' . auth()->id());
+        Cache::forget('dashboard:super_admin:'.auth()->id());
 
         foreach (collect($accountIds)->filter(fn ($id) => (int) $id > 0)->unique() as $accountId) {
             Cache::forget("dashboard:admin:{$accountId}");
