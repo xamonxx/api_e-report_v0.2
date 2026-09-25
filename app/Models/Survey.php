@@ -92,6 +92,38 @@ class Survey extends Model
     }
 
     // Relations
+    public function account()
+    {
+        return $this->belongsTo(Account::class);
+    }
+
+    public function scopeVisibleTo(\Illuminate\Database\Eloquent\Builder $query, User $user): \Illuminate\Database\Eloquent\Builder
+    {
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+        if ($user->isSurveyTeam()) {
+            if (! $user->hasSurveyTeam()) {
+                return $query->whereRaw('1 = 0');
+            }
+            if ($user->isSurveyor()) {
+                // Surveyor pinjaman (GACONG, lihat SurveyController) bisa
+                // ditugaskan ke survey Team F walau timnya sendiri beda -
+                // makanya Team F dibuka lewat kepemilikan (surveyor_id) tanpa
+                // syarat tim. Tim lain (A-E) tetap wajib kecocokan tim DAN
+                // kepemilikan sekaligus, supaya surveyor_id basi lintas-tim
+                // (mis. sisa sebelum reassignment) tetap tidak kelihatan.
+                return $query->where('surveys.surveyor_id', $user->id)
+                    ->whereHas('account', fn ($account) => $account->whereIn('account_group', [$user->survey_team, \App\Support\AccountGroup::TEAM_F]));
+            }
+            return $query->whereHas('account', fn ($account) => $account->where('account_group', $user->survey_team));
+        }
+        if ($user->isAdmin()) {
+            return $query->where('surveys.account_id', $user->account_id)->where('surveys.requested_by', $user->id);
+        }
+        return $query->whereRaw('1 = 0');
+    }
+
     public function consultation()
     {
         return $this->belongsTo(Consultation::class);
@@ -99,17 +131,17 @@ class Survey extends Model
 
     public function surveyor()
     {
-        return $this->belongsTo(User::class, 'surveyor_id');
+        return $this->belongsTo(User::class, 'surveyor_id')->withTrashed();
     }
 
     public function assigner()
     {
-        return $this->belongsTo(User::class, 'assigned_by');
+        return $this->belongsTo(User::class, 'assigned_by')->withTrashed();
     }
 
     public function requester()
     {
-        return $this->belongsTo(User::class, 'requested_by');
+        return $this->belongsTo(User::class, 'requested_by')->withTrashed();
     }
 
     public function resultStatus()

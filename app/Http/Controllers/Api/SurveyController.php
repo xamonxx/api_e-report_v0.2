@@ -13,7 +13,6 @@ use App\Models\SurveyReschedule;
 use App\Models\User;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\SurveyorScheduleRecapService;
-use App\Services\SurveyorAssignmentSuggestionService;
 use App\Services\WebPushService;
 use App\Support\ConsultationStatusGroups;
 use Carbon\Carbon;
@@ -37,7 +36,7 @@ class SurveyController extends Controller
             'consultation.account.admins:id,name,account_id',
             'consultation.needsCategory:id,name',
             'consultation.needsCategories:id,name',
-            'surveyor:id,name',
+            'surveyor:id,name,survey_team',
             'assigner:id,name',
             'requester:id,name',
             'resultStatus:id,name,color,css_class',
@@ -138,6 +137,7 @@ class SurveyController extends Controller
         });
 
         if ($alreadyExisted) {
+            $this->authorize('view', $survey);
             return response()->json([
                 'message' => 'Lead ini sudah memiliki survey aktif.',
                 'data' => $survey->load($this->withRelations()),
@@ -214,6 +214,37 @@ class SurveyController extends Controller
         $current = mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $consultation->statusCategory?->name)));
 
         return $current === mb_strtolower(trim($surveyStatusName));
+    }
+
+    /**
+     * Team F belum punya surveyor sendiri: manager Team F boleh meminjam
+     * surveyor dari tim lain untuk penugasan. Tim A-E tetap wajib satu tim
+     * dengan akun survey - pinjaman hanya berlaku untuk Team F.
+     */
+    private const BORROWABLE_TEAM = 'F';
+
+    private function surveyorEligibleForTeam(?User $surveyor, ?string $accountGroup): bool
+    {
+        if (! $surveyor || $surveyor->role !== UserRole::Surveyor || ! $surveyor->hasSurveyTeam()) {
+            return false;
+        }
+
+        return $surveyor->survey_team === $accountGroup || $accountGroup === self::BORROWABLE_TEAM;
+    }
+
+    /**
+     * Catatan otomatis "GACONG" saat surveyor yang ditugaskan bukan dari tim
+     * akun survey - supaya penugasan pinjaman selalu kelihatan, tidak diam-diam.
+     */
+    private function gacongNote(User $surveyor, ?string $accountGroup, ?string $existingNotes): ?string
+    {
+        if ($accountGroup !== self::BORROWABLE_TEAM || $surveyor->survey_team === $accountGroup) {
+            return $existingNotes;
+        }
+
+        $note = "[GACONG] Surveyor pinjaman dari Team {$surveyor->survey_team} - Team F belum punya surveyor sendiri.";
+
+        return trim(implode("\n", array_filter([$note, $existingNotes])));
     }
 
     /**
@@ -457,7 +488,7 @@ class SurveyController extends Controller
 
     /**
      * GET /api/v1/surveys
-     * Manager: semua survey (lintas akun). Surveyor: hanya miliknya.
+     * Manager: akun dalam timnya. Surveyor: hanya miliknya dalam tim yang sama.
      * Admin: hanya survey yang dia ajukan sendiri.
      */
     public function index(Request $request): JsonResponse
@@ -465,27 +496,16 @@ class SurveyController extends Controller
         $this->authorize('viewAny', Survey::class);
 
         $user = auth()->user();
-        $query = Survey::query()->with($this->withRelations());
-
-        if ($user->isSurveyor()) {
-            $query->where('surveyor_id', $user->id);
-            if ($user->account_id) {
-                $query->where('account_id', $user->account_id);
-            }
-        } elseif ($user->isAdmin()) {
-            $query
-                ->where('account_id', $user->account_id)
-                ->where('requested_by', $user->id);
-        }
+        $query = Survey::query()->visibleTo($user)->with($this->withRelations());
 
         // Filters
         if ($request->filled('state')) {
             $query->where('state', $request->string('state'));
         }
-        if ($request->filled('account') && $user->isManagerSurveyor()) {
+        if ($request->filled('account') && ($user->isManagerSurveyor() || $user->isSuperAdmin())) {
             $query->where('account_id', (int) $request->account);
         }
-        if ($request->filled('surveyor_id') && $user->isManagerSurveyor()) {
+        if ($request->filled('surveyor_id') && ($user->isManagerSurveyor() || $user->isSuperAdmin())) {
             $query->where('surveyor_id', (int) $request->surveyor_id);
         }
         if ($request->filled('search')) {
@@ -585,11 +605,18 @@ class SurveyController extends Controller
             'exclude_survey_id' => ['nullable', 'integer', 'exists:surveys,id'],
         ]);
         $date = $validated['date'];
+        $user = $request->user();
+        if (isset($validated['exclude_survey_id'])) {
+            Survey::query()->visibleTo($user)->findOrFail($validated['exclude_survey_id']);
+        }
         $surveyors = User::query()
             ->where('role', UserRole::Surveyor->value)
+            ->whereIn('survey_team', ['A', 'B', 'C', 'D', 'E', 'F'])
+            ->when(! $user->isSuperAdmin(), fn ($query) => $query->where('survey_team', $user->hasSurveyTeam() ? $user->survey_team : '__none__'))
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
         $busy = Survey::query()
+            ->visibleTo($user)
             ->when(
                 isset($validated['exclude_survey_id']),
                 fn ($query) => $query->whereKeyNot((int) $validated['exclude_survey_id'])
@@ -607,29 +634,6 @@ class SurveyController extends Controller
                 'schedules' => $busy->where('surveyor_id', $surveyor->id)
                     ->pluck('scheduled_at')->unique()->sort()->values(),
             ]),
-        ]);
-    }
-
-    /** Smart assignment ranking for a selected survey/date/time. */
-    public function assignmentSuggestions(
-        Request $request,
-        Survey $survey,
-        SurveyorAssignmentSuggestionService $suggestions
-    ): JsonResponse {
-        $this->authorize('viewAvailability', Survey::class);
-        $this->authorize('view', $survey);
-
-        $validated = $request->validate([
-            'date' => ['required', 'date'],
-            'time' => ['nullable', 'date_format:H:i'],
-            'limit' => ['nullable', 'integer', 'min:2', 'max:10'],
-        ]);
-
-        $time = $validated['time'] ?? '09:00';
-        $targetAt = Carbon::parse("{$validated['date']} {$time}");
-
-        return response()->json([
-            'data' => $suggestions->suggest($survey, $targetAt, (int) ($validated['limit'] ?? 5)),
         ]);
     }
 
@@ -678,9 +682,9 @@ class SurveyController extends Controller
         ]);
 
         $surveyor = User::find($validated['surveyor_id']);
-        if (! $surveyor || $surveyor->role !== UserRole::Surveyor) {
+        if (! $this->surveyorEligibleForTeam($surveyor, $survey->account?->account_group)) {
             return response()->json([
-                'message' => 'User yang dipilih bukan surveyor.',
+                'message' => 'Pilih surveyor aktif dari tim yang sama dengan akun survey.',
             ], 422);
         }
 
@@ -691,6 +695,10 @@ class SurveyController extends Controller
 
         DB::transaction(function () use ($survey, $surveyor, $scheduledAt, $validated) {
             $lockedSurvey = Survey::query()->lockForUpdate()->findOrFail($survey->id);
+            $this->authorize('assign', $lockedSurvey);
+            $surveyor = User::query()->lockForUpdate()->find($surveyor->id);
+            abort_unless($this->surveyorEligibleForTeam($surveyor, $lockedSurvey->account?->account_group),
+                422, 'Pilih surveyor aktif dari tim yang sama dengan akun survey.');
             if ($lockedSurvey->state !== Survey::STATE_REQUESTED) {
                 abort(422, 'Survey sudah dijadwalkan oleh pengguna lain.');
             }
@@ -712,7 +720,7 @@ class SurveyController extends Controller
                 'assigned_by' => auth()->id(),
                 'assigned_at' => now(),
                 'scheduled_at' => $scheduledAt,
-                'location_notes' => $validated['location_notes'] ?? null,
+                'location_notes' => $this->gacongNote($surveyor, $lockedSurvey->account?->account_group, $validated['location_notes'] ?? null),
             ]);
             $lockedSurvey->transitionTo(Survey::STATE_SCHEDULED);
         });
@@ -751,8 +759,8 @@ class SurveyController extends Controller
         ]);
 
         $surveyor = User::find($validated['surveyor_id']);
-        if (! $surveyor || $surveyor->role !== UserRole::Surveyor) {
-            return response()->json(['message' => 'User yang dipilih bukan surveyor.'], 422);
+        if (! $this->surveyorEligibleForTeam($surveyor, $survey->account?->account_group)) {
+            return response()->json(['message' => 'Pilih surveyor aktif dari tim yang sama dengan akun survey.'], 422);
         }
 
         $newAt = Carbon::parse($validated['scheduled_at']);
@@ -768,6 +776,10 @@ class SurveyController extends Controller
 
         DB::transaction(function () use ($survey, $surveyor, $newAt, $validated, $oldAt) {
             $lockedSurvey = Survey::query()->lockForUpdate()->findOrFail($survey->id);
+            $this->authorize('rescheduleAssignment', $lockedSurvey);
+            $surveyor = User::query()->lockForUpdate()->find($surveyor->id);
+            abort_unless($this->surveyorEligibleForTeam($surveyor, $lockedSurvey->account?->account_group),
+                422, 'Pilih surveyor aktif dari tim yang sama dengan akun survey.');
             if ($lockedSurvey->state !== Survey::STATE_SCHEDULED) {
                 abort(422, 'Survey tidak lagi berada pada status terjadwal.');
             }
@@ -788,7 +800,7 @@ class SurveyController extends Controller
                 'assigned_by' => auth()->id(),
                 'assigned_at' => now(),
                 'scheduled_at' => $newAt,
-                'location_notes' => $validated['location_notes'] ?? null,
+                'location_notes' => $this->gacongNote($surveyor, $lockedSurvey->account?->account_group, $validated['location_notes'] ?? null),
             ]);
             if (array_key_exists('manager_notes', $validated) && $validated['manager_notes'] !== null) {
                 $lockedSurvey->manager_notes = $validated['manager_notes'];

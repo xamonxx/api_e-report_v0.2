@@ -21,17 +21,17 @@ class AccountController extends Controller
     /**
      * GET /api/v1/accounts/categories
      *
-     * Daftar kategori akun unik (kolom description) untuk mengisi dropdown
+     * Daftar grup akun unik (kolom account_group) untuk mengisi dropdown
      * filter pada halaman Kelola Akun.
      */
     public function categories(): JsonResponse
     {
         $categories = Account::query()
-            ->whereNotNull('description')
-            ->where('description', '!=', '')
+            ->whereNotNull('account_group')
+            ->where('account_group', '!=', '')
             ->distinct()
-            ->orderBy('description')
-            ->pluck('description')
+            ->orderBy('account_group')
+            ->pluck('account_group')
             ->values();
 
         return response()->json(['data' => $categories]);
@@ -67,7 +67,7 @@ class AccountController extends Controller
         }
 
         if ($request->filled('category')) {
-            $query->where('description', $request->category);
+            $query->where('account_group', $request->category);
         }
 
         $perPage = (int) $request->input('per_page', 20);
@@ -101,7 +101,11 @@ class AccountController extends Controller
 
             unset($validated['logo'], $validated['remove_logo']);
 
-            $account = Account::create($validated);
+            $group = $validated['account_group'];
+            unset($validated['account_group']);
+            $account = new Account($validated);
+            $account->account_group = $group;
+            $account->save();
         });
 
         return response()->json([
@@ -157,7 +161,11 @@ class AccountController extends Controller
 
             unset($validated['logo'], $validated['remove_logo']);
 
-            $account->update($validated);
+            if (array_key_exists('account_group', $validated)) {
+                $account->account_group = $validated['account_group'];
+                unset($validated['account_group']);
+            }
+            $account->fill($validated)->save();
         });
 
         return response()->json([

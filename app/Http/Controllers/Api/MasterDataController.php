@@ -73,8 +73,10 @@ class MasterDataController extends Controller
     {
         $user = auth()->user();
         $accounts = ($user->isSuperAdmin() || $user->isManagerSurveyor())
-            ? Account::orderBy('name')->get(['id', 'name'])
-            : Account::whereKey($user->account_id)->get(['id', 'name']);
+            ? Account::orderBy('name')
+                ->when(! $user->isSuperAdmin(), fn ($query) => $query->where('account_group', $user->hasSurveyTeam() ? $user->survey_team : '__none__'))
+                ->get(['id', 'name', 'account_group'])
+            : Account::whereKey($user->account_id)->get(['id', 'name', 'account_group']);
 
         return response()->json([
             'data' => $accounts,
@@ -103,11 +105,16 @@ class MasterDataController extends Controller
 
     public function surveyors(): JsonResponse
     {
+        $user = auth()->user();
         return response()->json([
             'data' => User::query()
                 ->where('role', UserRole::Surveyor->value)
+                ->whereIn('survey_team', ['A', 'B', 'C', 'D', 'E', 'F'])
+                ->when($user->isManagerSurveyor(), fn ($query) => $query->where('survey_team', $user->hasSurveyTeam() ? $user->survey_team : '__none__'))
+                ->when($user->isSurveyor(), fn ($query) => $query->whereKey($user->id))
+                ->when($user->isAdmin(), fn ($query) => $query->where('survey_team', $user->account?->account_group ?? '__none__'))
                 ->orderBy('name')
-                ->get(['id', 'name']),
+                ->get(['id', 'name', 'survey_team']),
         ]);
     }
 
@@ -485,12 +492,14 @@ class MasterDataController extends Controller
     public function storeUser(Request $request): JsonResponse
     {
         $this->ensureSuperAdmin();
+        $this->validateManagerTeam($request);
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255|regex:/^[^\<\>]+$/',
             'email' => 'required|email|max:255|unique:users,email',
             'password' => 'required|string|min:8',
             'password_confirmation' => 'required|string|same:password',
             'role' => ['required', new Enum(UserRole::class)],
+            'survey_team' => ['required_if:role,surveyor,manager_surveyor', 'nullable', 'string', 'in:A,B,C,D,E'],
             'account_id' => 'required_if:role,' . UserRole::Admin->value . '|nullable|exists:accounts,id',
         ], [
             'name.required' => 'Nama user wajib diisi.',
@@ -530,9 +539,11 @@ class MasterDataController extends Controller
                     // `account_id` hanya dikirim untuk role admin (required_if), jadi
                     // untuk surveyor/manager_surveyor key-nya TIDAK ADA di validated()
                     // -> wajib pakai `?? null`, kalau tidak: "Undefined array key".
-                    'account_id' => $role === UserRole::SuperAdmin ? null : ($validated['account_id'] ?? null),
+                    'account_id' => $role === UserRole::Admin ? ($validated['account_id'] ?? null) : null,
                 ]);
                 $createdUser->role = $role;
+                $createdUser->survey_team = in_array($role, [UserRole::Surveyor, UserRole::ManagerSurveyor], true)
+                    ? $validated['survey_team'] : null;
                 $createdUser->save();
 
                 $createdUser->loadMissing('account');
@@ -562,10 +573,12 @@ class MasterDataController extends Controller
     public function updateUser(Request $request, User $user): JsonResponse
     {
         $this->ensureSuperAdmin();
+        $this->validateManagerTeam($request, $user);
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255|regex:/^[^\<\>]+$/',
             'email' => 'required|email|max:255|unique:users,email,' . $user->id,
             'role' => ['required', new Enum(UserRole::class)],
+            'survey_team' => ['required_if:role,surveyor,manager_surveyor', 'nullable', 'string', 'in:A,B,C,D,E'],
             'account_id' => 'required_if:role,' . UserRole::Admin->value . '|nullable|exists:accounts,id',
         ], [
             'name.required' => 'Nama user wajib diisi.',
@@ -609,6 +622,7 @@ class MasterDataController extends Controller
                     'email' => $user->email,
                     'role' => $user->role instanceof UserRole ? $user->role->value : $user->role,
                     'account_id' => $user->account_id,
+                    'survey_team' => $user->survey_team,
                 ];
 
                 // F-014: role assigned explicitly (not via mass-assignment) to prevent
@@ -619,10 +633,14 @@ class MasterDataController extends Controller
                     // `account_id` hanya dikirim untuk role admin (required_if), jadi
                     // untuk surveyor/manager_surveyor key-nya TIDAK ADA di validated()
                     // -> wajib pakai `?? null`, kalau tidak: "Undefined array key".
-                    'account_id' => $role === UserRole::SuperAdmin ? null : ($validated['account_id'] ?? null),
+                    'account_id' => $role === UserRole::Admin ? ($validated['account_id'] ?? null) : null,
                 ]);
                 $user->role = $role;
+                $user->survey_team = in_array($role, [UserRole::Surveyor, UserRole::ManagerSurveyor], true)
+                    ? $validated['survey_team'] : null;
                 $user->save();
+
+                app(\App\Services\NotificationSummaryService::class)->forgetForUser((int) $user->id);
 
                 $user->refresh()->loadMissing('account');
 
@@ -647,6 +665,19 @@ class MasterDataController extends Controller
     /**
      * DELETE /api/v1/master-data/users/{user}
      */
+    private function validateManagerTeam(Request $request, ?User $user = null): void
+    {
+        if ($request->input('role') === UserRole::ManagerSurveyor->value
+            && is_string($request->input('survey_team'))
+            && User::query()->where('role', UserRole::ManagerSurveyor->value)
+                ->where('survey_team', $request->input('survey_team'))
+                ->when($user, fn ($query) => $query->whereKeyNot($user->id))->exists()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'survey_team' => 'Team ini sudah mempunyai Manager Surveyor aktif.',
+            ]);
+        }
+    }
+
     public function destroyUser(User $user): JsonResponse
     {
         $this->ensureSuperAdmin();

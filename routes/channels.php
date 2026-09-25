@@ -16,14 +16,26 @@ use Illuminate\Support\Facades\Broadcast;
 
 // Antrian & pembaruan survey untuk tim pusat.
 Broadcast::channel('survey.managers', function (User $user) {
-    return $user->isManagerSurveyor() || $user->isSuperAdmin();
+    return $user->isSuperAdmin();
+});
+
+Broadcast::channel('survey.managers.{team}', function (User $user, string $team) {
+    return in_array($team, ['A', 'B', 'C', 'D', 'E', 'F'], true)
+        && ($user->isSuperAdmin()
+            || ($user->isManagerSurveyor() && $user->hasSurveyTeam() && $user->survey_team === $team));
 });
 
 // Kanal pribadi per surveyor: hanya pemilik, manager, dan super admin.
 Broadcast::channel('survey.surveyor.{surveyorId}', function (User $user, int $surveyorId) {
-    return (int) $user->id === $surveyorId
-        || $user->isManagerSurveyor()
-        || $user->isSuperAdmin();
+    if ($user->isSuperAdmin()) {
+        return true;
+    }
+
+    $surveyor = User::find($surveyorId);
+
+    return $surveyor && $surveyor->isSurveyor() && $surveyor->hasSurveyTeam()
+        && (($user->isSurveyor() && (int) $user->id === $surveyorId)
+            || ($user->isManagerSurveyor() && $user->hasSurveyTeam() && $user->survey_team === $surveyor->survey_team));
 });
 
 // Kanal per akun/cabang agar admin mendapatkan pembaruan survey real-time

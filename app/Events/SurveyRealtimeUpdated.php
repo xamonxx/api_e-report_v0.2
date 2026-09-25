@@ -42,8 +42,14 @@ class SurveyRealtimeUpdated implements ShouldBroadcastNow
      */
     public static function recipientsFor(Survey $survey, string $action, array $extraRecipients = []): array
     {
+        $team = $survey->account?->account_group;
         $managers = fn () => User::query()
-            ->whereIn('role', [UserRole::ManagerSurveyor->value, UserRole::SuperAdmin->value])
+            ->where(function ($query) use ($team) {
+                $query->where('role', UserRole::SuperAdmin->value)
+                    ->orWhere(fn ($query) => $query->where('role', UserRole::ManagerSurveyor->value)
+                        ->whereIn('survey_team', ['A', 'B', 'C', 'D', 'E', 'F'])
+                        ->where('survey_team', $team ?? '__none__'));
+            })
             ->pluck('id')->all();
 
         $recipients = match ($action) {
@@ -61,10 +67,14 @@ class SurveyRealtimeUpdated implements ShouldBroadcastNow
             default => [],
         };
 
-        return array_values(array_unique(array_filter(
+        $recipientIds = array_values(array_unique(array_filter(
             array_merge($recipients, $extraRecipients),
             fn ($id) => (int) $id > 0
         )));
+
+        return User::query()->whereKey($recipientIds)->get()
+            ->filter(fn (User $user) => Survey::query()->visibleTo($user)->whereKey($survey->id)->exists())
+            ->map(fn (User $user) => (int) $user->id)->values()->all();
     }
 
     /**
@@ -107,10 +117,21 @@ class SurveyRealtimeUpdated implements ShouldBroadcastNow
         // Channel privat: pesan memuat nama klien, wilayah, dan jadwal, jadi
         // harus lewat otorisasi routes/channels.php.
         $channels = [new PrivateChannel('survey.managers')];
+        $team = $this->survey->account?->account_group;
+        if (in_array($team, ['A', 'B', 'C', 'D', 'E', 'F'], true)) {
+            $channels[] = new PrivateChannel('survey.managers.' . $team);
+        }
         if ($this->survey->account_id) {
             $channels[] = new PrivateChannel('survey.account.' . $this->survey->account_id);
         }
-        if ($this->survey->surveyor_id && $this->action !== 'rescheduled_by_admin') {
+        // Team F: surveyor pinjaman (GACONG) tetap berhak atas kanal
+        // pribadinya sendiri walau timnya beda dari akun survey. Tim lain
+        // (A-E) tetap wajib kecocokan tim, supaya surveyor_id basi lintas-tim
+        // tidak ikut mendapat kanal privat.
+        $surveyor = $this->survey->surveyor_id ? User::find($this->survey->surveyor_id) : null;
+        if ($surveyor && $surveyor->hasSurveyTeam()
+            && ($surveyor->survey_team === $team || $team === 'F')
+            && $this->action !== 'rescheduled_by_admin') {
             $channels[] = new PrivateChannel('survey.surveyor.' . $this->survey->surveyor_id);
         }
 

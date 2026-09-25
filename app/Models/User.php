@@ -98,6 +98,11 @@ class User extends Authenticatable
         return $this->isSurveyor() || $this->isManagerSurveyor();
     }
 
+    public function hasSurveyTeam(): bool
+    {
+        return $this->isSurveyTeam() && in_array($this->survey_team, ['A', 'B', 'C', 'D', 'E', 'F'], true);
+    }
+
     /**
      * Dashboard invalidation runs on every operational mutation. Cache this
      * stable list so completing a survey does not query users again.

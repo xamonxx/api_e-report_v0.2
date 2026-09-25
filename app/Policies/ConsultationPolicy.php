@@ -52,6 +52,11 @@ class ConsultationPolicy
         return $user->isAdmin() && $user->account_id === $consultation->account_id;
     }
 
+    public function restore(User $user, Consultation $consultation): bool
+    {
+        return $user->isAdmin() && $user->account_id === $consultation->account_id;
+    }
+
     public function viewHistory(User $user, Consultation $consultation): bool
     {
         return $user->isAdmin() && $user->account_id === $consultation->account_id;

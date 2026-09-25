@@ -43,6 +43,7 @@ class AccountRequest extends FormRequest
                 Rule::unique('accounts', 'name')->ignore($accountId),
             ],
             'description' => ['nullable', 'string', 'max:120'],
+            'account_group' => [$accountId ? 'sometimes' : 'required', 'required', Rule::in(AccountGroup::values())],
             'target_leads' => ['nullable', 'integer', 'min:1', 'max:1000000'],
             // F-009: SVG removed — SVG files can contain embedded <script> tags (stored XSS).
             'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:2048'],

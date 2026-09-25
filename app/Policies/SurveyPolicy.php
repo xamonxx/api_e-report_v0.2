@@ -25,33 +25,33 @@ class SurveyPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isSurveyTeam() || $user->isAdmin();
+        return $user->hasSurveyTeam() || $user->isAdmin();
     }
 
     public function viewAvailability(User $user): bool
     {
-        return $user->isManagerSurveyor();
+        return $user->isManagerSurveyor() && $user->hasSurveyTeam();
     }
 
     public function viewRecap(User $user): bool
     {
-        return $user->isManagerSurveyor();
+        return $user->isManagerSurveyor() && $user->hasSurveyTeam();
     }
 
     /**
      * Melihat satu survey:
-     * - manager surveyor: semua.
-     * - surveyor: hanya miliknya.
+     * - manager surveyor: tim akun yang sama.
+     * - surveyor: hanya miliknya dalam tim yang sama.
      * - admin: hanya survey yang dia ajukan sendiri di akunnya.
      */
     public function view(User $user, Survey $survey): bool
     {
         if ($user->isManagerSurveyor()) {
-            return true;
+            return Survey::query()->visibleTo($user)->whereKey($survey->id)->exists();
         }
 
         if ($user->isSurveyor()) {
-            return (int) $survey->surveyor_id === (int) $user->id;
+            return Survey::query()->visibleTo($user)->whereKey($survey->id)->exists();
         }
 
         if ($user->isAdmin()) {
@@ -67,7 +67,7 @@ class SurveyPolicy
      */
     public function assign(User $user, Survey $survey): bool
     {
-        return $user->isManagerSurveyor();
+        return $user->isManagerSurveyor() && $this->view($user, $survey);
     }
 
     /**
@@ -95,14 +95,13 @@ class SurveyPolicy
     /** Mengubah jadwal final atau surveyor: manager surveyor. */
     public function rescheduleAssignment(User $user, Survey $survey): bool
     {
-        return $user->isManagerSurveyor();
+        return $user->isManagerSurveyor() && $this->view($user, $survey);
     }
 
     /** Memulai survey: surveyor yang ditugaskan atau manager surveyor. */
     public function start(User $user, Survey $survey): bool
     {
-        return $user->isManagerSurveyor()
-            || ($user->isSurveyor() && (int) $survey->surveyor_id === (int) $user->id);
+        return $user->isSurveyTeam() && $this->view($user, $survey);
     }
 
     /**
@@ -112,22 +111,22 @@ class SurveyPolicy
     public function submitResult(User $user, Survey $survey): bool
     {
         if ($user->isManagerSurveyor()) {
-            return true;
+            return $this->view($user, $survey);
         }
 
-        return $user->isSurveyor() && (int) $survey->surveyor_id === (int) $user->id;
+        return $user->isSurveyor() && $this->view($user, $survey);
     }
 
     /**
      * Membatalkan survey:
-     * - manager surveyor: semua survey operasional.
+     * - manager surveyor: survey operasional dalam timnya.
      * - admin: survey yang dia ajukan sendiri di akun/cabangnya.
      * - surveyor: survey yang ditugaskan kepadanya.
      */
     public function cancel(User $user, Survey $survey): bool
     {
         if ($user->isManagerSurveyor()) {
-            return true;
+            return $this->view($user, $survey);
         }
 
         if ($user->isAdmin()) {
@@ -135,6 +134,6 @@ class SurveyPolicy
                 && (int) $survey->requested_by === (int) $user->id;
         }
 
-        return $user->isSurveyor() && (int) $survey->surveyor_id === (int) $user->id;
+        return $user->isSurveyor() && $this->view($user, $survey);
     }
 }

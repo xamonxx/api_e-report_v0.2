@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\ConsultationController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\MasterDataController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\ReminderCronJobController;
 use App\Http\Controllers\Api\SurveyController;
 use App\Http\Controllers\Api\WilayahController;
 use App\Http\Controllers\Api\DebugController;
@@ -23,7 +24,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
 
     // ── Public (guest only) ──────────────────────────────────────────────────
-    // Login uses API middleware (no CSRF) since the SPA uses Bearer token auth.
+    // First-party SPA login uses the stateful Sanctum session and CSRF cookie.
+    // Bearer tokens remain accepted only for backward-compatible API clients.
     Route::post('/auth/login', [AuthController::class, 'login'])
         ->middleware('throttle:10,1')
         ->name('api.auth.login');
@@ -101,6 +103,8 @@ Route::prefix('v1')->group(function () {
                 ->name('api.report-attendances.index');
             Route::get('/report-attendances/export', [App\Http\Controllers\Api\ReportAttendanceController::class, 'export'])
                 ->name('api.report-attendances.export');
+            Route::get('/report-attendances/export-log', [App\Http\Controllers\Api\ReportAttendanceController::class, 'exportLog'])
+                ->name('api.report-attendances.export-log');
             Route::post('/report-attendances', [App\Http\Controllers\Api\ReportAttendanceController::class, 'store'])
                 ->name('api.report-attendances.store');
             Route::post('/report-attendances/upsert-by-super-admin', [App\Http\Controllers\Api\ReportAttendanceController::class, 'upsertBySuperAdmin'])
@@ -115,6 +119,12 @@ Route::prefix('v1')->group(function () {
                 ->name('api.consultations.import');
             Route::patch('/consultations/{consultation}/status', [ConsultationController::class, 'updateStatus'])
                 ->name('api.consultations.update-status');
+            // Arsip: harus SEBELUM apiResource, kalau tidak "trashed" bakal
+            // ke-binding sebagai {consultation} oleh resource route.
+            Route::get('/consultations/trashed', [ConsultationController::class, 'trashed'])
+                ->name('api.consultations.trashed');
+            Route::post('/consultations/{id}/restore', [ConsultationController::class, 'restore'])
+                ->name('api.consultations.restore');
             Route::apiResource('consultations', ConsultationController::class)
                 ->names('api.consultations');
         });
@@ -128,8 +138,6 @@ Route::prefix('v1')->group(function () {
             ->name('api.surveys.availability');
         Route::get('/surveys', [SurveyController::class, 'index'])->name('api.surveys.index');
         Route::get('/surveys/{survey}', [SurveyController::class, 'show'])->name('api.surveys.show');
-        Route::get('/surveys/{survey}/assignment-suggestions', [SurveyController::class, 'assignmentSuggestions'])
-            ->name('api.surveys.assignment-suggestions');
         Route::get('/surveys/{survey}/history', [SurveyController::class, 'history'])
             ->name('api.surveys.history');
         Route::patch('/surveys/{survey}/assign', [SurveyController::class, 'assign'])
@@ -259,6 +267,12 @@ Route::prefix('v1')->group(function () {
                 Route::put('/users/{user}', [MasterDataController::class, 'updateUser'])->name('users.update');
                 Route::delete('/users/{user}', [MasterDataController::class, 'destroyUser'])->name('users.destroy');
                 Route::post('/users/{user}/reset-password', [MasterDataController::class, 'resetUserPassword'])->name('users.reset-password');
+
+                Route::get('/reminder-cron-jobs', [ReminderCronJobController::class, 'index'])->name('reminder-cron-jobs.index');
+                Route::post('/reminder-cron-jobs', [ReminderCronJobController::class, 'store'])->name('reminder-cron-jobs.store');
+                Route::put('/reminder-cron-jobs/{reminderCronJob}', [ReminderCronJobController::class, 'update'])->name('reminder-cron-jobs.update');
+                Route::patch('/reminder-cron-jobs/{reminderCronJob}/toggle', [ReminderCronJobController::class, 'toggle'])->name('reminder-cron-jobs.toggle');
+                Route::delete('/reminder-cron-jobs/{reminderCronJob}', [ReminderCronJobController::class, 'destroy'])->name('reminder-cron-jobs.destroy');
             });
         });
 

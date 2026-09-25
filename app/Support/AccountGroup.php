@@ -12,15 +12,33 @@ namespace App\Support;
  */
 final class AccountGroup
 {
+    /**
+     * PC/NPP1/NPP2 dipertahankan sebagai konstanta (bukan dihapus total)
+     * karena migration lama `2026_07_17_000001_add_account_group_to_accounts_table`
+     * masih memanggil fromDescription(), yang me-return konstanta ini secara
+     * literal. Menghapus konstantanya akan meledakkan migration itu kalau
+     * database di-migrate dari nol. Grupnya sendiri sudah dihapus permanen
+     * dari data pada 2026-09-24 (lihat Change-Log) - tidak lagi valid untuk
+     * dipilih/difilter, sengaja dikeluarkan dari LABELS/UMBRELLA di bawah.
+     */
     public const PC = 'PC';
     public const NPP1 = 'NPP1';
     public const NPP2 = 'NPP2';
+    public const TEAM_A = 'A';
+    public const TEAM_B = 'B';
+    public const TEAM_C = 'C';
+    public const TEAM_D = 'D';
+    public const TEAM_E = 'E';
+    public const TEAM_F = 'F';
 
-    /** Label untuk dropdown dan tampilan. */
+    /** Label untuk dropdown dan tampilan. Hanya grup yang masih valid. */
     private const LABELS = [
-        self::PC => 'PC',
-        self::NPP1 => 'NPP 1',
-        self::NPP2 => 'NPP 2',
+        self::TEAM_A => 'Team A',
+        self::TEAM_B => 'Team B',
+        self::TEAM_C => 'Team C',
+        self::TEAM_D => 'Team D',
+        self::TEAM_E => 'Team E',
+        self::TEAM_F => 'Team F',
     ];
 
     /**
@@ -28,9 +46,12 @@ final class AccountGroup
      * itu ditulis â€” subtitleLabel() menurunkan sisanya dari sini.
      */
     private const UMBRELLA = [
-        self::PC => 'PUTRA CORPORATION',
-        self::NPP1 => 'BISNIS PRIBADI 1',
-        self::NPP2 => 'BISNIS PRIBADI 2',
+        self::TEAM_A => 'TEAM A',
+        self::TEAM_B => 'TEAM B',
+        self::TEAM_C => 'TEAM C',
+        self::TEAM_D => 'TEAM D',
+        self::TEAM_E => 'TEAM E',
+        self::TEAM_F => 'TEAM F',
     ];
 
     /** Dipakai saat laporan tidak difilter ke satu grup. */
