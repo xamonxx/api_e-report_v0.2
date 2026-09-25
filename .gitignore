@@ -28,6 +28,8 @@ bootstrap/cache/*.php
 
 # Testing
 /testsprite_tests/
+.testsprite-qa-credentials
+.testsprite-qa-password
 
 # Development tools
 /tools/

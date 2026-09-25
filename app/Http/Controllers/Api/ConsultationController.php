@@ -79,8 +79,14 @@ class ConsultationController extends Controller
             // SECURITY FIX 2026-07-29: Escape LIKE wildcards to prevent wildcard injection
             $searchEscaped = str_replace(['%', '_'], ['\\%', '\\_'], $search);
             $normalizedSearch = Consultation::normalizeLeadPhone($search);
+            // normalizeLeadPhone() memaksa region ID default saat kata kunci
+            // tidak diawali "+" - nomor asing seperti "2133734253" (AS) ikut
+            // di-parse seolah nomor Indonesia dan menghasilkan kunci yang
+            // salah, jadi tidak pernah cocok. Kunci digit mentah jadi
+            // fallback supaya pencarian nomor format global tetap ketemu.
+            $rawDigitsSearch = preg_replace('/\D+/', '', $search) ?: '';
 
-            $query->where(function ($q) use ($searchEscaped, $normalizedSearch) {
+            $query->where(function ($q) use ($searchEscaped, $normalizedSearch, $rawDigitsSearch) {
                 $q->where('client_name', 'like', "%{$searchEscaped}%")
                     ->orWhere('consultation_id', 'like', "%{$searchEscaped}%")
                   // Nama akun/cabang ikut dicari. Aman dari kebocoran lintas
@@ -91,6 +97,11 @@ class ConsultationController extends Controller
                 if ($normalizedSearch) {
                     $q->orWhere('phone_normalized', 'like', "%{$normalizedSearch}%")
                         ->orWhere('emergency_phone_normalized', 'like', "%{$normalizedSearch}%");
+                }
+
+                if ($rawDigitsSearch && $rawDigitsSearch !== $normalizedSearch) {
+                    $q->orWhere('phone_normalized', 'like', "%{$rawDigitsSearch}%")
+                        ->orWhere('emergency_phone_normalized', 'like', "%{$rawDigitsSearch}%");
                 }
             });
         }
