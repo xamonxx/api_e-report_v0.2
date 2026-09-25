@@ -2,31 +2,19 @@
 
 namespace App\Services\Reports;
 
-use App\Models\Account;
 use App\Support\AccountGroup;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 class AdminReportAttendanceExcelExporter
 {
-    /**
-     * Nama style warna sel. Sengaja diberi nama menurut warnanya, bukan
-     * menurut kategori absensi seperti dulu — warna sekarang diturunkan dari
-     * data konsul, bukan dari klaim kategori admin.
-     */
-    private const CELL_GREEN = 'statusAdaWa';
-    private const CELL_YELLOW = 'statusNolWa';
-    private const CELL_BLUE = 'statusLibur';
-    private const CELL_RED = 'statusTidakLaporan';
-
-    /** Kategori absensi yang berarti admin bekerja hari itu. */
-    private const WORKING_CATEGORIES = ['ada_wa', 'nol_wa'];
-
-    private const CATEGORY_DAY_OFF = 'libur_susulan';
-
     /** Batas kolom tanggal dalam satu lembar. */
     public const MAX_RANGE_DAYS = 92;
+
+    public function __construct(
+        private readonly ConsultationRecapStatusResolver $resolver = new ConsultationRecapStatusResolver(),
+    ) {
+    }
 
     /**
      * Grid rekap absensi: satu baris per admin, satu kolom per tanggal.
@@ -34,13 +22,13 @@ class AdminReportAttendanceExcelExporter
      * `$end` opsional — kalau kosong, rentangnya satu bulan penuh milik
      * `$start` (perilaku lama sebelum filter rentang kustom ada).
      */
-    public function buildWorkbook(Carbon $start, ?string $accountGroup = null, ?Carbon $end = null): string
+    public function buildWorkbook(Carbon $start, ?string $accountGroup = null, ?Carbon $end = null, ?array $accountIds = null): string
     {
         [$rangeStart, $rangeEnd] = $this->resolveRange($start, $end);
         $dates = $this->dateKeys($rangeStart, $rangeEnd);
         $dayCount = count($dates);
         $selectedGroup = $this->normalizeAccountGroup($accountGroup);
-        $admins = $this->buildRows($rangeStart, $rangeEnd, $selectedGroup);
+        $admins = $this->buildRows($rangeStart, $rangeEnd, $selectedGroup, $accountIds);
         $columnCount = $dayCount + 3;
 
         return implode('', [
@@ -125,101 +113,9 @@ class AdminReportAttendanceExcelExporter
      * Akun tanpa admin tetap ikut supaya daftar akun di lembar ini utuh —
      * barisnya wajar terbaca merah karena memang tak ada aktivitas.
      */
-    private function buildRows(Carbon $rangeStart, Carbon $rangeEnd, ?string $accountGroup = null): Collection
+    private function buildRows(Carbon $rangeStart, Carbon $rangeEnd, ?string $accountGroup = null, ?array $accountIds = null): Collection
     {
-        $start = $rangeStart->toDateString();
-        $end = $rangeEnd->toDateString();
-
-        $accounts = Account::query()
-            ->when($accountGroup, fn ($query) => $query->where('account_group', $accountGroup))
-            ->get(['id', 'name', 'description', 'account_group'])
-            ->map(fn (Account $account) => [
-                'account_id' => (int) $account->id,
-                'account_name' => $account->name,
-                'account_group' => AccountGroup::normalize($account->account_group) ?? AccountGroup::PC,
-            ])
-            ->sortBy([
-                fn (array $left, array $right) => $this->accountGroupSort($left['account_group']) <=> $this->accountGroupSort($right['account_group']),
-                fn (array $left, array $right) => strcmp($left['account_name'], $right['account_name']),
-            ])
-            ->values();
-
-        $accountIds = $accounts->pluck('account_id')->filter()->unique()->values();
-        $consultationCounts = $this->consultationCountsByDate($accountIds, $start, $end);
-        $attendanceCategories = $this->attendanceCategoriesByDate($accountIds, $start, $end);
-
-        return $accounts
-            ->map(function (array $row) use ($consultationCounts, $attendanceCategories) {
-                $row['consultation_counts'] = $consultationCounts->get($row['account_id'], collect());
-                $row['attendance_categories'] = $attendanceCategories->get($row['account_id'], collect());
-
-                return $row;
-            })
-            ->values();
-    }
-
-    /**
-     * Konsul per akun per tanggal, dipecah jadi laporan tepat waktu dan
-     * susulan. Pembandingnya `DATE(created_at)` vs `consultation_date`:
-     * dibuat di hari yang sama = tepat waktu, dibuat belakangan = susulan.
-     *
-     * @return Collection<int, Collection<string, array{normal:int, susulan:int}>>
-     */
-    private function consultationCountsByDate(Collection $accountIds, string $start, string $end): Collection
-    {
-        if ($accountIds->isEmpty()) {
-            return collect();
-        }
-
-        return DB::table('consultations')
-            ->select([
-                'account_id',
-                DB::raw('DATE(consultation_date) as consultation_day'),
-                DB::raw('SUM(CASE WHEN DATE(created_at) = DATE(consultation_date) THEN 1 ELSE 0 END) as normal_total'),
-                DB::raw('SUM(CASE WHEN DATE(created_at) > DATE(consultation_date) THEN 1 ELSE 0 END) as susulan_total'),
-            ])
-            ->whereNull('deleted_at')
-            ->whereIn('account_id', $accountIds->all())
-            ->whereDate('consultation_date', '>=', $start)
-            ->whereDate('consultation_date', '<=', $end)
-            ->groupBy('account_id', DB::raw('DATE(consultation_date)'))
-            ->get()
-            ->groupBy(fn ($row) => (int) $row->account_id)
-            ->map(fn (Collection $rows) => $rows->mapWithKeys(fn ($row) => [
-                (string) $row->consultation_day => [
-                    'normal' => (int) $row->normal_total,
-                    'susulan' => (int) $row->susulan_total,
-                ],
-            ]));
-    }
-
-    /**
-     * Kategori absensi per akun per tanggal. Satu akun bisa punya lebih dari
-     * satu admin, jadi nilainya daftar — bukan satu kategori.
-     *
-     * @return Collection<int, Collection<string, list<string>>>
-     */
-    private function attendanceCategoriesByDate(Collection $accountIds, string $start, string $end): Collection
-    {
-        if ($accountIds->isEmpty()) {
-            return collect();
-        }
-
-        return DB::table('report_attendances')
-            ->select(['account_id', 'report_date', 'report_category'])
-            ->whereIn('account_id', $accountIds->all())
-            ->whereDate('report_date', '>=', $start)
-            ->whereDate('report_date', '<=', $end)
-            ->get()
-            ->groupBy(fn ($row) => (int) $row->account_id)
-            ->map(fn (Collection $rows) => $rows
-                ->groupBy(fn ($row) => Carbon::parse($row->report_date)->format('Y-m-d'))
-                ->map(fn (Collection $dayRows) => $dayRows
-                    ->pluck('report_category')
-                    ->filter()
-                    ->unique()
-                    ->values()
-                    ->all()));
+        return $this->resolver->accountRows($rangeStart, $rangeEnd, $accountGroup, $accountIds);
     }
 
     private function columnsXml(int $dayCount): string
@@ -327,14 +223,9 @@ class AdminReportAttendanceExcelExporter
                 ];
 
                 foreach ($dates as $dateKey) {
-                    $split = $this->consultationSplitForDate($row, $dateKey);
-                    [$style, $value] = $this->resolveCell(
-                        $split['normal'],
-                        $split['susulan'],
-                        $row['attendance_categories']->get($dateKey, [])
-                    );
+                    $status = $this->resolver->resolveStatusForDate($row, $dateKey);
 
-                    $cells[] = $this->cell($value, $style, 'Number');
+                    $cells[] = $this->cell($status->count, $status->style, 'Number');
                 }
 
                 $cells[] = $this->cell($this->rowAdaWaTotal($row, $dates), 'bodyTotal', 'Number');
@@ -369,10 +260,10 @@ class AdminReportAttendanceExcelExporter
     private function legendRowsXml(int $columnCount): string
     {
         return $this->row([$this->cell('', 'blank', mergeAcross: $columnCount - 1)], 18)
-            . $this->legendRow(self::CELL_GREEN, 'Laporan - ada WA Konsumen baru')
-            . $this->legendRow(self::CELL_YELLOW, 'Laporan - 0 data WA Konsumen baru')
-            . $this->legendRow(self::CELL_BLUE, 'Rekapan laporan susulan / Hari Libur')
-            . $this->legendRow(self::CELL_RED, 'Tidak laporan');
+            . $this->legendRow(ConsultationRecapStatusResolver::CELL_GREEN, 'Laporan - ada WA Konsumen baru')
+            . $this->legendRow(ConsultationRecapStatusResolver::CELL_YELLOW, 'Laporan - 0 data WA Konsumen baru')
+            . $this->legendRow(ConsultationRecapStatusResolver::CELL_BLUE, 'Rekapan laporan susulan / Hari Libur')
+            . $this->legendRow(ConsultationRecapStatusResolver::CELL_RED, 'Tidak laporan');
     }
 
     private function legendRow(string $swatchStyle, string $label): string
@@ -411,69 +302,11 @@ class AdminReportAttendanceExcelExporter
     }
 
     /**
-     * Menentukan warna dan angka satu sel.
-     *
-     * Urutan prioritas, berhenti di kecocokan pertama:
-     *   1. ada laporan tepat waktu  -> hijau, angka = tepat waktu + susulan
-     *   2. hanya laporan susulan    -> biru,  angka = susulan
-     *   3. absen & bekerja          -> kuning, angka 0
-     *   4. absen & libur/susulan    -> biru,   angka 0
-     *   5. tidak ada apa-apa        -> merah,  angka 0
-     *
-     * Aturan 1 yang menjaga tanggal yang sudah hijau tidak berubah jadi biru
-     * ketika kemudian ditambah data susulan — susulan hanya menambah angka.
-     * Aturan 3 didahulukan atas 4 supaya akun dengan dua admin, yang satu
-     * melapor kerja dan satunya libur, tidak terbaca sebagai hari libur.
-     *
-     * @param  list<string>  $categories
-     * @return array{0: string, 1: int}
-     */
-    private function resolveCell(int $normal, int $susulan, array $categories): array
-    {
-        if ($normal > 0) {
-            return [self::CELL_GREEN, $normal + $susulan];
-        }
-
-        if ($susulan > 0) {
-            return [self::CELL_BLUE, $susulan];
-        }
-
-        if (array_intersect(self::WORKING_CATEGORIES, $categories) !== []) {
-            return [self::CELL_YELLOW, 0];
-        }
-
-        if (in_array(self::CATEGORY_DAY_OFF, $categories, true)) {
-            return [self::CELL_BLUE, 0];
-        }
-
-        return [self::CELL_RED, 0];
-    }
-
-    /**
-     * @return array{normal:int, susulan:int}
-     */
-    private function consultationSplitForDate(array $row, string $dateKey): array
-    {
-        $counts = $row['consultation_counts']->get($dateKey);
-
-        return [
-            'normal' => (int) ($counts['normal'] ?? 0),
-            'susulan' => (int) ($counts['susulan'] ?? 0),
-        ];
-    }
-
-    /**
      * Angka yang tampil di sel — mengikuti aturan warna, bukan total mentah.
      */
     private function consultationCountForDate(array $row, string $dateKey): int
     {
-        $split = $this->consultationSplitForDate($row, $dateKey);
-
-        return $this->resolveCell(
-            $split['normal'],
-            $split['susulan'],
-            $row['attendance_categories']->get($dateKey, [])
-        )[1];
+        return $this->resolver->resolveStatusForDate($row, $dateKey)->count;
     }
 
     private function row(array $cells, ?int $height = null): string
@@ -609,14 +442,6 @@ class AdminReportAttendanceExcelExporter
             11 => 'November',
             12 => 'Desember',
         ][(int) $date->format('n')] ?? $date->format('F');
-    }
-
-    /** Urutan grup mengikuti urutan deklarasi di AccountGroup. */
-    private function accountGroupSort(string $group): int
-    {
-        $order = array_search($group, AccountGroup::values(), true);
-
-        return $order === false ? PHP_INT_MAX : $order;
     }
 
     private function normalizeAccountGroup(?string $group): ?string

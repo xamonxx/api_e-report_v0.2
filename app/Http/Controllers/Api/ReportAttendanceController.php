@@ -9,6 +9,7 @@ use App\Models\ReportAttendance;
 use App\Models\User;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\AdminReportAttendanceExcelExporter;
+use App\Services\Reports\ConsultationDailyLogExcelExporter;
 use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
 use App\Services\WebPushService;
 use App\Support\AccountGroup;
@@ -342,6 +343,7 @@ class ReportAttendanceController extends Controller
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'account_group' => ['nullable', Rule::in(AccountGroup::values())],
+            'account_ids' => ['nullable', 'string'],
         ], [
             'end_date.after_or_equal' => 'Tanggal akhir tidak boleh sebelum tanggal awal.',
             'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
@@ -350,6 +352,14 @@ class ReportAttendanceController extends Controller
 
         // Grup kosong berarti semua grup dalam satu lembar.
         $accountGroup = $validated['account_group'] ?? null;
+        $accountIds = filled($validated['account_ids'] ?? null)
+            ? collect(explode(',', $validated['account_ids']))
+                ->map(fn ($id) => (int) trim($id))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all()
+            : null;
         $hasRange = filled($validated['start_date'] ?? null) && filled($validated['end_date'] ?? null);
 
         // Rentang kustom kalau dikirim; kalau tidak, tetap satu bulan penuh
@@ -361,7 +371,7 @@ class ReportAttendanceController extends Controller
         );
         $end = $hasRange ? Carbon::parse($validated['end_date']) : null;
 
-        $groupSlug = strtolower($accountGroup ?? 'semua-grup');
+        $groupSlug = str(AccountGroup::label($accountGroup) ?? 'semua-grup')->slug()->toString();
 
         $filename = $hasRange
             ? sprintf(
@@ -372,7 +382,81 @@ class ReportAttendanceController extends Controller
             )
             : sprintf('rekap-laporan-admin-%s-%s.xlsx', $groupSlug, $start->format('Y-m'));
 
-        return response($xlsxConverter->convert($excelExporter->buildWorkbook($start, $accountGroup, $end)), 200, [
+        return response($xlsxConverter->convert($excelExporter->buildWorkbook($start, $accountGroup, $end, $accountIds)), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'max-age=0',
+        ]);
+    }
+
+    /**
+     * GET /api/v1/report-attendances/export-log (Super Admin Only)
+     *
+     * Format kedua dari rekap yang sama: satu baris per akun per tanggal
+     * (bukan matrix per tanggal seperti export()) — dirancang supaya bisa
+     * disalin langsung ke sheet log warna manual milik user. Validasi params
+     * sengaja identik dengan export() supaya UI bisa pakai filter yang sama
+     * buat kedua format.
+     */
+    public function exportLog(
+        Request $request,
+        ConsultationDailyLogExcelExporter $excelExporter,
+        SpreadsheetXmlToXlsxConverter $xlsxConverter
+    ): Response {
+        $user = auth()->user();
+        if (!$user->isSuperAdmin()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        if ($request->filled('account_group')) {
+            $request->merge([
+                'account_group' => AccountGroup::normalize($request->input('account_group'))
+                    ?? $request->input('account_group'),
+            ]);
+        }
+
+        $validated = $request->validate([
+            'date' => ['nullable', 'date'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'account_group' => ['nullable', Rule::in(AccountGroup::values())],
+            'account_ids' => ['nullable', 'string'],
+        ], [
+            'end_date.after_or_equal' => 'Tanggal akhir tidak boleh sebelum tanggal awal.',
+            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
+                . implode(', ', AccountGroup::labels()) . '.',
+        ]);
+
+        $accountGroup = $validated['account_group'] ?? null;
+        $accountIds = filled($validated['account_ids'] ?? null)
+            ? collect(explode(',', $validated['account_ids']))
+                ->map(fn ($id) => (int) trim($id))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all()
+            : null;
+        $hasRange = filled($validated['start_date'] ?? null) && filled($validated['end_date'] ?? null);
+
+        $start = Carbon::parse(
+            $hasRange
+                ? $validated['start_date']
+                : ($validated['date'] ?? Carbon::today()->format('Y-m-d'))
+        );
+        $end = $hasRange ? Carbon::parse($validated['end_date']) : null;
+
+        $groupSlug = str(AccountGroup::label($accountGroup) ?? 'semua-grup')->slug()->toString();
+
+        $filename = $hasRange
+            ? sprintf(
+                'log-laporan-konsul-%s-%s-%s.xlsx',
+                $groupSlug,
+                $start->format('Ymd'),
+                $end->format('Ymd')
+            )
+            : sprintf('log-laporan-konsul-%s-%s.xlsx', $groupSlug, $start->format('Y-m'));
+
+        return response($xlsxConverter->convert($excelExporter->buildWorkbook($start, $accountGroup, $end, $accountIds)), 200, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             'Cache-Control' => 'max-age=0',
