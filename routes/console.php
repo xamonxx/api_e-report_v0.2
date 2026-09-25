@@ -14,3 +14,6 @@ Schedule::call(fn () => \App\Models\LoginAttempt::purgeOlderThan(30))->daily();
 // ── Web Push: kirim notifikasi untuk reminder yang jatuh tempo ───
 // Butuh cron server menjalankan `php artisan schedule:run` tiap menit.
 Schedule::command('reminders:push-due')->everyMinute()->withoutOverlapping();
+
+// ── Web Push: pengingat cron terjadwal (mis. absensi harian admin) ───
+Schedule::command('reminders:send-due-cron-jobs')->everyMinute()->withoutOverlapping();
