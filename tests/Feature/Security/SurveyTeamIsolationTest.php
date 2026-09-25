@@ -121,7 +121,7 @@ class SurveyTeamIsolationTest extends TestCase
             'reason' => 'Forbidden cancellation',
         ])->assertForbidden();
         $this->assertSame($before, $survey->fresh()->getAttributes());
-        foreach (['survey_activity_logs', 'survey_status_histories', 'survey_reschedules', 'survey_notifications', 'audit_logs', 'survey_loan_approvals'] as $table) {
+        foreach (['survey_activity_logs', 'survey_status_histories', 'survey_reschedules', 'survey_notifications', 'audit_logs', 'survey_loan_approvals', 'survey_reminder_deliveries'] as $table) {
             $this->assertDatabaseCount($table, 0);
         }
     }
@@ -486,7 +486,29 @@ class SurveyTeamIsolationTest extends TestCase
             foreach (['requested_item', 'location_notes', 'admin_notes', 'manager_notes', 'google_maps_url', 'result_notes', 'cancellation_reason', 'location_condition', 'customer_notes', 'obstacles', 'recommendations', 'additional_notes'] as $column) {
                 $table->text($column)->nullable();
             }
+            $table->unsignedInteger('schedule_revision')->default(0);
             $table->timestamps(); $table->softDeletes();
+        });
+        Schema::create('survey_reminder_settings', function (Blueprint $table) {
+            $table->id(); $table->string('key', 40)->unique()->default('default');
+            $table->boolean('enabled')->default(false); $table->unsignedInteger('lead_minutes')->default(300);
+            $table->text('message_template')->nullable();
+            $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+        Schema::create('survey_reminder_deliveries', function (Blueprint $table) {
+            $table->id(); $table->foreignId('survey_id')->constrained()->cascadeOnDelete();
+            $table->unsignedInteger('schedule_revision');
+            $table->foreignId('recipient_id')->constrained('users')->cascadeOnDelete();
+            $table->timestamp('scheduled_at_snapshot'); $table->unsignedInteger('lead_minutes');
+            $table->timestamp('due_at'); $table->string('status', 20)->default('pending');
+            $table->timestamp('claimed_at')->nullable(); $table->string('lease_token', 40)->nullable();
+            $table->unsignedInteger('attempts')->default(0);
+            $table->foreignId('notification_id')->nullable()->constrained('survey_notifications')->nullOnDelete();
+            $table->timestamp('push_attempted_at')->nullable();
+            $table->string('push_status', 25)->default('not_attempted');
+            $table->string('last_error_code', 60)->nullable(); $table->timestamps();
+            $table->unique(['survey_id', 'schedule_revision', 'recipient_id']);
         });
         Schema::create('survey_status_histories', function (Blueprint $table) {
             $table->id(); $table->foreignId('survey_id')->constrained()->cascadeOnDelete();

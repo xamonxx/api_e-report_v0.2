@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\MasterDataController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ReminderCronJobController;
 use App\Http\Controllers\Api\SurveyController;
+use App\Http\Controllers\Api\SurveyReminderController;
 use App\Http\Controllers\Api\WilayahController;
 use App\Http\Controllers\Api\DebugController;
 use App\Http\Controllers\ExportController;
@@ -273,8 +274,17 @@ Route::prefix('v1')->group(function () {
                 Route::put('/reminder-cron-jobs/{reminderCronJob}', [ReminderCronJobController::class, 'update'])->name('reminder-cron-jobs.update');
                 Route::patch('/reminder-cron-jobs/{reminderCronJob}/toggle', [ReminderCronJobController::class, 'toggle'])->name('reminder-cron-jobs.toggle');
                 Route::delete('/reminder-cron-jobs/{reminderCronJob}', [ReminderCronJobController::class, 'destroy'])->name('reminder-cron-jobs.destroy');
+
+                Route::get('/survey-reminder-settings', [SurveyReminderController::class, 'showSetting'])->name('survey-reminder-settings.show');
+                Route::put('/survey-reminder-settings', [SurveyReminderController::class, 'updateSetting'])->name('survey-reminder-settings.update');
+                Route::post('/survey-reminder-settings/preview', [SurveyReminderController::class, 'previewSetting'])->name('survey-reminder-settings.preview');
             });
         });
+
+        // Riwayat pengingat survey (Super Admin) - di luar prefix master-data,
+        // sama seperti /surveys/recap yang juga bukan resource master-data.
+        Route::middleware('role:super_admin')->get('/survey-reminder-deliveries', [SurveyReminderController::class, 'history'])
+            ->name('api.survey-reminder-deliveries.index');
 
         // Wilayah (geographic hierarchy)
         // SECURITY FIX 2026-07-29: Rate limit to prevent DoS via large payload abuse

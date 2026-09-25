@@ -17,3 +17,7 @@ Schedule::command('reminders:push-due')->everyMinute()->withoutOverlapping();
 
 // ── Web Push: pengingat cron terjadwal (mis. absensi harian admin) ───
 Schedule::command('reminders:send-due-cron-jobs')->everyMinute()->withoutOverlapping();
+
+// ── Pengingat survey terjadwal (B3) - nonaktif secara default lewat
+//    survey_reminder_settings.enabled, jadi aman selalu terdaftar. ───
+Schedule::command('surveys:dispatch-due-reminders')->everyMinute()->withoutOverlapping();

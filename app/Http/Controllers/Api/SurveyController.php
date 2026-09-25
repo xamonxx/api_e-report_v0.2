@@ -14,6 +14,7 @@ use App\Models\SurveyReschedule;
 use App\Models\User;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\SurveyorScheduleRecapService;
+use App\Services\SurveyReminderService;
 use App\Services\WebPushService;
 use App\Support\ConsultationStatusGroups;
 use Carbon\Carbon;
@@ -26,6 +27,11 @@ use Throwable;
 
 class SurveyController extends Controller
 {
+    public function __construct(
+        private readonly SurveyReminderService $reminderService,
+    ) {
+    }
+
     /**
      * Relasi standar yang dimuat untuk response survey.
      */
@@ -367,6 +373,7 @@ class SurveyController extends Controller
                 'location_notes' => null,
             ]);
             $locked->transitionTo(Survey::STATE_REQUESTED, 'Manager melepas penugasan surveyor.');
+            $this->reminderService->cancelPending($locked);
         });
 
         $updatedSurvey = $survey->fresh();
@@ -810,6 +817,7 @@ class SurveyController extends Controller
                 'location_notes' => $this->gacongNote($surveyor, $lockedSurvey->account?->account_group, $validated['location_notes'] ?? null),
             ]);
             $lockedSurvey->transitionTo(Survey::STATE_SCHEDULED);
+            $this->reminderService->replan($lockedSurvey);
         });
 
         $updatedSurvey = $survey->fresh();
@@ -898,6 +906,7 @@ class SurveyController extends Controller
                 $lockedSurvey->manager_notes = $validated['manager_notes'];
             }
             $lockedSurvey->save();
+            $this->reminderService->replan($lockedSurvey);
 
             SurveyReschedule::create([
                 'survey_id' => $lockedSurvey->id,
@@ -954,6 +963,7 @@ class SurveyController extends Controller
 
         $survey->actual_start_at = now();
         $survey->transitionTo(Survey::STATE_IN_PROGRESS);
+        $this->reminderService->cancelPending($survey);
         $updatedSurvey = $survey->fresh();
         $this->flushDashboardCache([(int) $updatedSurvey->account_id]);
         $surveyorName = auth()->user()?->name ?? ($updatedSurvey->surveyor?->name ?? 'Surveyor');
@@ -1000,6 +1010,7 @@ class SurveyController extends Controller
             'completed_at' => now(),
         ]);
         $survey->transitionTo(Survey::STATE_COMPLETED);
+        $this->reminderService->cancelPending($survey);
 
         $updatedSurvey = $survey->fresh()->load($this->withRelations());
         $this->flushDashboardCache([(int) $updatedSurvey->account_id]);
@@ -1047,6 +1058,7 @@ class SurveyController extends Controller
         $survey->cancelled_at = now();
         $survey->cancellation_reason = $reason ?: "Dibatalkan oleh {$cancellerName}.";
         $survey->transitionTo(Survey::STATE_CANCELLED);
+        $this->reminderService->cancelPending($survey);
 
         $updatedSurvey = $survey->fresh();
         $this->flushDashboardCache([(int) $updatedSurvey->account_id]);

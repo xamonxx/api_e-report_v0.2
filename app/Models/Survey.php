@@ -48,6 +48,7 @@ class Survey extends Model
         'completed_at',
         'cancelled_at',
         'cancellation_reason',
+        'schedule_revision',
     ];
 
     protected function casts(): array
@@ -168,6 +169,11 @@ class Survey extends Model
     public function loanApprovals()
     {
         return $this->hasMany(SurveyLoanApproval::class);
+    }
+
+    public function reminderDeliveries()
+    {
+        return $this->hasMany(SurveyReminderDelivery::class);
     }
 
     /** True bila surveyor ini punya izin pinjam aktif untuk survey ini. */
