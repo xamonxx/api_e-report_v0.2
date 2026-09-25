@@ -38,7 +38,7 @@ return [
     // cross-origin (localhost:3000 -> localhost:8000) meski server sudah
     // mengirimnya -- akibatnya semua unduhan file (export Excel/PDF) jatuh
     // ke nama fallback "export_<timestamp>" alih-alih nama asli dari server.
-    'exposed_headers' => ['Content-Disposition'],
+    'exposed_headers' => ['Content-Disposition', 'X-Recap-Range-Truncated'],
 
     'max_age' => 0,
 

@@ -64,7 +64,12 @@ class AdminReportAttendanceExcelExporter
      * Rentang dibatasi 92 hari — lebih dari itu jumlah kolomnya tidak lagi
      * terbaca sebagai satu lembar.
      */
-    private function resolveRange(Carbon $start, ?Carbon $end): array
+    /**
+     * Public: controller perlu tahu rentang SEBENARNYA (bisa terpotong 92
+     * hari) sebelum menulis nama file export, supaya nama file tidak
+     * mengklaim rentang yang lebih panjang dari isi filenya.
+     */
+    public function resolveRange(Carbon $start, ?Carbon $end): array
     {
         if ($end === null) {
             return [$start->copy()->startOfMonth(), $start->copy()->endOfMonth()];

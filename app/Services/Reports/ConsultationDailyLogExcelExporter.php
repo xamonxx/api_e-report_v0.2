@@ -60,8 +60,13 @@ class ConsultationDailyLogExcelExporter
         ]);
     }
 
-    /** Sama persis perilakunya dengan AdminReportAttendanceExcelExporter::resolveRange(). */
-    private function resolveRange(Carbon $start, ?Carbon $end): array
+    /**
+     * Sama persis perilakunya dengan AdminReportAttendanceExcelExporter::resolveRange().
+     * Public: controller perlu tahu rentang SEBENARNYA (bisa terpotong 92
+     * hari) sebelum menulis nama file export, supaya nama file tidak
+     * mengklaim rentang yang lebih panjang dari isi filenya.
+     */
+    public function resolveRange(Carbon $start, ?Carbon $end): array
     {
         if ($end === null) {
             return [$start->copy()->startOfMonth(), $start->copy()->endOfMonth()];

@@ -373,12 +373,20 @@ class ReportAttendanceController extends Controller
 
         $groupSlug = str(AccountGroup::label($accountGroup) ?? 'semua-grup')->slug()->toString();
 
+        // Nama file harus mencerminkan rentang SEBENARNYA yang ada di isi
+        // workbook, bukan rentang mentah yang diminta - exporter memotong
+        // diam-diam ke MAX_RANGE_DAYS (92 hari) di dalam buildWorkbook(),
+        // jadi nama file dibangun dari hasil resolveRange() yang sama supaya
+        // tidak pernah mengklaim rentang lebih panjang dari isi filenya.
+        [, $actualEnd] = $excelExporter->resolveRange($start, $end);
+        $rangeTruncated = $hasRange && ! $actualEnd->equalTo($end);
+
         $filename = $hasRange
             ? sprintf(
                 'rekap-laporan-admin-%s-%s-%s.xlsx',
                 $groupSlug,
                 $start->format('Ymd'),
-                $end->format('Ymd')
+                $actualEnd->format('Ymd')
             )
             : sprintf('rekap-laporan-admin-%s-%s.xlsx', $groupSlug, $start->format('Y-m'));
 
@@ -386,6 +394,7 @@ class ReportAttendanceController extends Controller
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             'Cache-Control' => 'max-age=0',
+            'X-Recap-Range-Truncated' => $rangeTruncated ? '1' : '0',
         ]);
     }
 
@@ -447,12 +456,17 @@ class ReportAttendanceController extends Controller
 
         $groupSlug = str(AccountGroup::label($accountGroup) ?? 'semua-grup')->slug()->toString();
 
+        // Sama seperti export() - nama file harus mencerminkan rentang
+        // sebenarnya, bukan rentang mentah yang diminta.
+        [, $actualEnd] = $excelExporter->resolveRange($start, $end);
+        $rangeTruncated = $hasRange && ! $actualEnd->equalTo($end);
+
         $filename = $hasRange
             ? sprintf(
                 'log-laporan-konsul-%s-%s-%s.xlsx',
                 $groupSlug,
                 $start->format('Ymd'),
-                $end->format('Ymd')
+                $actualEnd->format('Ymd')
             )
             : sprintf('log-laporan-konsul-%s-%s.xlsx', $groupSlug, $start->format('Y-m'));
 
@@ -460,6 +474,7 @@ class ReportAttendanceController extends Controller
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             'Cache-Control' => 'max-age=0',
+            'X-Recap-Range-Truncated' => $rangeTruncated ? '1' : '0',
         ]);
     }
 
