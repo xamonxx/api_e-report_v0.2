@@ -40,7 +40,8 @@ class ConsultationController extends Controller
         // activeSurvey ikut dimuat supaya UI tahu lead sudah diajukan survey
         // atau belum, tanpa query tambahan per baris.
         $query = Consultation::query()->withProductRelations()->with([
-            'activeSurvey.surveyor:id,name',
+            'activeSurvey' => fn ($query) => $query->visibleTo($user),
+            'activeSurvey.surveyor:id,name,survey_team',
             'activeSurvey.resultStatus:id,name,color',
         ]);
         $query->forUser($user);
@@ -139,9 +140,10 @@ class ConsultationController extends Controller
             [
                 'account',
                 'statusCategory',
+                'activeSurvey' => fn ($query) => $query->visibleTo($user),
                 // Menentukan apakah kartu Status Survey menampilkan survey yang
                 // berjalan atau ajakan "belum diajukan".
-                'activeSurvey.surveyor:id,name',
+                'activeSurvey.surveyor:id,name,survey_team',
                 'activeSurvey.resultStatus:id,name,color',
                 'timelineNotes.user',
                 'reminders' => function ($query) use ($user) {
@@ -194,6 +196,10 @@ class ConsultationController extends Controller
         $validated['created_by'] = $user->id;
         $validated['consultation_date'] = $validated['consultation_date'] ?? now()->toDateString();
         $validated['needs_category_id'] = $productIds->first();
+        // Snapshot grup akun saat konsul dibuat; tidak boleh diturunkan dari
+        // accounts.account_group secara live saat dibaca (lihat migration
+        // add_account_group_to_consultations_table).
+        $validated['account_group'] = Account::whereKey($validated['account_id'])->value('account_group');
 
         $consultation = DB::transaction(function () use ($validated, $productIds) {
             $consultation = Consultation::create(Arr::except($validated, ['needs_category_ids']));
@@ -280,6 +286,61 @@ class ConsultationController extends Controller
 
         return response()->json([
             'message' => 'Data konsultasi berhasil dihapus!',
+        ]);
+    }
+
+    /**
+     * GET /api/v1/consultations/trashed
+     * Daftar konsultasi yang sudah dihapus (soft delete), untuk tab Arsip.
+     */
+    public function trashed(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Consultation::class);
+
+        $user = auth()->user();
+        $query = Consultation::onlyTrashed()->withProductRelations();
+        $query->forUser($user);
+
+        if ($request->filled('search')) {
+            $search = str_replace(['%', '_'], ['\\%', '\\_'], trim((string) $request->search));
+            $query->where(function ($q) use ($search) {
+                $q->where('client_name', 'like', "%{$search}%")
+                    ->orWhere('consultation_id', 'like', "%{$search}%");
+            });
+        }
+
+        $query->orderByDesc('deleted_at');
+
+        $perPage = min((int) $request->input('per_page', 25), 100);
+        $paginated = $query->paginate($perPage);
+
+        return response()->json([
+            'data' => $paginated->items(),
+            'meta' => [
+                'current_page' => $paginated->currentPage(),
+                'last_page' => $paginated->lastPage(),
+                'per_page' => $paginated->perPage(),
+                'total' => $paginated->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * POST /api/v1/consultations/{id}/restore
+     * Pulihkan konsultasi yang sudah diarsipkan (soft delete).
+     */
+    public function restore(int $id): JsonResponse
+    {
+        $consultation = Consultation::onlyTrashed()->findOrFail($id);
+        $this->authorize('restore', $consultation);
+
+        $consultation->restore();
+
+        $this->flushDashboardCache([(int) $consultation->account_id]);
+
+        return response()->json([
+            'data' => $consultation->fresh()->load(Consultation::productRelations()),
+            'message' => 'Data konsultasi berhasil dipulihkan!',
         ]);
     }
 

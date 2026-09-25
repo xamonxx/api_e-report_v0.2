@@ -1014,6 +1014,7 @@ class AnalyticsReportService
      */
     private function scopeSurveyByAccount(Builder $query, User $user, ?int $selectedAccount): Builder
     {
+        $query->visibleTo($user);
         if ($user->isAdmin()) {
             $query->where('account_id', $user->account_id);
 

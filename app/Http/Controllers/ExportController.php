@@ -13,10 +13,12 @@ use App\Services\Reports\LeadsReportService;
 use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
 use App\Services\Reports\SurveyorScheduleRecapExcelExporter;
 use App\Services\Reports\SurveyorScheduleRecapService;
+use App\Support\AccountGroup;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -237,15 +239,35 @@ class ExportController extends Controller
 
     private function validatedLeadExportFilters(Request $request): array
     {
-        return $request->validate([
+        if ($request->filled('account_group')) {
+            $request->merge([
+                'account_group' => AccountGroup::normalize($request->input('account_group'))
+                    ?? $request->input('account_group'),
+            ]);
+        }
+
+        $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'integer', 'exists:status_categories,id'],
             'account' => ['nullable', 'integer', 'exists:accounts,id'],
+            'account_group' => ['nullable', Rule::in(AccountGroup::values())],
+            'account_ids' => ['nullable', 'string'],
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'month' => ['nullable', 'integer', 'between:1,12'],
             'year' => ['nullable', 'integer', 'between:2000,2100'],
         ]);
+
+        if (! empty($validated['account_ids'])) {
+            $validated['account_ids'] = collect(explode(',', $validated['account_ids']))
+                ->map(fn ($id) => (int) trim($id))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return $validated;
     }
 
     private function leadsFilename(string $extension, array $report): string

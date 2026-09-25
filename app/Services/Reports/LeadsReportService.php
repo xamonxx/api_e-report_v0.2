@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\Account;
 use App\Models\Consultation;
 use App\Models\User;
+use App\Support\AccountGroup;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -79,8 +80,16 @@ class LeadsReportService
 
         if ($user->isAdmin()) {
             $query->whereKey($user->account_id);
-        } elseif (! empty($filters['account'])) {
-            $query->whereKey((int) $filters['account']);
+        } else {
+            if (! empty($filters['account'])) {
+                $query->whereKey((int) $filters['account']);
+            }
+            if (! empty($filters['account_ids'])) {
+                $query->whereIn('id', $filters['account_ids']);
+            }
+            if (! empty($filters['account_group'])) {
+                $query->where('account_group', $filters['account_group']);
+            }
         }
 
         return $query->orderBy('id')->get(['id', 'name']);
@@ -94,6 +103,10 @@ class LeadsReportService
 
         if (! empty($filters['account'])) {
             return Account::query()->whereKey((int) $filters['account'])->value('name') ?? 'Akun Dipilih';
+        }
+
+        if (! empty($filters['account_group'])) {
+            return AccountGroup::label($filters['account_group']) ?? 'Grup Dipilih';
         }
 
         return 'Semua Akun';
@@ -211,6 +224,7 @@ class LeadsReportService
 
         // 1. Ambil surveys periode aktif (dijadwalkan di antara start dan end)
         $activeSurveysQuery = \App\Models\Survey::query()
+            ->visibleTo($user)
             ->whereNotNull('surveyor_id')
             ->whereBetween('scheduled_at', [$start, $end])
             ->with(['consultation', 'surveyor:id,name', 'resultStatus']);
@@ -226,6 +240,7 @@ class LeadsReportService
 
         // 2. Ambil surveys periode lalu (sebelum start) yang deals
         $prevDealsQuery = \App\Models\Survey::query()
+            ->visibleTo($user)
             ->whereNotNull('surveyor_id')
             ->where('state', \App\Models\Survey::STATE_COMPLETED)
             ->whereIn('result_status_id', $dealStatusIds->all())
@@ -241,6 +256,7 @@ class LeadsReportService
 
         // 3. Ambil surveys periode depan (sesudah end) yang deals
         $nextDealsQuery = \App\Models\Survey::query()
+            ->visibleTo($user)
             ->whereNotNull('surveyor_id')
             ->where('state', \App\Models\Survey::STATE_COMPLETED)
             ->whereIn('result_status_id', $dealStatusIds->all())
@@ -478,8 +494,19 @@ class LeadsReportService
     {
         $query = Consultation::query()->forUser($user);
 
-        if ($user->isSuperAdmin() && ! empty($filters['account'])) {
-            $query->where('account_id', (int) $filters['account']);
+        if ($user->isSuperAdmin()) {
+            if (! empty($filters['account'])) {
+                $query->where('account_id', (int) $filters['account']);
+            }
+            if (! empty($filters['account_ids'])) {
+                $query->whereIn('account_id', $filters['account_ids']);
+            }
+            if (! empty($filters['account_group'])) {
+                // Filter pakai kolom snapshot konsul, bukan join live ke
+                // accounts -- konsul lama tak boleh direklasifikasi oleh
+                // perpindahan grup akun yang terjadi belakangan.
+                $query->where('account_group', $filters['account_group']);
+            }
         }
 
         if (! empty($filters['status'])) {

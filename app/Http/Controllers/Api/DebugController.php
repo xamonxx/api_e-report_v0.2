@@ -122,6 +122,8 @@ class DebugController extends Controller
             }
         }
 
+        $accountGroupMap = Account::whereIn('id', $accountIds)->pluck('account_group', 'id')->all();
+
         // Get config geography or define fallback
         $provinces = config('wilayah.provinces', []);
         if (empty($provinces)) {
@@ -169,7 +171,7 @@ class DebugController extends Controller
         
         // Chunk generation in a transaction
         DB::transaction(function () use (
-            $count, $accountIds, $provinces, $cityMapping, $districtMapping,
+            $count, $accountIds, $accountGroupMap, $provinces, $cityMapping, $districtMapping,
             $needsCategories, $statusCategories, $firstNames, $lastNames, $phonePrefixes,
             $productDetails, $dummyNotes, $user, &$generatedCount
         ) {
@@ -228,6 +230,7 @@ class DebugController extends Controller
                     'district' => $district,
                     'address' => $address,
                     'account_id' => $accountId,
+                    'account_group' => $accountGroupMap[$accountId] ?? null,
                     'needs_category_id' => $needsCategory ? $needsCategory->id : null,
                     'product_details' => $details,
                     'status_category_id' => $statusCategory ? $statusCategory->id : null,

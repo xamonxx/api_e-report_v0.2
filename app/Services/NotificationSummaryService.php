@@ -16,20 +16,37 @@ class NotificationSummaryService
 {
     public function getForUser(User $user): array
     {
-        return Cache::remember(
+        $summary = Cache::remember(
             $this->detailCacheKey($user->id),
             now()->addMinutes(2),
             fn () => $this->buildSummary($user)
         );
+
+        return $this->refreshSurveyCount($summary, $user);
     }
 
     public function getCountsForUser(User $user): array
     {
-        return Cache::remember(
+        $summary = Cache::remember(
             $this->countsCacheKey($user->id),
             now()->addMinutes(2),
             fn () => $this->buildCounts($user)
         );
+
+        return $this->refreshSurveyCount($summary, $user);
+    }
+
+    private function refreshSurveyCount(array $summary, User $user): array
+    {
+        // Hak akses bisa berubah saat tim akun atau penugasan berubah.
+        $count = SurveyNotification::query()
+            ->where('user_id', $user->id)
+            ->whereHas('survey', fn (Builder $query) => $query->visibleTo($user))
+            ->whereNull('read_at')->count();
+        $summary['initialTotalAlerts'] += $count - $summary['unreadSurveysCount'];
+        $summary['unreadSurveysCount'] = $count;
+
+        return $summary;
     }
 
     public function forgetForUser(int $userId): void
@@ -78,6 +95,7 @@ class NotificationSummaryService
         // mentah per request langsung menambah beban koneksi DB.
         $unreadSurveysCount = SurveyNotification::query()
             ->where('user_id', $user->id)
+            ->whereHas('survey', fn (Builder $query) => $query->visibleTo($user))
             ->whereNull('read_at')
             ->count();
 

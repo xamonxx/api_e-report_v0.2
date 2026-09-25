@@ -35,7 +35,10 @@ class BugReportRequest extends FormRequest
     {
         return [
             'description'   => ['required', 'string', 'min:10', 'max:2000'],
-            'page_url'      => ['nullable', 'string', 'max:2048'],
+            // This value is rendered as an admin-facing hyperlink. Limit the
+            // public input to browser-safe web schemes to prevent stored links
+            // such as javascript:, data:, or file:.
+            'page_url'      => ['nullable', 'string', 'max:2048', 'url:http,https'],
             'reporter_email' => ['nullable', 'email:rfc', 'max:255'],
 
             // Honeypot: a hidden field real users never fill. Bots auto-fill it,
@@ -61,6 +64,7 @@ class BugReportRequest extends FormRequest
             'description.required' => 'Mohon jelaskan bug atau error yang Anda temukan.',
             'description.min'      => 'Penjelasan terlalu singkat (minimal 10 karakter).',
             'description.max'      => 'Penjelasan terlalu panjang (maksimal 2000 karakter).',
+            'page_url.url'         => 'URL halaman harus menggunakan protokol HTTP atau HTTPS.',
             'reporter_email.email' => 'Format email tidak valid.',
             'website.max'          => 'Permintaan ditolak.',
             'images.max'           => 'Maksimal 3 gambar.',

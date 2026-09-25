@@ -58,8 +58,11 @@ class SurveyorScheduleRecapService
         // sama-sama mengasumsikan tepat 7.
         $period = $this->periodResolver->resolve(array_merge($filters, ['period_type' => 'weekly']));
         $accountGroup = AccountGroup::normalize($filters['account_group'] ?? null);
+        if ($user->isManagerSurveyor() && $user->hasSurveyTeam() && $accountGroup === null) {
+            $accountGroup = $user->survey_team;
+        }
 
-        $surveys = $this->fetchSurveys($period, $accountGroup, $filters);
+        $surveys = $this->fetchSurveys($user, $period, $accountGroup, $filters);
         $days = $this->buildDays($period, $surveys);
         $summary = $this->buildSummary($surveys);
 
@@ -81,12 +84,13 @@ class SurveyorScheduleRecapService
         ];
     }
 
-    private function fetchSurveys(array $period, ?string $accountGroup, array $filters): Collection
+    private function fetchSurveys(User $user, array $period, ?string $accountGroup, array $filters): Collection
     {
         $accountId = $filters['account'] ?? null;
         $surveyorId = $filters['surveyor'] ?? null;
 
         return Survey::query()
+            ->visibleTo($user)
             ->select(['surveys.id', 'surveys.surveyor_id', 'surveys.scheduled_at', 'surveys.account_id'])
             // join, bukan with(): satu baris per survey dengan nama sudah rata.
             // Inner join sekaligus menjamin surveyor_id tidak null.

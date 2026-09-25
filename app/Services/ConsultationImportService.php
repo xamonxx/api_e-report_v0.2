@@ -70,11 +70,12 @@ class ConsultationImportService
 
         try {
             [$defaultStatus, $defaultCategory] = $this->resolveDefaults();
-            $accounts = Account::query()->get(['id', 'name']);
+            $accounts = Account::query()->get(['id', 'name', 'account_group']);
             $validAccountIds = $accounts->pluck('id')->all();
             $accountNameMap = $accounts
                 ->mapWithKeys(fn (Account $account) => [$this->normalizeLookup($account->name) => $account->id])
                 ->all();
+            $accountGroupMap = $accounts->pluck('account_group', 'id')->all();
             $needsCategoryMap = NeedsCategory::query()
                 ->get(['id', 'name'])
                 ->mapWithKeys(fn (NeedsCategory $category) => [$this->normalizeLookup($category->name) => $category->id])
@@ -147,7 +148,8 @@ class ConsultationImportService
                         $chunk,
                         $defaultCategory->id,
                         $defaultStatus->id,
-                        $import->user_id
+                        $import->user_id,
+                        $accountGroupMap
                     );
 
                     $successCount += $inserted;
@@ -161,7 +163,8 @@ class ConsultationImportService
                     $chunk,
                     $defaultCategory->id,
                     $defaultStatus->id,
-                    $import->user_id
+                    $import->user_id,
+                    $accountGroupMap
                 );
 
                 $successCount += $inserted;
@@ -266,7 +269,8 @@ class ConsultationImportService
         array $chunk,
         int $defaultCategoryId,
         int $defaultStatusId,
-        int $createdBy
+        int $createdBy,
+        array $accountGroupMap
     ): array {
         $inserted = 0;
         $updated = 0;
@@ -279,7 +283,7 @@ class ConsultationImportService
             // kode lama; pivot-lah yang menyimpan daftar lengkapnya.
             $categoryIds = $row['needs_category_ids'] ?? [$categoryId];
 
-            $consultation = DB::transaction(function () use ($createdBy, $categoryId, $categoryIds, $statusId, $row) {
+            $consultation = DB::transaction(function () use ($createdBy, $categoryId, $categoryIds, $statusId, $row, $accountGroupMap) {
                 $existingLead = $this->findImportTarget($row, $categoryIds);
 
                 $attributes = [
@@ -311,6 +315,7 @@ class ConsultationImportService
                 $lead = Consultation::create(array_merge($attributes, [
                     'consultation_id' => $consultationId,
                     'created_by' => $createdBy,
+                    'account_group' => $accountGroupMap[(int) $row['account_id']] ?? null,
                 ]));
 
                 $this->syncImportedConsultationSequence($consultationId, (int) $row['account_id']);

@@ -163,6 +163,7 @@ class AuthController extends Controller
             'email' => $user->email,
             'role' => $user->role instanceof UserRole ? $user->role->value : $user->role,
             'account_id' => $user->account_id,
+            'survey_team' => $user->survey_team,
             'account' => $user->account ? [
                 'id' => $user->account->id,
                 'name' => $user->account->name,

@@ -34,7 +34,11 @@ return [
     // Using ['*'] is overly permissive.
     'allowed_headers' => ['Content-Type', 'X-XSRF-TOKEN', 'Accept', 'Authorization', 'X-Requested-With'],
 
-    'exposed_headers' => [],
+    // Tanpa ini, browser CORS memblokir JS baca header ini dari response
+    // cross-origin (localhost:3000 -> localhost:8000) meski server sudah
+    // mengirimnya -- akibatnya semua unduhan file (export Excel/PDF) jatuh
+    // ke nama fallback "export_<timestamp>" alih-alih nama asli dari server.
+    'exposed_headers' => ['Content-Disposition'],
 
     'max_age' => 0,
 

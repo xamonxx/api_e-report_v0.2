@@ -47,21 +47,24 @@ class NotificationController extends Controller
         $user = Auth::user();
         $summary = $this->notificationSummaryService->getForUser($user);
         $surveyNotifications = SurveyNotification::query()
+            ->whereHas('survey', fn ($query) => $query->visibleTo($user))
             ->with([
                 'survey.consultation:id,consultation_id,client_name,district,city,province',
-                'survey.surveyor:id,name',
+                'survey.surveyor:id,name,survey_team',
             ])
             ->where('user_id', $user->id)
             ->latest()
             ->limit(30)
             ->get();
         $unreadSurveys = SurveyNotification::query()
+            ->whereHas('survey', fn ($query) => $query->visibleTo($user))
             ->where('user_id', $user->id)
             ->whereNull('read_at')
             ->count();
         $attendanceNotifications = $user->isSuperAdmin()
             ? AttendanceNotification::query()
                 ->where('user_id', $user->id)
+                ->with('attendance.account:id,account_group')
                 ->latest()
                 ->limit(30)
                 ->get()
@@ -137,6 +140,7 @@ class NotificationController extends Controller
                         'location' => $location ?: null,
                         'schedule_label' => $schedule?->translatedFormat('d M Y, H:i'),
                         'surveyor_name' => $survey?->surveyor?->name,
+                        'surveyor_team' => $survey?->surveyor?->survey_team,
                     ];
                 }),
             'attendances' => $attendanceNotifications
@@ -148,6 +152,7 @@ class NotificationController extends Controller
                     'created_human' => $notification->created_at?->diffForHumans(),
                     'admin_name' => $notification->admin_name,
                     'account_name' => $notification->account_name,
+                    'account_group' => $notification->attendance?->account?->account_group,
                     'report_date' => $notification->report_date?->toDateString(),
                     'report_date_label' => $notification->report_date?->translatedFormat('d M Y'),
                     'report_category' => $notification->report_category,
@@ -192,6 +197,7 @@ class NotificationController extends Controller
     public function markSurveyRead(SurveyNotification $notification): JsonResponse
     {
         abort_unless($notification->user_id === Auth::id(), 403);
+        abort_unless($notification->survey()->visibleTo(Auth::user())->exists(), 403);
         $notification->update(['read_at' => now()]);
         $this->notificationSummaryService->forgetForUser((int) Auth::id());
 
@@ -201,6 +207,7 @@ class NotificationController extends Controller
     public function deleteSurvey(SurveyNotification $notification): JsonResponse
     {
         abort_unless($notification->user_id === Auth::id(), 403);
+        abort_unless($notification->survey()->visibleTo(Auth::user())->exists(), 403);
         $notification->delete();
         $this->notificationSummaryService->forgetForUser((int) Auth::id());
 
@@ -255,6 +262,7 @@ class NotificationController extends Controller
                 ->update(['is_read' => true]);
 
             $surveys = SurveyNotification::query()
+                ->whereHas('survey', fn ($query) => $query->visibleTo($user))
                 ->where('user_id', $user->id)
                 ->delete();
 

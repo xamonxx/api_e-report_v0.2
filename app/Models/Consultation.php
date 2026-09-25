@@ -32,6 +32,7 @@ class Consultation extends Model
         'district',
         'address',
         'account_id',
+        'account_group',
         'needs_category_id',
         'product_details',
         'status_category_id',
