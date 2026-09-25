@@ -121,7 +121,7 @@ class SurveyTeamIsolationTest extends TestCase
             'reason' => 'Forbidden cancellation',
         ])->assertForbidden();
         $this->assertSame($before, $survey->fresh()->getAttributes());
-        foreach (['survey_activity_logs', 'survey_status_histories', 'survey_reschedules', 'survey_notifications', 'audit_logs'] as $table) {
+        foreach (['survey_activity_logs', 'survey_status_histories', 'survey_reschedules', 'survey_notifications', 'audit_logs', 'survey_loan_approvals'] as $table) {
             $this->assertDatabaseCount($table, 0);
         }
     }
@@ -514,6 +514,15 @@ class SurveyTeamIsolationTest extends TestCase
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('action'); $table->string('title'); $table->text('message');
             $table->timestamp('read_at')->nullable(); $table->timestamps();
+        });
+        Schema::create('survey_loan_approvals', function (Blueprint $table) {
+            $table->id(); $table->foreignId('survey_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('surveyor_id')->constrained('users')->cascadeOnDelete();
+            $table->string('borrower_team', 1); $table->string('lender_team', 1);
+            $table->foreignId('approved_by')->constrained('users');
+            $table->timestamp('approved_at'); $table->text('reason');
+            $table->foreignId('revoked_by')->nullable()->constrained('users');
+            $table->timestamp('revoked_at')->nullable(); $table->timestamps();
         });
         Schema::create('audit_logs', function (Blueprint $table) {
             $table->id(); $table->string('loggable_type'); $table->unsignedBigInteger('loggable_id');

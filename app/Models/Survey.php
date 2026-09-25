@@ -111,10 +111,16 @@ class Survey extends Model
                 // ditugaskan ke survey Team F walau timnya sendiri beda -
                 // makanya Team F dibuka lewat kepemilikan (surveyor_id) tanpa
                 // syarat tim. Tim lain (A-E) tetap wajib kecocokan tim DAN
-                // kepemilikan sekaligus, supaya surveyor_id basi lintas-tim
-                // (mis. sisa sebelum reassignment) tetap tidak kelihatan.
+                // kepemilikan sekaligus, KECUALI ada izin pinjam aktif
+                // (SurveyLoanApproval) untuk pasangan survey+surveyor ini -
+                // tanpa baris ini, surveyor yang dipinjam ke Team C/D lewat
+                // persetujuan Super Admin tidak akan pernah melihat survey
+                // yang sudah ditugaskan ke dirinya sendiri.
                 return $query->where('surveys.surveyor_id', $user->id)
-                    ->whereHas('account', fn ($account) => $account->whereIn('account_group', [$user->survey_team, \App\Support\AccountGroup::TEAM_F]));
+                    ->where(function ($visible) use ($user) {
+                        $visible->whereHas('account', fn ($account) => $account->whereIn('account_group', [$user->survey_team, \App\Support\AccountGroup::TEAM_F]))
+                            ->orWhereHas('loanApprovals', fn ($loan) => $loan->where('surveyor_id', $user->id)->active());
+                    });
             }
             return $query->whereHas('account', fn ($account) => $account->where('account_group', $user->survey_team));
         }
@@ -157,6 +163,17 @@ class Survey extends Model
     public function reschedules()
     {
         return $this->hasMany(SurveyReschedule::class)->latest();
+    }
+
+    public function loanApprovals()
+    {
+        return $this->hasMany(SurveyLoanApproval::class);
+    }
+
+    /** True bila surveyor ini punya izin pinjam aktif untuk survey ini. */
+    public function hasActiveLoanApprovalFor(int $surveyorId): bool
+    {
+        return $this->loanApprovals()->where('surveyor_id', $surveyorId)->active()->exists();
     }
 
     public function activityLogs()

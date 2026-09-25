@@ -106,11 +106,17 @@ class MasterDataController extends Controller
     public function surveyors(): JsonResponse
     {
         $user = auth()->user();
+        // Manager Team F belum punya surveyor sendiri - kalau tetap difilter
+        // ke timnya sendiri, daftar kandidatnya selalu kosong dan dia tidak
+        // pernah bisa menugaskan siapa pun walau backend sudah mengizinkan
+        // pinjaman Team F. Lihat SurveyController::BORROWABLE_TEAM.
+        $managerRestrictedToOwnTeam = $user->isManagerSurveyor() && $user->survey_team !== AccountGroup::TEAM_F;
+
         return response()->json([
             'data' => User::query()
                 ->where('role', UserRole::Surveyor->value)
                 ->whereIn('survey_team', ['A', 'B', 'C', 'D', 'E', 'F'])
-                ->when($user->isManagerSurveyor(), fn ($query) => $query->where('survey_team', $user->hasSurveyTeam() ? $user->survey_team : '__none__'))
+                ->when($managerRestrictedToOwnTeam, fn ($query) => $query->where('survey_team', $user->hasSurveyTeam() ? $user->survey_team : '__none__'))
                 ->when($user->isSurveyor(), fn ($query) => $query->whereKey($user->id))
                 ->when($user->isAdmin(), fn ($query) => $query->where('survey_team', $user->account?->account_group ?? '__none__'))
                 ->orderBy('name')

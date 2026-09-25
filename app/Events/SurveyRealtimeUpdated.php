@@ -126,11 +126,13 @@ class SurveyRealtimeUpdated implements ShouldBroadcastNow
         }
         // Team F: surveyor pinjaman (GACONG) tetap berhak atas kanal
         // pribadinya sendiri walau timnya beda dari akun survey. Tim lain
-        // (A-E) tetap wajib kecocokan tim, supaya surveyor_id basi lintas-tim
-        // tidak ikut mendapat kanal privat.
+        // (A-E) tetap wajib kecocokan tim KECUALI ada izin pinjam aktif
+        // (SurveyLoanApproval, persetujuan Super Admin) - tanpa ini surveyor
+        // pinjaman lintas tim di luar Team F tidak pernah dapat update
+        // realtime walau notifikasi in-app-nya sendiri sudah benar tersimpan.
         $surveyor = $this->survey->surveyor_id ? User::find($this->survey->surveyor_id) : null;
         if ($surveyor && $surveyor->hasSurveyTeam()
-            && ($surveyor->survey_team === $team || $team === 'F')
+            && ($surveyor->survey_team === $team || $team === 'F' || $this->survey->hasActiveLoanApprovalFor($surveyor->id))
             && $this->action !== 'rescheduled_by_admin') {
             $channels[] = new PrivateChannel('survey.surveyor.' . $this->survey->surveyor_id);
         }
