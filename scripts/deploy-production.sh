@@ -74,23 +74,38 @@ log "=== E-Report deploy run dimulai (log: $LOG_FILE) ==="
 # ---------------------------------------------------------------------------
 # Cek perubahan dulu — tidak menyentuh apa pun kalau tidak ada perubahan
 # ---------------------------------------------------------------------------
+ensure_safe_directory() {
+  local dir="$1"
+  if ! git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$dir"; then
+    git config --global --add safe.directory "$dir"
+  fi
+}
+
+# check_repo_changed menulis hasilnya ke variabel global lewat nameref
+# ($3), BUKAN lewat `echo` yang ditangkap command substitution — log()
+# juga menulis ke stdout, dan kalau seluruh fungsi ini dipanggil di dalam
+# "$(...)" maka baris log ikut tertangkap bersama nilai "0"/"1", membuat
+# perbandingan [[ "$X" == "0" ]] SELALU false walau repo benar-benar tidak
+# berubah (ditemukan saat test-run pertama di server: fetch gagal karena
+# safe.directory, tapi lolos begitu saja jadi "sukses" tanpa deploy apa pun).
 check_repo_changed() {
-  local dir="$1" name="$2"
+  local dir="$1" name="$2" out_var="$3"
+  ensure_safe_directory "$dir"
   git -C "$dir" fetch origin master --quiet
   local head remote
   head="$(git -C "$dir" rev-parse HEAD)"
   remote="$(git -C "$dir" rev-parse origin/master)"
   if [[ "$head" == "$remote" ]]; then
     log "${name}: tidak ada perubahan (HEAD=${head:0:8})"
-    echo "0"
+    printf -v "$out_var" '%s' "0"
   else
     log "${name}: ada perubahan (${head:0:8} -> ${remote:0:8})"
-    echo "1"
+    printf -v "$out_var" '%s' "1"
   fi
 }
 
-BACKEND_CHANGED="$(check_repo_changed "$BACKEND_DIR" "Backend")"
-FRONTEND_CHANGED="$(check_repo_changed "$FRONTEND_DIR" "Frontend")"
+check_repo_changed "$BACKEND_DIR" "Backend" BACKEND_CHANGED
+check_repo_changed "$FRONTEND_DIR" "Frontend" FRONTEND_CHANGED
 
 if [[ "$BACKEND_CHANGED" == "0" && "$FRONTEND_CHANGED" == "0" ]]; then
   ok "Tidak ada perubahan di backend maupun frontend. Tidak ada yang di-deploy."
