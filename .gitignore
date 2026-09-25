@@ -71,6 +71,10 @@ composer.phar
 /storage/app/public/bug-reports/*
 /storage/app/public/avatars/*
 /storage/backup_*.sql
+/storage/app/backups/
+/storage/app/private/
+/storage/app/kabkota-raw.json
+.route-audit.json
 
 # Internal review notes
 /docs/SECURITY-REVIEW-*.md
