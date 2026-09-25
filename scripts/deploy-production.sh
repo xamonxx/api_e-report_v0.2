@@ -36,6 +36,7 @@ export PATH="${NODE_BIN_DIR}:${PATH}"
 PM2_PROCESS="e_report_frontend"
 BACKEND_SERVICES=(php-fpm-83 ereport-queue ereport-reverb)
 HEALTH_URL="http://127.0.0.1/up"
+HEALTH_HOST="api-ereport.interiorcustom.id"
 
 mkdir -p "$LOG_DIR"
 RUN_TS="$(date +%Y%m%d-%H%M%S)"
@@ -223,8 +224,10 @@ health_check_backend() {
   local tries=5
   for ((i=1; i<=tries; i++)); do
     sleep 2
-    if curl -sf -o /dev/null "$HEALTH_URL"; then
-      ok "Health check backend OK ($HEALTH_URL)"
+    # nginx routing berbasis Host header (virtual hosting) - tanpa header ini
+    # 127.0.0.1 jatuh ke vhost default dan selalu 404 walau backend sehat.
+    if curl -sf -o /dev/null -H "Host: ${HEALTH_HOST}" "$HEALTH_URL"; then
+      ok "Health check backend OK ($HEALTH_URL, Host: ${HEALTH_HOST})"
       return 0
     fi
     warn "Health check backend percobaan ${i}/${tries} gagal, coba lagi..."
