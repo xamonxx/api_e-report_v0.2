@@ -1,0 +1,6 @@
+
+# File yang dieksekusi/dibaca di Linux container/server wajib LF walau checkout di Windows.
+*.sh text eol=lf
+Dockerfile* text eol=lf
+docker/** text eol=lf
+deploy/** text eol=lf
