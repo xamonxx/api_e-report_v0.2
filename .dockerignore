@@ -1,0 +1,30 @@
+/vendor/
+/node_modules/
+**/.npmrc
+**/auth.json
+# Symlink runtime (dibuat entrypoint via `storage:link`) — jangan pernah masuk build
+# context. Path absolutnya environment-specific (beda tiap OS/container) dan bisa
+# membuat "invalid file request" saat build context dibaca dari host Windows.
+public/storage
+.env
+.env.*
+!.env.example
+!.env.production.example
+.git/
+.phpunit.cache/
+.phpunit.result.cache
+bootstrap/cache/*.php
+storage/logs/*.log
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+database/database.sqlite
+# Script utilitas/dump di root repo — tidak boleh ikut image produksi.
+/database.sql
+/*.sql
+/reset_pw.php
+/reset_block.php
+/clean_users.php
+/test_telegram.php
+/render.yaml
+/start.sh

@@ -1,0 +1,107 @@
+# Stack Portainer "ereport" untuk serverone — Docker hybrid.
+# Plan: E-REPORT-APP/PLAN (INI ADALAH IDE ATAU UPDATE)/PLAN_DOCKER_HYBRID_SERVERONE.md
+#
+# - MariaDB, Redis, nginx host, cloudflared TETAP native. Stack ini TIDAK punya
+#   service database dan TIDAK boleh diberi service database (aturan user 2026-10-17).
+# - network_mode: host -> container memakai .env produksi apa adanya
+#   (DB/Redis 127.0.0.1). Tidak ada `ports:`; tiap proses wajib bind 127.0.0.1.
+# - Data persisten tetap di path native (bind mount), bukan volume Docker.
+# - queue/scheduler/reverb scale 0 sampai cutover, supaya job/reminder tidak
+#   diproses dobel bersama ereport-queue + cron ereport-scheduler native.
+
+name: ereport
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+    compress: "true"
+
+x-php: &php
+  image: ${BE_PHP_IMAGE:-ereport/backend-php:c7bcd69}
+  # Image hanya ada di daemon serverone (belum ada registry) — jangan coba pull.
+  pull_policy: never
+  network_mode: host
+  user: "1001:1002"
+  init: true
+  restart: unless-stopped
+  volumes:
+    - /www/wwwroot/api-ereport.interiorcustom.id/.env:/var/www/html/.env:ro
+    - /www/wwwroot/api-ereport.interiorcustom.id/storage:/var/www/html/storage
+  environment:
+    RUN_MIGRATIONS: "false"
+    RUN_STORAGE_LINK: "false"
+    RUN_OPTIMIZE: "false"
+  logging: *logging
+
+services:
+  be-php:
+    <<: *php
+    environment:
+      RUN_MIGRATIONS: "false"
+      RUN_STORAGE_LINK: "false"
+      RUN_OPTIMIZE: "true"
+    mem_limit: 1g
+
+  be-web:
+    image: ${BE_WEB_IMAGE:-ereport/backend-web:c7bcd69}
+    pull_policy: never
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /www/wwwroot/api-ereport.interiorcustom.id/storage/app/public:/var/www/html/storage/app/public:ro
+    depends_on:
+      - be-php
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8100/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    mem_limit: 128m
+    logging: *logging
+
+  frontend:
+    image: ${FE_IMAGE:-ereport/frontend:27b4614}
+    pull_policy: never
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    environment:
+      # Di host network Docker mengisi HOSTNAME dengan hostname host; Next
+      # standalone membaca HOSTNAME sebagai alamat bind -> wajib di-set eksplisit.
+      HOSTNAME: 127.0.0.1
+      PORT: "3100"
+      NODE_ENV: production
+      API_PROXY_TARGET: https://api-ereport.interiorcustom.id
+    healthcheck:
+      # Tanpa X-Forwarded-Proto middleware selalu redirect 308 (Lessons-Log B 2026-10-17).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/login',{headers:{'x-forwarded-proto':'https'},redirect:'manual'}).then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    mem_limit: 768m
+    logging: *logging
+
+  # ---- Worker: WORKER_SCALE=1 di /opt/ereport/.env saat cutover (cutover.sh), 0 saat rollback ----
+
+  queue:
+    <<: *php
+    scale: ${WORKER_SCALE:-0}
+    command: ["php", "artisan", "queue:work", "redis", "--queue=imports,default", "--sleep=3", "--tries=3", "--timeout=300", "--max-time=3600", "--max-jobs=1000", "--backoff=10"]
+    stop_grace_period: 330s
+    mem_limit: 768m
+
+  scheduler:
+    <<: *php
+    scale: ${WORKER_SCALE:-0}
+    command: ["php", "artisan", "schedule:work"]
+    mem_limit: 256m
+
+  reverb:
+    <<: *php
+    scale: ${WORKER_SCALE:-0}
+    command: ["php", "artisan", "reverb:start", "--host=127.0.0.1", "--port=8180", "--no-interaction"]
+    mem_limit: 256m

@@ -19,6 +19,16 @@
 
 set -Eeuo pipefail
 
+# Sejak cutover Docker hybrid (2026-10-17) trafik dilayani stack /opt/ereport.
+# Script native ini me-restart ereport-queue (menyala walau di-disable) dan akan
+# membuat job diproses dobel bersama queue container. Jalankan rollback.sh dulu
+# kalau memang ingin kembali ke deploy native.
+if [[ -f /opt/ereport/CUTOVER_DONE ]]; then
+  echo "STOP: E-Report sudah dilayani Docker (/opt/ereport, cutover $(cat /opt/ereport/CUTOVER_DONE))." >&2
+  echo "Deploy native dinonaktifkan. Lihat /opt/ereport/README.md; kembali ke native: /opt/ereport/rollback.sh" >&2
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Konfigurasi
 # ---------------------------------------------------------------------------

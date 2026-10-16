@@ -8,6 +8,7 @@
 .env.production
 .env.*
 !.env.example
+!.env.docker.example
 !.env.production.example
 
 # Laravel specific
