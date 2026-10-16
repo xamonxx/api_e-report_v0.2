@@ -1,3 +1,7 @@
+> **USANG sejak 2026-10-17.** Dokumen ini menjelaskan auto-deploy lama ke Hostinger lewat GitHub Actions
+> (workflow kini `workflow_dispatch` saja dan targetnya sudah tidak dipakai). Produksi sekarang di serverone:
+> Docker + auto-deploy dari `master`, lihat `deploy/serverone/README.md`.
+
 # Auto Deploy ke Hostinger
 
 ## 📋 Langkah Setup
