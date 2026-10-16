@@ -93,10 +93,10 @@ grep -q '127.0.0.1:8100' "$NGX_REWRITE" && die "rewrite nginx sudah menunjuk ke 
 grep -q 'service: http://127.0.0.1:3000' "$TUNNEL_CFG" || die "tunnel putrainterior tidak menunjuk 127.0.0.1:3000 (Fase 0 belum selesai?)"
 [[ "$(grep -c 'proxy_pass http://127.0.0.1:8080;' "$NGX_REVERB")" == 2 ]] || die "reverb.conf tidak berisi 2 proxy_pass ke 8080 seperti yang diharapkan"
 
-for c in ereport-be-web-1 ereport-frontend-1; do
+for c in ereport-backend-web ereport-frontend; do
   [[ "$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || true)" == healthy ]] || die "$c tidak healthy"
 done
-[[ "$(docker inspect -f '{{.State.Status}}' ereport-be-php-1 2>/dev/null || true)" == running ]] || die "ereport-be-php-1 tidak running"
+[[ "$(docker inspect -f '{{.State.Status}}' ereport-backend-php 2>/dev/null || true)" == running ]] || die "ereport-backend-php tidak running"
 wait_code 200 3 "http://127.0.0.1:8100/up" || die "be-web /up tidak 200"
 wait_code 204 3 -H 'X-Forwarded-Proto: https' "http://127.0.0.1:8100/sanctum/csrf-cookie" || die "be-web csrf (X-Forwarded-Proto https) tidak 204"
 wait_code 200 3 -H 'X-Forwarded-Proto: https' "http://127.0.0.1:3100/login" || die "frontend container /login tidak 200"
@@ -180,7 +180,7 @@ wait_code 200 10 -H "Host: ${API_HOST}" "http://127.0.0.1/up?${probe}-local" || 
 wait_code 200 10 "https://${API_HOST}/up?${probe}" || die "/up publik tidak 200"
 wait_code 204 5 "https://${API_HOST}/sanctum/csrf-cookie" || die "csrf publik tidak 204"
 sleep 2
-docker logs --since 5m ereport-be-web-1 2>&1 | grep -c "${probe}" >/dev/null || die "request publik tidak sampai ke be-web (masih dilayani native?)"
+docker logs --since 5m ereport-backend-web 2>&1 | grep -c "${probe}" >/dev/null || die "request publik tidak sampai ke be-web (masih dilayani native?)"
 log "Backend publik dilayani container."
 
 # ---------------------------------------------------------------------------

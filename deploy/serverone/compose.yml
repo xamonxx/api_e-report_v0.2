@@ -35,16 +35,27 @@ x-php: &php
     RUN_OPTIMIZE: "false"
   logging: *logging
 
+# container_name eksplisit supaya rapi di Portainer/`docker ps` (tanpa sufiks -1).
+# Aman karena tiap service paling banyak 1 replika (scale 0/1).
+
 services:
   be-php:
     <<: *php
+    container_name: ereport-backend-php
     environment:
       RUN_MIGRATIONS: "false"
       RUN_STORAGE_LINK: "false"
       RUN_OPTIMIZE: "true"
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 9100) ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     mem_limit: 1g
 
   be-web:
+    container_name: ereport-backend-web
     image: ${BE_WEB_IMAGE:-ereport/backend-web:c7bcd69}
     pull_policy: never
     network_mode: host
@@ -63,6 +74,7 @@ services:
     logging: *logging
 
   frontend:
+    container_name: ereport-frontend
     image: ${FE_IMAGE:-ereport/frontend:27b4614}
     pull_policy: never
     network_mode: host
@@ -89,6 +101,7 @@ services:
 
   queue:
     <<: *php
+    container_name: ereport-queue
     scale: ${WORKER_SCALE:-0}
     command: ["php", "artisan", "queue:work", "redis", "--queue=imports,default", "--sleep=3", "--tries=3", "--timeout=300", "--max-time=3600", "--max-jobs=1000", "--backoff=10"]
     stop_grace_period: 330s
@@ -96,12 +109,20 @@ services:
 
   scheduler:
     <<: *php
+    container_name: ereport-scheduler
     scale: ${WORKER_SCALE:-0}
     command: ["php", "artisan", "schedule:work"]
     mem_limit: 256m
 
   reverb:
     <<: *php
+    container_name: ereport-reverb
     scale: ${WORKER_SCALE:-0}
     command: ["php", "artisan", "reverb:start", "--host=127.0.0.1", "--port=8180", "--no-interaction"]
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 8180) ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     mem_limit: 256m
