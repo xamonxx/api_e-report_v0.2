@@ -1,9 +1,9 @@
 name: Deploy to interiorcustom.id
 
+# Nonaktif otomatis sejak 2026-10-17: target Hostinger lama selalu gagal sejak 2026-09-25,
+# dan produksi serverone kini di-deploy oleh deploy/serverone/auto-deploy.sh (timer di server).
 on:
-  push:
-    branches:
-      - master
+  workflow_dispatch:
 
 jobs:
   deploy:

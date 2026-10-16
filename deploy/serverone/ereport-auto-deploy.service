@@ -1,0 +1,13 @@
+[Unit]
+Description=E-Report auto-deploy (fetch master, build image, compose up)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ereport/auto-deploy.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=45min

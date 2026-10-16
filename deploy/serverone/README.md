@@ -53,6 +53,35 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-Proto: https' http://12
 ss -tln | grep -E ':(3100|8100|9100|8180) '                                                         # semua 127.0.0.1
 ```
 
+## Deploy otomatis (rilis rutin)
+
+Cukup **push/merge ke `master`** di repo BE atau FE. Timer `ereport-auto-deploy.timer` di serverone
+menjalankan `/opt/ereport/auto-deploy.sh` tiap 5 menit:
+
+1. fetch `master` kedua repo (publik) ke mirror `/opt/ereport/src/{be,fe}.git`
+2. kalau SHA beda dari `/opt/ereport/deployed.env`: build image dari `git archive` commit itu
+   (tag = 7 karakter SHA; build arg FE dari `/opt/ereport/frontend.build.env`)
+3. BE berubah: dump DB penuh ke `/data/db-backups/pre-release-*.sql.gz`, lalu
+   `migrate --force` dengan image baru (container lama masih melayani)
+4. tulis tag baru ke `/opt/ereport/.env`, `compose up -d`, health check lokal + publik
+5. gagal di build/migrate/health: tag lama dipasang lagi, pasangan SHA dicatat `FAILED_PAIR`
+   dan tidak dicoba ulang sampai ada commit baru (atau `--force`)
+
+Log rilis: `/var/log/e-report-deploy/auto-deploy-*.log`; cek rutin: `journalctl -u ereport-auto-deploy`.
+
+```bash
+/opt/ereport/auto-deploy.sh --dry-run          # lihat apakah ada rilis tertunda
+/opt/ereport/auto-deploy.sh                    # deploy sekarang tanpa menunggu timer
+touch /opt/ereport/AUTO_DEPLOY_PAUSED          # jeda auto-deploy (hapus file untuk lanjut)
+```
+
+Rollback rilis: set `BE_PHP_IMAGE`/`BE_WEB_IMAGE`/`FE_IMAGE` di `/opt/ereport/.env` ke tag lama,
+`touch AUTO_DEPLOY_PAUSED`, lalu `docker compose -f /opt/ereport/compose.yml --env-file /opt/ereport/.env up -d`.
+Migration tidak di-rollback: wajib pola expand-and-contract.
+
+Image lama dan build cache tidak dihapus otomatis. Pembersihan lewat skill
+`docker-destructive-guardrails` + konfirmasi user.
+
 ## Cutover & rollback
 
 File stack di server: `/opt/ereport/` (`compose.yml`, `cutover.sh`, `rollback.sh`, `.env` berisi

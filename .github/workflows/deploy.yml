@@ -1,10 +1,9 @@
 name: Deploy to Production
 
+# Nonaktif otomatis sejak 2026-10-17: menarget Hostinger lama; produksi serverone kini
+# di-deploy oleh deploy/serverone/auto-deploy.sh (timer di server).
 on:
-  push:
-    branches:
-      - main
-      - production
+  workflow_dispatch:
 
 jobs:
   deploy:
