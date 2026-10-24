@@ -618,7 +618,7 @@ class LeadsExcelExporter
 
         if ($user->isAdmin()) {
             return Account::query()
-                ->whereKey($user->account_id)
+                ->whereKey($user->activeAccountId())
                 ->orderBy('name')
                 ->get(['id', 'name']);
         }

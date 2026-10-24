@@ -156,7 +156,7 @@ class ConsultationRequest extends FormRequest
      */
     public function rules(): array
     {
-        $accountId = (int) ($this->input('account_id') ?? auth()->user()->account_id);
+        $accountId = (int) ($this->input('account_id') ?? auth()->user()->activeAccountId());
         $consultationId = $this->route('consultation')?->id;
 
         return [
@@ -364,7 +364,7 @@ class ConsultationRequest extends FormRequest
 
     private function duplicateCheckPayload(): array
     {
-        $accountId = $this->input('account_id') ?? auth()->user()->account_id;
+        $accountId = $this->input('account_id') ?? auth()->user()->activeAccountId();
 
         return [
             'account_id' => $accountId,

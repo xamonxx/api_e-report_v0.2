@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpng-dev \
         libicu-dev \
         libonig-dev \
+        default-mysql-client \
         curl \
     && docker-php-ext-install pdo_mysql mbstring gd zip intl bcmath pcntl opcache \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -37,4 +38,4 @@ EXPOSE 8000
 
 USER www-data
 ENTRYPOINT ["entrypoint.sh"]
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+CMD ["php", "-S", "0.0.0.0:8000", "-t", "public", "public/index.php"]

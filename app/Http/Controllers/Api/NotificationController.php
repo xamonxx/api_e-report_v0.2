@@ -249,7 +249,7 @@ class NotificationController extends Controller
                 if ($user->isAdmin()) {
                     $noteQuery->whereHas(
                         'consultation',
-                        fn ($query) => $query->where('account_id', $user->account_id)
+                        fn ($query) => $query->where('account_id', $user->activeAccountId())
                     );
                 }
 

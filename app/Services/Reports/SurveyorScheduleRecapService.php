@@ -58,10 +58,6 @@ class SurveyorScheduleRecapService
         // sama-sama mengasumsikan tepat 7.
         $period = $this->periodResolver->resolve(array_merge($filters, ['period_type' => 'weekly']));
         $accountGroup = AccountGroup::normalize($filters['account_group'] ?? null);
-        if ($user->isManagerSurveyor() && $user->hasSurveyTeam() && $accountGroup === null) {
-            $accountGroup = $user->survey_team;
-        }
-
         $surveys = $this->fetchSurveys($user, $period, $accountGroup, $filters);
         $days = $this->buildDays($period, $surveys);
         $summary = $this->buildSummary($surveys);

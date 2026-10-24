@@ -49,7 +49,7 @@ class AnalyticsReportService
             return $this->compute($user, $filters, $options);
         }
 
-        $scopeAccount = $user->isSuperAdmin() ? ($filters['account'] ?? null) : $user->account_id;
+        $scopeAccount = $user->isSuperAdmin() ? ($filters['account'] ?? null) : $user->activeAccountId();
         $lastUpdated = Cache::rememberForever('analytics:last_updated', fn () => now()->timestamp);
         $cacheKey = 'analytics:report:' . $user->id . ':' . $lastUpdated . ':' . md5(json_encode([
             'account' => $scopeAccount,
@@ -62,7 +62,7 @@ class AnalyticsReportService
     private function compute(User $user, array $filters, array $options = []): array
     {
         $period = $this->periodResolver->resolve($filters);
-        $selectedAccount = $user->isSuperAdmin() ? ($filters['account'] ?? null) : $user->account_id;
+        $selectedAccount = $user->isSuperAdmin() ? ($filters['account'] ?? null) : $user->activeAccountId();
         // Super admin saja yang bisa filter per grup; admin sudah terkunci ke
         // akunnya sendiri lewat $selectedAccount di atas.
         $this->accountGroup = $user->isSuperAdmin()
@@ -900,7 +900,7 @@ class AnalyticsReportService
 
         $scopeAccount = function ($builder) use ($user, $selectedAccount) {
             if ($user->isAdmin()) {
-                $builder->where('account_id', $user->account_id);
+                $builder->where('account_id', $user->activeAccountId());
 
                 return $builder;
             }
@@ -1016,7 +1016,7 @@ class AnalyticsReportService
     {
         $query->visibleTo($user);
         if ($user->isAdmin()) {
-            $query->where('account_id', $user->account_id);
+            $query->where('account_id', $user->activeAccountId());
 
             return $query;
         }

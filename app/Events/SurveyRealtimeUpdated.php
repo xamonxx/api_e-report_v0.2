@@ -2,13 +2,13 @@
 
 namespace App\Events;
 
+use App\Enums\UserRole;
 use App\Models\Survey;
 use App\Models\SurveyNotification;
 use App\Models\User;
-use App\Enums\UserRole;
 use App\Services\NotificationSummaryService;
-use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -42,13 +42,10 @@ class SurveyRealtimeUpdated implements ShouldBroadcastNow
      */
     public static function recipientsFor(Survey $survey, string $action, array $extraRecipients = []): array
     {
-        $team = $survey->account?->account_group;
         $managers = fn () => User::query()
-            ->where(function ($query) use ($team) {
+            ->where(function ($query) {
                 $query->where('role', UserRole::SuperAdmin->value)
-                    ->orWhere(fn ($query) => $query->where('role', UserRole::ManagerSurveyor->value)
-                        ->whereIn('survey_team', ['A', 'B', 'C', 'D', 'E', 'F'])
-                        ->where('survey_team', $team ?? '__none__'));
+                    ->orWhere('role', UserRole::ManagerSurveyor->value);
             })
             ->pluck('id')->all();
 
@@ -73,7 +70,13 @@ class SurveyRealtimeUpdated implements ShouldBroadcastNow
         )));
 
         return User::query()->whereKey($recipientIds)->get()
-            ->filter(fn (User $user) => Survey::query()->visibleTo($user)->whereKey($survey->id)->exists())
+            ->filter(fn (User $user) => match (true) {
+                $user->isSuperAdmin(), $user->isManagerSurveyor() => true,
+                $user->isSurveyor() => (int) $survey->surveyor_id === (int) $user->id,
+                $user->isAdmin() => (int) $survey->requested_by === (int) $user->id
+                    && $user->hasAccountAccess((int) $survey->account_id),
+                default => false,
+            })
             ->map(fn (User $user) => (int) $user->id)->values()->all();
     }
 
@@ -117,24 +120,14 @@ class SurveyRealtimeUpdated implements ShouldBroadcastNow
         // Channel privat: pesan memuat nama klien, wilayah, dan jadwal, jadi
         // harus lewat otorisasi routes/channels.php.
         $channels = [new PrivateChannel('survey.managers')];
-        $team = $this->survey->account?->account_group;
-        if (in_array($team, ['A', 'B', 'C', 'D', 'E', 'F'], true)) {
-            $channels[] = new PrivateChannel('survey.managers.' . $team);
-        }
         if ($this->survey->account_id) {
-            $channels[] = new PrivateChannel('survey.account.' . $this->survey->account_id);
+            $channels[] = new PrivateChannel('survey.account.'.$this->survey->account_id);
         }
-        // Team F: surveyor pinjaman (GACONG) tetap berhak atas kanal
-        // pribadinya sendiri walau timnya beda dari akun survey. Tim lain
-        // (A-E) tetap wajib kecocokan tim KECUALI ada izin pinjam aktif
-        // (SurveyLoanApproval, persetujuan Super Admin) - tanpa ini surveyor
-        // pinjaman lintas tim di luar Team F tidak pernah dapat update
-        // realtime walau notifikasi in-app-nya sendiri sudah benar tersimpan.
+        // Surveyor global menerima pembaruan melalui kanal pribadinya.
         $surveyor = $this->survey->surveyor_id ? User::find($this->survey->surveyor_id) : null;
-        if ($surveyor && $surveyor->hasSurveyTeam()
-            && ($surveyor->survey_team === $team || $team === 'F' || $this->survey->hasActiveLoanApprovalFor($surveyor->id))
+        if ($surveyor
             && $this->action !== 'rescheduled_by_admin') {
-            $channels[] = new PrivateChannel('survey.surveyor.' . $this->survey->surveyor_id);
+            $channels[] = new PrivateChannel('survey.surveyor.'.$this->survey->surveyor_id);
         }
 
         return $channels;

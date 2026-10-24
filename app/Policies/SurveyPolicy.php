@@ -21,27 +21,27 @@ class SurveyPolicy
     }
 
     /**
-     * Melihat daftar survey (/surveys): tim survey pusat dan admin terbatas.
+     * Melihat daftar survey: manager global, surveyor assignment-only, admin akun aktif.
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasSurveyTeam() || $user->isAdmin();
+        return $user->isSurveyTeam() || $user->isAdmin();
     }
 
     public function viewAvailability(User $user): bool
     {
-        return $user->isManagerSurveyor() && $user->hasSurveyTeam();
+        return $user->isManagerSurveyor();
     }
 
     public function viewRecap(User $user): bool
     {
-        return $user->isManagerSurveyor() && $user->hasSurveyTeam();
+        return $user->isManagerSurveyor();
     }
 
     /**
      * Melihat satu survey:
-     * - manager surveyor: tim akun yang sama.
-     * - surveyor: hanya miliknya dalam tim yang sama.
+     * - manager surveyor: seluruh akun.
+     * - surveyor: hanya assignment miliknya.
      * - admin: hanya survey yang dia ajukan sendiri di akunnya.
      */
     public function view(User $user, Survey $survey): bool
@@ -55,7 +55,7 @@ class SurveyPolicy
         }
 
         if ($user->isAdmin()) {
-            return (int) $survey->account_id === (int) $user->account_id
+            return (int) $survey->account_id === (int) $user->activeAccountId()
                 && (int) $survey->requested_by === (int) $user->id;
         }
 
@@ -77,7 +77,7 @@ class SurveyPolicy
     public function reschedule(User $user, Survey $survey): bool
     {
         return $user->isAdmin()
-            && (int) $survey->account_id === (int) $user->account_id
+            && (int) $survey->account_id === (int) $user->activeAccountId()
             && (int) $survey->requested_by === (int) $user->id;
     }
 
@@ -88,7 +88,7 @@ class SurveyPolicy
     public function updateMaps(User $user, Survey $survey): bool
     {
         return $user->isAdmin()
-            && (int) $survey->account_id === (int) $user->account_id
+            && (int) $survey->account_id === (int) $user->activeAccountId()
             && (int) $survey->requested_by === (int) $user->id;
     }
 
@@ -119,7 +119,7 @@ class SurveyPolicy
 
     /**
      * Membatalkan survey:
-     * - manager surveyor: survey operasional dalam timnya.
+     * - manager surveyor: seluruh survey operasional.
      * - admin: survey yang dia ajukan sendiri di akun/cabangnya.
      * - surveyor: survey yang ditugaskan kepadanya.
      */
@@ -130,7 +130,7 @@ class SurveyPolicy
         }
 
         if ($user->isAdmin()) {
-            return (int) $survey->account_id === (int) $user->account_id
+            return (int) $survey->account_id === (int) $user->activeAccountId()
                 && (int) $survey->requested_by === (int) $user->id;
         }
 

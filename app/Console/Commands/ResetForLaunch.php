@@ -27,6 +27,9 @@ class ResetForLaunch extends Command
 
     public function handle(): int
     {
+        $this->error('Command lama dinonaktifkan karena cakupan tabelnya tidak lengkap. Gunakan app:reset-operational-data.');
+        return self::FAILURE;
+
         $keepRoles = [UserRole::SuperAdmin->value, UserRole::Admin->value];
 
         $this->warn('⚠️  Perintah ini akan MENGHAPUS PERMANEN:');

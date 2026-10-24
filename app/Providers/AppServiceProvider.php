@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Support\ActiveAccount;
+
 use App\Enums\UserRole;
 use App\Models\Consultation;
 use App\Models\ConsultationNote;
@@ -29,7 +31,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->scoped(ActiveAccount::class, fn () => new ActiveAccount());
     }
 
     public function boot(): void

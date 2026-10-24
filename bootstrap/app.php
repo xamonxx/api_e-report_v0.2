@@ -4,6 +4,7 @@ use App\Http\Middleware\PreventBackHistory;
 use App\Http\Middleware\RoleMiddleware;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\UpdateLastSeen;
+use App\Http\Middleware\ResolveActiveAccount;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
@@ -34,6 +35,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => RoleMiddleware::class,
+            'integration.token' => App\Http\Middleware\IntegrationTokenAuth::class,
+            'active.account' => ResolveActiveAccount::class,
         ]);
 
         $middleware->api(append: [

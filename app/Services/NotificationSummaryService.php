@@ -136,7 +136,7 @@ class NotificationSummaryService
             return $query->whereHas(
                 'consultation',
                 fn (Builder $consultationQuery) => $consultationQuery
-                    ->where('account_id', $user->account_id)
+                    ->where('account_id', $user->activeAccountId())
             );
         }
 

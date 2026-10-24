@@ -2,18 +2,25 @@
 
 namespace App\Models;
 
+use App\Enums\UserRole;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Cache;
 
 class Survey extends Model
 {
-    use HasFactory, SoftDeletes, Auditable;
+    use Auditable, HasFactory, SoftDeletes;
 
     public const STATE_REQUESTED = 'requested';
+
     public const STATE_SCHEDULED = 'scheduled';
+
     public const STATE_IN_PROGRESS = 'in_progress';
+
     public const STATE_COMPLETED = 'completed';
+
     public const STATE_CANCELLED = 'cancelled';
 
     public const STATES = [
@@ -78,16 +85,27 @@ class Survey extends Model
             $survey->active_key = $survey->state === self::STATE_CANCELLED
                 ? null
                 : $survey->consultation_id;
+            $survey->schedule_slot_key = $survey->surveyor_id && $survey->scheduled_at
+                && in_array($survey->state, [self::STATE_SCHEDULED, self::STATE_IN_PROGRESS], true)
+                    ? $survey->surveyor_id.'|'.$survey->scheduled_at->format('Y-m-d H:i:s')
+                    : null;
         });
 
         // Soft delete memakai query update langsung, tidak melewati `saving`.
         static::deleted(function (self $survey) {
-            static::withTrashed()->whereKey($survey->getKey())->update(['active_key' => null]);
+            static::withTrashed()->whereKey($survey->getKey())->update([
+                'active_key' => null,
+                'schedule_slot_key' => null,
+            ]);
         });
 
         static::restored(function (self $survey) {
             static::withTrashed()->whereKey($survey->getKey())->update([
                 'active_key' => $survey->state === self::STATE_CANCELLED ? null : $survey->consultation_id,
+                'schedule_slot_key' => $survey->surveyor_id && $survey->scheduled_at
+                    && in_array($survey->state, [self::STATE_SCHEDULED, self::STATE_IN_PROGRESS], true)
+                        ? $survey->surveyor_id.'|'.$survey->scheduled_at->format('Y-m-d H:i:s')
+                        : null,
             ]);
         });
     }
@@ -98,36 +116,22 @@ class Survey extends Model
         return $this->belongsTo(Account::class);
     }
 
-    public function scopeVisibleTo(\Illuminate\Database\Eloquent\Builder $query, User $user): \Illuminate\Database\Eloquent\Builder
+    public function scopeVisibleTo(Builder $query, User $user): Builder
     {
         if ($user->isSuperAdmin()) {
             return $query;
         }
         if ($user->isSurveyTeam()) {
-            if (! $user->hasSurveyTeam()) {
-                return $query->whereRaw('1 = 0');
-            }
             if ($user->isSurveyor()) {
-                // Surveyor pinjaman (GACONG, lihat SurveyController) bisa
-                // ditugaskan ke survey Team F walau timnya sendiri beda -
-                // makanya Team F dibuka lewat kepemilikan (surveyor_id) tanpa
-                // syarat tim. Tim lain (A-E) tetap wajib kecocokan tim DAN
-                // kepemilikan sekaligus, KECUALI ada izin pinjam aktif
-                // (SurveyLoanApproval) untuk pasangan survey+surveyor ini -
-                // tanpa baris ini, surveyor yang dipinjam ke Team C/D lewat
-                // persetujuan Super Admin tidak akan pernah melihat survey
-                // yang sudah ditugaskan ke dirinya sendiri.
-                return $query->where('surveys.surveyor_id', $user->id)
-                    ->where(function ($visible) use ($user) {
-                        $visible->whereHas('account', fn ($account) => $account->whereIn('account_group', [$user->survey_team, \App\Support\AccountGroup::TEAM_F]))
-                            ->orWhereHas('loanApprovals', fn ($loan) => $loan->where('surveyor_id', $user->id)->active());
-                    });
+                return $query->where('surveys.surveyor_id', $user->id);
             }
-            return $query->whereHas('account', fn ($account) => $account->where('account_group', $user->survey_team));
+
+            return $query;
         }
         if ($user->isAdmin()) {
-            return $query->where('surveys.account_id', $user->account_id)->where('surveys.requested_by', $user->id);
+            return $query->where('surveys.account_id', $user->activeAccountId())->where('surveys.requested_by', $user->id);
         }
+
         return $query->whereRaw('1 = 0');
     }
 
@@ -219,22 +223,23 @@ class Survey extends Model
                 }
 
                 if ($targetStatusName) {
-                    $targetStatusId = \App\Models\StatusCategory::whereRaw('LOWER(name) = ?', [strtolower($targetStatusName)])->value('id');
+                    $targetStatusId = StatusCategory::whereRaw('LOWER(name) = ?', [strtolower($targetStatusName)])->value('id');
                     if ($targetStatusId) {
                         $consultation->status_category_id = $targetStatusId;
                         $consultation->save();
 
                         // Invalidate cache
                         try {
-                            $superAdmins = \App\Models\User::where('role', \App\Enums\UserRole::SuperAdmin)->pluck('id');
+                            $superAdmins = User::where('role', UserRole::SuperAdmin)->pluck('id');
                             foreach ($superAdmins as $adminId) {
-                                \Illuminate\Support\Facades\Cache::forget("dashboard:super_admin:{$adminId}");
+                                Cache::forget("dashboard:super_admin:{$adminId}");
                             }
-                        } catch (\Throwable $e) {}
-                        if ($consultation->account_id) {
-                            \Illuminate\Support\Facades\Cache::forget("dashboard:admin:{$consultation->account_id}");
+                        } catch (\Throwable $e) {
                         }
-                        \Illuminate\Support\Facades\Cache::forever('analytics:last_updated', now()->timestamp);
+                        if ($consultation->account_id) {
+                            Cache::forget("dashboard:admin:{$consultation->account_id}");
+                        }
+                        Cache::forever('analytics:last_updated', now()->timestamp);
                     }
                 }
             }

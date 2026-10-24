@@ -40,6 +40,9 @@ class SyncApprovedAccounts extends Command
 
     public function handle(): int
     {
+        $this->error('Command roster A-F lama dinonaktifkan. Gunakan app:sync-green-muda-roster.');
+        return self::FAILURE;
+
         $plan = $this->plan();
         $this->table(['ID', 'Nama sekarang', 'Nama sesuai daftar', 'Team'], array_map(
             fn ($row) => [$row['id'], $row['old_name'], $row['name'], $row['team']], $plan['keep']

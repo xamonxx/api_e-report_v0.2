@@ -34,7 +34,7 @@ class ConsultationPolicy
      */
     public function view(User $user, Consultation $consultation): bool
     {
-        return $user->isAdmin() && $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->activeAccountId() === (int) $consultation->account_id;
     }
 
     public function create(User $user): bool
@@ -44,31 +44,31 @@ class ConsultationPolicy
 
     public function update(User $user, Consultation $consultation): bool
     {
-        return $user->isAdmin() && $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->activeAccountId() === (int) $consultation->account_id;
     }
 
     public function delete(User $user, Consultation $consultation): bool
     {
-        return $user->isAdmin() && $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->activeAccountId() === (int) $consultation->account_id;
     }
 
     public function restore(User $user, Consultation $consultation): bool
     {
-        return $user->isAdmin() && $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->activeAccountId() === (int) $consultation->account_id;
     }
 
     public function viewHistory(User $user, Consultation $consultation): bool
     {
-        return $user->isAdmin() && $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->activeAccountId() === (int) $consultation->account_id;
     }
 
     public function addNote(User $user, Consultation $consultation): bool
     {
-        return $user->isAdmin() && $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->activeAccountId() === (int) $consultation->account_id;
     }
 
     public function addReminder(User $user, Consultation $consultation): bool
     {
-        return $user->isAdmin() && $user->account_id === $consultation->account_id;
+        return $user->isAdmin() && $user->activeAccountId() === (int) $consultation->account_id;
     }
 }

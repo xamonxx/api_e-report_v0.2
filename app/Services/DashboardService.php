@@ -45,7 +45,7 @@ class DashboardService
 
     public function adminDashboard(User $user): array
     {
-        $accountId = $user->account_id;
+        $accountId = $user->activeAccountId();
 
         if (! $accountId) {
             abort(403, 'Akun belum di-assign ke user Anda. Hubungi Super Admin.');
@@ -286,8 +286,8 @@ class DashboardService
     public function invalidateCache(User $user): void
     {
         Cache::forget('dashboard:super_admin:'.$user->id);
-        if ($user->account_id) {
-            Cache::forget("dashboard:admin:{$user->account_id}");
+        if ($user->activeAccountId()) {
+            Cache::forget("dashboard:admin:{$user->activeAccountId()}");
         }
     }
 }

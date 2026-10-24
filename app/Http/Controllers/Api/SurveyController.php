@@ -9,7 +9,6 @@ use App\Http\Requests\SurveyorScheduleRecapRequest;
 use App\Models\Consultation;
 use App\Models\Survey;
 use App\Models\SurveyActivityLog;
-use App\Models\SurveyLoanApproval;
 use App\Models\SurveyReschedule;
 use App\Models\User;
 use App\Services\NotificationSummaryService;
@@ -18,6 +17,7 @@ use App\Services\SurveyReminderService;
 use App\Services\WebPushService;
 use App\Support\ConsultationStatusGroups;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -29,8 +29,7 @@ class SurveyController extends Controller
 {
     public function __construct(
         private readonly SurveyReminderService $reminderService,
-    ) {
-    }
+    ) {}
 
     /**
      * Relasi standar yang dimuat untuk response survey.
@@ -43,10 +42,7 @@ class SurveyController extends Controller
             'consultation.account.admins:id,name,account_id',
             'consultation.needsCategory:id,name',
             'consultation.needsCategories:id,name',
-            // account_group SAAT INI (bukan snapshot consultation) - dipakai
-            // frontend buat tau apakah surveyor yang dipilih itu pinjaman
-            // lintas tim, jadi harus konsisten dengan sumber yang sama persis
-            // dipakai eligibility check di sisi server (survey->account).
+            // account_group akun saat ini untuk filter dan tampilan rekap.
             'account:id,account_group',
             'surveyor:id,name,survey_team',
             'assigner:id,name',
@@ -150,6 +146,7 @@ class SurveyController extends Controller
 
         if ($alreadyExisted) {
             $this->authorize('view', $survey);
+
             return response()->json([
                 'message' => 'Lead ini sudah memiliki survey aktif.',
                 'data' => $survey->load($this->withRelations()),
@@ -228,97 +225,22 @@ class SurveyController extends Controller
         return $current === mb_strtolower(trim($surveyStatusName));
     }
 
-    /**
-     * Team F belum punya surveyor sendiri: manager Team F boleh meminjam
-     * surveyor dari tim lain untuk penugasan. Tim A-E tetap wajib satu tim
-     * dengan akun survey - pinjaman hanya berlaku untuk Team F.
-     */
-    private const BORROWABLE_TEAM = 'F';
-
-    /**
-     * $survey diisi supaya izin pinjam lintas tim di luar Team F (disetujui
-     * Super Admin per kasus lewat SurveyLoanApproval) ikut dihitung layak.
-     * Tanpa $survey, cuma aturan dasar (tim sama / Team F) yang dicek -
-     * dipakai di availability() yang belum tahu survey mana yang dituju.
-     */
-    private function surveyorEligibleForTeam(?User $surveyor, ?string $accountGroup, ?Survey $survey = null): bool
+    private function isGlobalSurveyor(?User $surveyor): bool
     {
-        if (! $surveyor || $surveyor->role !== UserRole::Surveyor || ! $surveyor->hasSurveyTeam()) {
-            return false;
-        }
-
-        if ($surveyor->survey_team === $accountGroup || $accountGroup === self::BORROWABLE_TEAM) {
-            return true;
-        }
-
-        return $survey !== null && $survey->hasActiveLoanApprovalFor($surveyor->id);
+        return $surveyor !== null && $surveyor->role === UserRole::Surveyor;
     }
 
-    /**
-     * True bila kombinasi surveyor+akun ini pinjaman lintas tim DI LUAR Team F
-     * (Team F sudah diizinkan pinjam tanpa persetujuan tambahan).
-     */
-    private function isNonFCrossTeamLoan(User $surveyor, ?string $accountGroup): bool
+    private function scheduleTransaction(callable $callback): void
     {
-        return $accountGroup !== null
-            && $accountGroup !== self::BORROWABLE_TEAM
-            && $surveyor->survey_team !== $accountGroup;
-    }
-
-    /**
-     * Pastikan pinjaman lintas tim di luar Team F sudah/baru disetujui Super
-     * Admin sebelum penugasan jalan. Hanya Super Admin yang boleh membuat
-     * persetujuan baru di sini (langsung dari aksi assign/reschedule dia
-     * sendiri, bukan alur request-lalu-approve terpisah) - manager yang
-     * mencoba pinjaman baru tanpa persetujuan yang sudah ada ditolak jelas,
-     * bukan diam-diam gagal karena eligibility check biasa.
-     */
-    private function ensureCrossTeamLoanApproved(Survey $survey, User $surveyor, ?string $accountGroup, ?string $loanReason): void
-    {
-        if (! $this->isNonFCrossTeamLoan($surveyor, $accountGroup)) {
-            return;
+        try {
+            DB::transaction($callback);
+        } catch (QueryException $exception) {
+            if (str_contains($exception->getMessage(), 'surveys_schedule_slot_unique')
+                || str_contains($exception->getMessage(), 'schedule_slot_key')) {
+                abort(422, 'Surveyor sudah memiliki jadwal pada waktu tersebut.');
+            }
+            throw $exception;
         }
-
-        if ($survey->hasActiveLoanApprovalFor($surveyor->id)) {
-            return;
-        }
-
-        $actor = auth()->user();
-        abort_unless(
-            $actor && $actor->isSuperAdmin(),
-            422,
-            'Surveyor ini dari tim lain (bukan Team F yang boleh pinjam bebas). Penugasan lintas tim wajib disetujui Super Admin.'
-        );
-
-        $reason = trim((string) $loanReason);
-        abort_if($reason === '', 422, 'Alasan pinjaman surveyor lintas tim wajib diisi (persetujuan Super Admin).');
-
-        SurveyLoanApproval::create([
-            'survey_id' => $survey->id,
-            'surveyor_id' => $surveyor->id,
-            'borrower_team' => $accountGroup,
-            'lender_team' => $surveyor->survey_team,
-            'approved_by' => $actor->id,
-            'approved_at' => now(),
-            'reason' => $reason,
-        ]);
-    }
-
-    /**
-     * Catatan otomatis "GACONG" saat surveyor yang ditugaskan bukan dari tim
-     * akun survey - supaya penugasan pinjaman selalu kelihatan, tidak diam-diam.
-     */
-    private function gacongNote(User $surveyor, ?string $accountGroup, ?string $existingNotes): ?string
-    {
-        if ($surveyor->survey_team === $accountGroup) {
-            return $existingNotes;
-        }
-
-        $note = $accountGroup === self::BORROWABLE_TEAM
-            ? "[GACONG] Surveyor pinjaman dari Team {$surveyor->survey_team} - Team F belum punya surveyor sendiri."
-            : "[GACONG] Surveyor pinjaman dari Team {$surveyor->survey_team} untuk Team {$accountGroup}, disetujui Super Admin.";
-
-        return trim(implode("\n", array_filter([$note, $existingNotes])));
     }
 
     /**
@@ -563,7 +485,7 @@ class SurveyController extends Controller
 
     /**
      * GET /api/v1/surveys
-     * Manager: akun dalam timnya. Surveyor: hanya miliknya dalam tim yang sama.
+     * Manager: semua akun. Surveyor: hanya assignment miliknya.
      * Admin: hanya survey yang dia ajukan sendiri.
      */
     public function index(Request $request): JsonResponse
@@ -684,17 +606,9 @@ class SurveyController extends Controller
         if (isset($validated['exclude_survey_id'])) {
             Survey::query()->visibleTo($user)->findOrFail($validated['exclude_survey_id']);
         }
-        // Manager Team F belum punya surveyor sendiri (BORROWABLE_TEAM) - dia
-        // wajib melihat SEMUA surveyor buat bisa menugaskan siapa pun lewat
-        // pinjaman Team F yang sudah diizinkan tanpa persetujuan tambahan.
-        // Tim lain tetap dibatasi ke timnya sendiri; pinjaman lintas tim di
-        // luar Team F dieksekusi langsung oleh Super Admin (yang sudah bebas
-        // dari filter ini), bukan lewat daftar kandidat manager.
-        $restrictToOwnTeam = ! $user->isSuperAdmin() && $user->survey_team !== self::BORROWABLE_TEAM;
+        // Semua manager dan Super Admin memakai roster surveyor global.
         $surveyors = User::query()
             ->where('role', UserRole::Surveyor->value)
-            ->whereIn('survey_team', ['A', 'B', 'C', 'D', 'E', 'F'])
-            ->when($restrictToOwnTeam, fn ($query) => $query->where('survey_team', $user->hasSurveyTeam() ? $user->survey_team : '__none__'))
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
         $busy = Survey::query()
@@ -758,21 +672,16 @@ class SurveyController extends Controller
             'surveyor_id' => ['required', 'integer', 'exists:users,id'],
             'scheduled_at' => ['required', 'date'],
             'location_notes' => ['nullable', 'string', 'max:2000'],
-            'loan_reason' => ['nullable', 'string', 'max:2000'],
         ], [
             'surveyor_id.required' => 'Surveyor wajib dipilih.',
             'scheduled_at.required' => 'Tanggal survey wajib diisi.',
         ]);
 
-        // Cek dasar saja di sini (surveyor benar-benar surveyor aktif berteam) -
-        // kecocokan tim/Team F/izin pinjam BELUM dicek: kasus pinjaman lintas
-        // tim baru di luar Team F justru baru boleh dibuat izinnya di dalam
-        // transaksi (ensureCrossTeamLoanApproved), jadi menolaknya di sini
-        // duluan akan mematikan alur itu sebelum sempat berjalan.
+        // Surveyor tidak lagi dibatasi team; role aktif adalah syaratnya.
         $surveyor = User::find($validated['surveyor_id']);
-        if (! $surveyor || $surveyor->role !== UserRole::Surveyor || ! $surveyor->hasSurveyTeam()) {
+        if (! $surveyor || $surveyor->role !== UserRole::Surveyor) {
             return response()->json([
-                'message' => 'Pilih surveyor aktif dari tim yang sama dengan akun survey.',
+                'message' => 'Pilih surveyor aktif.',
             ], 422);
         }
 
@@ -781,21 +690,15 @@ class SurveyController extends Controller
             return response()->json(['message' => 'Tanggal dan jam survey tidak boleh berada di waktu yang sudah lewat.'], 422);
         }
 
-        DB::transaction(function () use ($survey, $surveyor, $scheduledAt, $validated) {
+        $this->scheduleTransaction(function () use ($survey, $surveyor, $scheduledAt, $validated) {
             $lockedSurvey = Survey::query()->lockForUpdate()->findOrFail($survey->id);
             $this->authorize('assign', $lockedSurvey);
             $surveyor = User::query()->lockForUpdate()->find($surveyor->id);
-            abort_if(! $surveyor || $surveyor->role !== UserRole::Surveyor || ! $surveyor->hasSurveyTeam(),
-                422, 'Pilih surveyor aktif dari tim yang sama dengan akun survey.');
+            abort_if(! $surveyor || $surveyor->role !== UserRole::Surveyor, 422, 'Pilih surveyor aktif.');
             if ($lockedSurvey->state !== Survey::STATE_REQUESTED) {
                 abort(422, 'Survey sudah dijadwalkan oleh pengguna lain.');
             }
-            // Membuat izin pinjam (kalau berlaku & Super Admin) SEBELUM
-            // eligibility check final, supaya izin yang baru dibuat langsung
-            // dianggap sah pada request yang sama.
-            $this->ensureCrossTeamLoanApproved($lockedSurvey, $surveyor, $lockedSurvey->account?->account_group, $validated['loan_reason'] ?? null);
-            abort_unless($this->surveyorEligibleForTeam($surveyor, $lockedSurvey->account?->account_group, $lockedSurvey),
-                422, 'Pilih surveyor aktif dari tim yang sama dengan akun survey.');
+            abort_unless($this->isGlobalSurveyor($surveyor), 422, 'Pilih surveyor aktif.');
 
             // Sertakan in_progress: availability() menghitung state itu sebagai
             // sibuk, jadi cek bentrok harus memakai daftar yang sama.
@@ -814,7 +717,7 @@ class SurveyController extends Controller
                 'assigned_by' => auth()->id(),
                 'assigned_at' => now(),
                 'scheduled_at' => $scheduledAt,
-                'location_notes' => $this->gacongNote($surveyor, $lockedSurvey->account?->account_group, $validated['location_notes'] ?? null),
+                'location_notes' => $validated['location_notes'] ?? null,
             ]);
             $lockedSurvey->transitionTo(Survey::STATE_SCHEDULED);
             $this->reminderService->replan($lockedSurvey);
@@ -851,13 +754,12 @@ class SurveyController extends Controller
             'scheduled_at' => ['required', 'date'],
             'location_notes' => ['nullable', 'string', 'max:2000'],
             'manager_notes' => ['nullable', 'string', 'max:5000'],
-            'loan_reason' => ['nullable', 'string', 'max:2000'],
         ]);
 
         // Cek dasar saja di sini - lihat catatan yang sama di assign().
         $surveyor = User::find($validated['surveyor_id']);
-        if (! $surveyor || $surveyor->role !== UserRole::Surveyor || ! $surveyor->hasSurveyTeam()) {
-            return response()->json(['message' => 'Pilih surveyor aktif dari tim yang sama dengan akun survey.'], 422);
+        if (! $surveyor || $surveyor->role !== UserRole::Surveyor) {
+            return response()->json(['message' => 'Pilih surveyor aktif.'], 422);
         }
 
         $newAt = Carbon::parse($validated['scheduled_at']);
@@ -871,18 +773,15 @@ class SurveyController extends Controller
             return response()->json(['message' => 'Jadwal dan surveyor belum berubah.'], 422);
         }
 
-        DB::transaction(function () use ($survey, $surveyor, $newAt, $validated, $oldAt) {
+        $this->scheduleTransaction(function () use ($survey, $surveyor, $newAt, $validated, $oldAt) {
             $lockedSurvey = Survey::query()->lockForUpdate()->findOrFail($survey->id);
             $this->authorize('rescheduleAssignment', $lockedSurvey);
             $surveyor = User::query()->lockForUpdate()->find($surveyor->id);
-            abort_if(! $surveyor || $surveyor->role !== UserRole::Surveyor || ! $surveyor->hasSurveyTeam(),
-                422, 'Pilih surveyor aktif dari tim yang sama dengan akun survey.');
+            abort_if(! $surveyor || $surveyor->role !== UserRole::Surveyor, 422, 'Pilih surveyor aktif.');
             if ($lockedSurvey->state !== Survey::STATE_SCHEDULED) {
                 abort(422, 'Survey tidak lagi berada pada status terjadwal.');
             }
-            $this->ensureCrossTeamLoanApproved($lockedSurvey, $surveyor, $lockedSurvey->account?->account_group, $validated['loan_reason'] ?? null);
-            abort_unless($this->surveyorEligibleForTeam($surveyor, $lockedSurvey->account?->account_group, $lockedSurvey),
-                422, 'Pilih surveyor aktif dari tim yang sama dengan akun survey.');
+            abort_unless($this->isGlobalSurveyor($surveyor), 422, 'Pilih surveyor aktif.');
 
             $conflict = Survey::query()
                 ->whereKeyNot($lockedSurvey->id)
@@ -900,7 +799,7 @@ class SurveyController extends Controller
                 'assigned_by' => auth()->id(),
                 'assigned_at' => now(),
                 'scheduled_at' => $newAt,
-                'location_notes' => $this->gacongNote($surveyor, $lockedSurvey->account?->account_group, $validated['location_notes'] ?? null),
+                'location_notes' => $validated['location_notes'] ?? null,
             ]);
             if (array_key_exists('manager_notes', $validated) && $validated['manager_notes'] !== null) {
                 $lockedSurvey->manager_notes = $validated['manager_notes'];

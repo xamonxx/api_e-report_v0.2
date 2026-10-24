@@ -44,6 +44,10 @@ class ImportMasterExcelData extends Command
 
     public function handle(ConsultationImportService $importService): int
     {
+        $this->error('Import master Team A-F/GACONG dinonaktifkan. Gunakan alur import akun aktif dan survey global.');
+
+        return self::FAILURE;
+
         $csvPath = $this->argument('csv');
         $surveysPath = $this->argument('surveys');
         $apply = (bool) $this->option('apply');

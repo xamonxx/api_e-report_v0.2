@@ -34,7 +34,7 @@ class ConsultationNotePolicy
             return false;
         }
 
-        if ($user->account_id !== $consultation->account_id) {
+        if ($user->activeAccountId() !== (int) $consultation->account_id) {
             return false;
         }
 
@@ -60,6 +60,6 @@ class ConsultationNotePolicy
 
         return $consultation
             && $user->isAdmin()
-            && (int) $user->account_id === (int) $consultation->account_id;
+            && $user->activeAccountId() === (int) $consultation->account_id;
     }
 }

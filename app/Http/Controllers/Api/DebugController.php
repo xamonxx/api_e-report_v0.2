@@ -44,7 +44,7 @@ class DebugController extends Controller
             ->whereNull('deleted_at');
 
         if ($user->isAdmin()) {
-            $duplicateQuery->where('account_id', $user->account_id);
+            $duplicateQuery->where('account_id', $user->activeAccountId());
         }
 
         $duplicateCount = $duplicateQuery->groupBy('account_id', 'phone')
@@ -114,7 +114,7 @@ class DebugController extends Controller
 
         // Determine accounts to assign leads to
         if ($user->isAdmin()) {
-            $accountIds = [$user->account_id];
+            $accountIds = [$user->activeAccountId()];
         } else {
             $accountIds = Account::pluck('id')->all();
             if (empty($accountIds)) {
@@ -281,7 +281,7 @@ class DebugController extends Controller
         $query = Consultation::where('notes', 'like', '[DUMMY]%');
         
         if ($user->isAdmin()) {
-            $query->where('account_id', $user->account_id);
+            $query->where('account_id', $user->activeAccountId());
         }
 
         $dummyCount = $query->count();
@@ -291,7 +291,7 @@ class DebugController extends Controller
 
         // Flush caches
         if ($user->isAdmin()) {
-            Cache::forget("dashboard:admin:{$user->account_id}");
+            Cache::forget("dashboard:admin:{$user->activeAccountId()}");
         } else {
             $accountIds = Account::pluck('id')->all();
             foreach ($accountIds as $accId) {

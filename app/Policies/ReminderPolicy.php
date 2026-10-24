@@ -42,7 +42,7 @@ class ReminderPolicy
         }
 
         // Admin harus dalam akun yang sama dengan konsultasi
-        if ($user->account_id !== $consultation->account_id) {
+        if ($user->activeAccountId() !== (int) $consultation->account_id) {
             return false;
         }
 

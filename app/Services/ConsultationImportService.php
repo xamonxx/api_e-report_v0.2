@@ -479,7 +479,7 @@ class ConsultationImportService
         }
 
         if ($user->isAdmin()) {
-            $accountId = $user->account_id;
+            $accountId = $user->activeAccountId();
         } else {
             $rawAccountId = trim((string) ($row[2] ?? ''));
 
@@ -536,7 +536,7 @@ class ConsultationImportService
         }
 
         if ($user->isAdmin()) {
-            $accountId = $user->account_id;
+            $accountId = $user->activeAccountId();
         } else {
             $accountId = $accountNameMap[$this->normalizeLookup($accountName)] ?? null;
 

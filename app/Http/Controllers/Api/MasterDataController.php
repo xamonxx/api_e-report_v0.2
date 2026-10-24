@@ -10,6 +10,7 @@ use App\Models\NeedsCategory;
 use App\Models\StatusCategory;
 use App\Models\SurveyStatus;
 use App\Models\User;
+use App\Services\NotificationSummaryService;
 use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
 use App\Services\Reports\UsersExcelExporter;
 use App\Support\AccountGroup;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Enum;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -72,11 +74,13 @@ class MasterDataController extends Controller
     public function accounts(): JsonResponse
     {
         $user = auth()->user();
-        $accounts = ($user->isSuperAdmin() || $user->isManagerSurveyor())
-            ? Account::orderBy('name')
-                ->when(! $user->isSuperAdmin(), fn ($query) => $query->where('account_group', $user->hasSurveyTeam() ? $user->survey_team : '__none__'))
-                ->get(['id', 'name', 'account_group'])
-            : Account::whereKey($user->account_id)->get(['id', 'name', 'account_group']);
+        if ($user->isSuperAdmin() || $user->isManagerSurveyor()) {
+            $accounts = Account::orderBy('name')->get(['id', 'name', 'account_group']);
+        } elseif ($user->accounts()->exists()) {
+            $accounts = $user->accounts()->orderBy('name')->get(['accounts.id', 'name', 'account_group']);
+        } else {
+            $accounts = Account::whereKey($user->account_id)->get(['id', 'name', 'account_group']);
+        }
 
         return response()->json([
             'data' => $accounts,
@@ -106,19 +110,11 @@ class MasterDataController extends Controller
     public function surveyors(): JsonResponse
     {
         $user = auth()->user();
-        // Manager Team F belum punya surveyor sendiri - kalau tetap difilter
-        // ke timnya sendiri, daftar kandidatnya selalu kosong dan dia tidak
-        // pernah bisa menugaskan siapa pun walau backend sudah mengizinkan
-        // pinjaman Team F. Lihat SurveyController::BORROWABLE_TEAM.
-        $managerRestrictedToOwnTeam = $user->isManagerSurveyor() && $user->survey_team !== AccountGroup::TEAM_F;
 
         return response()->json([
             'data' => User::query()
                 ->where('role', UserRole::Surveyor->value)
-                ->whereIn('survey_team', ['A', 'B', 'C', 'D', 'E', 'F'])
-                ->when($managerRestrictedToOwnTeam, fn ($query) => $query->where('survey_team', $user->hasSurveyTeam() ? $user->survey_team : '__none__'))
                 ->when($user->isSurveyor(), fn ($query) => $query->whereKey($user->id))
-                ->when($user->isAdmin(), fn ($query) => $query->where('survey_team', $user->account?->account_group ?? '__none__'))
                 ->orderBy('name')
                 ->get(['id', 'name', 'survey_team']),
         ]);
@@ -156,7 +152,7 @@ class MasterDataController extends Controller
     {
         $this->ensureSuperAdmin();
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:survey_statuses,name,' . $surveyStatus->id . '|regex:/^[^\<\>]+$/',
+            'name' => 'required|string|max:255|unique:survey_statuses,name,'.$surveyStatus->id.'|regex:/^[^\<\>]+$/',
             'color' => ['required', 'regex:/^#[0-9A-Fa-f]{6}$/'],
         ]);
 
@@ -224,7 +220,7 @@ class MasterDataController extends Controller
         $query = NeedsCategory::forConsultationOptions();
 
         if (request()->filled('search')) {
-            $query->where('name', 'like', '%' . request('search') . '%');
+            $query->where('name', 'like', '%'.request('search').'%');
         }
 
         $categories = $query->paginate($this->resolvePerPage());
@@ -263,7 +259,7 @@ class MasterDataController extends Controller
     {
         $this->ensureSuperAdmin();
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:needs_categories,name,' . $category->id . '|regex:/^[^\<\>]+$/',
+            'name' => 'required|string|max:255|unique:needs_categories,name,'.$category->id.'|regex:/^[^\<\>]+$/',
         ], [
             'name.required' => 'Nama kategori wajib diisi.',
             'name.max' => 'Nama kategori terlalu panjang (maksimal 255 karakter).',
@@ -307,6 +303,7 @@ class MasterDataController extends Controller
     {
         $this->ensureSuperAdmin();
         $statuses = StatusCategory::orderBy('sort_order')->paginate($this->resolvePerPage());
+
         return response()->json($statuses);
     }
 
@@ -349,7 +346,7 @@ class MasterDataController extends Controller
     {
         $this->ensureSuperAdmin();
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:status_categories,name,' . $status->id . '|regex:/^[^\<\>]+$/',
+            'name' => 'required|string|max:255|unique:status_categories,name,'.$status->id.'|regex:/^[^\<\>]+$/',
             'color' => ['required', 'regex:/^#[0-9A-Fa-f]{6}$/'],
         ], [
             'name.required' => 'Nama status wajib diisi.',
@@ -432,7 +429,7 @@ class MasterDataController extends Controller
     public function listUsers(Request $request): JsonResponse
     {
         $this->ensureSuperAdmin();
-        $userQuery = User::with('account')->orderBy('name');
+        $userQuery = User::with(['account', 'accounts'])->orderBy('name');
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -446,6 +443,7 @@ class MasterDataController extends Controller
         }
 
         $users = $userQuery->paginate(15);
+
         return response()->json($users);
     }
 
@@ -465,7 +463,7 @@ class MasterDataController extends Controller
     ): Response {
         $this->ensureSuperAdmin();
 
-        $userQuery = User::with('account')->orderBy('name');
+        $userQuery = User::with(['account', 'accounts'])->orderBy('name');
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -479,14 +477,14 @@ class MasterDataController extends Controller
         }
 
         $users = $userQuery->get();
-        $filename = 'daftar-user-' . now()->format('Ymd_His') . '.xlsx';
+        $filename = 'daftar-user-'.now()->format('Ymd_His').'.xlsx';
 
         return response(
             $xlsxConverter->convert($exporter->buildWorkbook($users)),
             200,
             [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                'Content-Disposition' => 'attachment; filename="'.$filename.'"',
                 'Cache-Control' => 'max-age=0',
             ]
         );
@@ -505,8 +503,11 @@ class MasterDataController extends Controller
             'password' => 'required|string|min:8',
             'password_confirmation' => 'required|string|same:password',
             'role' => ['required', new Enum(UserRole::class)],
-            'survey_team' => ['required_if:role,surveyor,manager_surveyor', 'nullable', 'string', 'in:A,B,C,D,E'],
-            'account_id' => 'required_if:role,' . UserRole::Admin->value . '|nullable|exists:accounts,id',
+            'survey_team' => ['nullable'],
+            'account_id' => 'nullable|exists:accounts,id',
+            'account_ids' => 'nullable|array|min:1',
+            'account_ids.*' => 'integer|distinct|exists:accounts,id',
+            'default_account_id' => 'nullable|integer|exists:accounts,id',
         ], [
             'name.required' => 'Nama user wajib diisi.',
             'name.regex' => 'Nama user tidak boleh mengandung tag HTML.',
@@ -521,7 +522,7 @@ class MasterDataController extends Controller
             'role.required' => 'Role pengguna wajib dipilih.',
             // Rule objek Enum memakai FQCN-nya sebagai kunci custom message;
             // 'role.enum' TIDAK berlaku (sudah diverifikasi lewat tes).
-            'role.' . Enum::class => 'Role pengguna tidak valid.',
+            'role.'.Enum::class => 'Role pengguna tidak valid.',
         ]);
 
         if ($validator->fails()) {
@@ -533,9 +534,16 @@ class MasterDataController extends Controller
 
         $validated = $validator->validated();
         $role = UserRole::from($validated['role']);
+        $accountIds = $this->validatedAccountIds($validated, $role);
+        $defaultAccountId = $role === UserRole::Admin
+            ? (int) ($validated['default_account_id'] ?? $validated['account_id'] ?? $accountIds[0])
+            : null;
+        if ($role === UserRole::Admin && ! in_array($defaultAccountId, $accountIds, true)) {
+            throw ValidationException::withMessages(['default_account_id' => 'Akun default harus termasuk account_ids.']);
+        }
 
         try {
-            $user = DB::transaction(function () use ($validated, $role) {
+            $user = DB::transaction(function () use ($validated, $role, $accountIds, $defaultAccountId) {
                 // F-014: role assigned explicitly (not via mass-assignment) to prevent
                 // privilege escalation if $fillable is ever inadvertently relaxed.
                 $createdUser = User::create([
@@ -545,12 +553,12 @@ class MasterDataController extends Controller
                     // `account_id` hanya dikirim untuk role admin (required_if), jadi
                     // untuk surveyor/manager_surveyor key-nya TIDAK ADA di validated()
                     // -> wajib pakai `?? null`, kalau tidak: "Undefined array key".
-                    'account_id' => $role === UserRole::Admin ? ($validated['account_id'] ?? null) : null,
+                    'account_id' => $defaultAccountId,
                 ]);
                 $createdUser->role = $role;
-                $createdUser->survey_team = in_array($role, [UserRole::Surveyor, UserRole::ManagerSurveyor], true)
-                    ? $validated['survey_team'] : null;
+                $createdUser->survey_team = null;
                 $createdUser->save();
+                $createdUser->accounts()->sync($role === UserRole::Admin ? $accountIds : []);
 
                 $createdUser->loadMissing('account');
 
@@ -569,6 +577,7 @@ class MasterDataController extends Controller
 
         } catch (Throwable $exception) {
             report($exception);
+
             return response()->json(['message' => 'User baru gagal ditambahkan. Silakan coba lagi.'], 500);
         }
     }
@@ -582,10 +591,13 @@ class MasterDataController extends Controller
         $this->validateManagerTeam($request, $user);
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255|regex:/^[^\<\>]+$/',
-            'email' => 'required|email|max:255|unique:users,email,' . $user->id,
+            'email' => 'required|email|max:255|unique:users,email,'.$user->id,
             'role' => ['required', new Enum(UserRole::class)],
-            'survey_team' => ['required_if:role,surveyor,manager_surveyor', 'nullable', 'string', 'in:A,B,C,D,E'],
-            'account_id' => 'required_if:role,' . UserRole::Admin->value . '|nullable|exists:accounts,id',
+            'survey_team' => ['nullable'],
+            'account_id' => 'nullable|exists:accounts,id',
+            'account_ids' => 'nullable|array|min:1',
+            'account_ids.*' => 'integer|distinct|exists:accounts,id',
+            'default_account_id' => 'nullable|integer|exists:accounts,id',
         ], [
             'name.required' => 'Nama user wajib diisi.',
             'name.regex' => 'Nama user tidak boleh mengandung tag HTML.',
@@ -596,7 +608,7 @@ class MasterDataController extends Controller
             'role.required' => 'Role pengguna wajib dipilih.',
             // Rule objek Enum memakai FQCN-nya sebagai kunci custom message;
             // 'role.enum' TIDAK berlaku (sudah diverifikasi lewat tes).
-            'role.' . Enum::class => 'Role pengguna tidak valid.',
+            'role.'.Enum::class => 'Role pengguna tidak valid.',
         ]);
 
         if ($validator->fails()) {
@@ -608,6 +620,13 @@ class MasterDataController extends Controller
 
         $validated = $validator->validated();
         $role = UserRole::from($validated['role']);
+        $accountIds = $this->validatedAccountIds($validated, $role, $user);
+        $defaultAccountId = $role === UserRole::Admin
+            ? (int) ($validated['default_account_id'] ?? $validated['account_id'] ?? $accountIds[0])
+            : null;
+        if ($role === UserRole::Admin && ! in_array($defaultAccountId, $accountIds, true)) {
+            throw ValidationException::withMessages(['default_account_id' => 'Akun default harus termasuk account_ids.']);
+        }
 
         if (
             $user->role === UserRole::SuperAdmin
@@ -620,7 +639,7 @@ class MasterDataController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($user, $validated, $role) {
+            DB::transaction(function () use ($user, $validated, $role, $accountIds, $defaultAccountId) {
                 $user->loadMissing('account');
                 $oldValues = [
                     'id' => $user->id,
@@ -639,14 +658,14 @@ class MasterDataController extends Controller
                     // `account_id` hanya dikirim untuk role admin (required_if), jadi
                     // untuk surveyor/manager_surveyor key-nya TIDAK ADA di validated()
                     // -> wajib pakai `?? null`, kalau tidak: "Undefined array key".
-                    'account_id' => $role === UserRole::Admin ? ($validated['account_id'] ?? null) : null,
+                    'account_id' => $defaultAccountId,
                 ]);
                 $user->role = $role;
-                $user->survey_team = in_array($role, [UserRole::Surveyor, UserRole::ManagerSurveyor], true)
-                    ? $validated['survey_team'] : null;
+                $user->survey_team = null;
                 $user->save();
+                $user->accounts()->sync($role === UserRole::Admin ? $accountIds : []);
 
-                app(\App\Services\NotificationSummaryService::class)->forgetForUser((int) $user->id);
+                app(NotificationSummaryService::class)->forgetForUser((int) $user->id);
 
                 $user->refresh()->loadMissing('account');
 
@@ -664,6 +683,7 @@ class MasterDataController extends Controller
 
         } catch (Throwable $exception) {
             report($exception);
+
             return response()->json(['message' => "Data user {$user->name} gagal diperbarui. Silakan coba lagi."], 500);
         }
     }
@@ -673,15 +693,22 @@ class MasterDataController extends Controller
      */
     private function validateManagerTeam(Request $request, ?User $user = null): void
     {
-        if ($request->input('role') === UserRole::ManagerSurveyor->value
-            && is_string($request->input('survey_team'))
-            && User::query()->where('role', UserRole::ManagerSurveyor->value)
-                ->where('survey_team', $request->input('survey_team'))
-                ->when($user, fn ($query) => $query->whereKeyNot($user->id))->exists()) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'survey_team' => 'Team ini sudah mempunyai Manager Surveyor aktif.',
-            ]);
+        // Manager surveyor bersifat global; lebih dari satu manager diperbolehkan.
+    }
+
+    private function validatedAccountIds(array $validated, UserRole $role, ?User $user = null): array
+    {
+        if ($role !== UserRole::Admin) {
+            return [];
         }
+
+        $fallback = $validated['default_account_id'] ?? $validated['account_id'] ?? $user?->account_id;
+        $ids = array_values(array_unique(array_map('intval', $validated['account_ids'] ?? array_filter([$fallback]))));
+        if ($ids === []) {
+            throw ValidationException::withMessages(['account_ids' => 'Minimal satu akun wajib dipilih untuk Admin.']);
+        }
+
+        return $ids;
     }
 
     public function destroyUser(User $user): JsonResponse
@@ -711,6 +738,7 @@ class MasterDataController extends Controller
             ]);
         } catch (Throwable $exception) {
             report($exception);
+
             return response()->json(['message' => "User {$user->name} gagal dihapus. Silakan coba lagi."], 500);
         }
     }
@@ -753,6 +781,7 @@ class MasterDataController extends Controller
             ]);
         } catch (Throwable $exception) {
             report($exception);
+
             return response()->json(['message' => "Password untuk {$user->name} gagal direset. Silakan coba lagi."], 500);
         }
     }

@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use App\Enums\UserRole;
+use App\Support\ActiveAccount;
 use App\Traits\TracksAuditUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -51,6 +53,25 @@ class User extends Authenticatable
     public function account()
     {
         return $this->belongsTo(Account::class);
+    }
+
+    public function accounts(): BelongsToMany
+    {
+        return $this->belongsToMany(Account::class)->withTimestamps();
+    }
+
+    public function activeAccountId(): ?int
+    {
+        if ($this->isAdmin() && app()->bound(ActiveAccount::class)) {
+            return app(ActiveAccount::class)->id() ?? ($this->account_id ? (int) $this->account_id : null);
+        }
+
+        return $this->account_id ? (int) $this->account_id : null;
+    }
+
+    public function hasAccountAccess(int $accountId): bool
+    {
+        return (int) $this->account_id === $accountId || $this->accounts()->whereKey($accountId)->exists();
     }
 
     public function consultations()
@@ -100,7 +121,7 @@ class User extends Authenticatable
 
     public function hasSurveyTeam(): bool
     {
-        return $this->isSurveyTeam() && in_array($this->survey_team, ['A', 'B', 'C', 'D', 'E', 'F'], true);
+        return $this->isSurveyTeam();
     }
 
     /**

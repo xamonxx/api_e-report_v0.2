@@ -43,9 +43,26 @@ Route::prefix('v1')->group(function () {
         ->middleware('throttle:bug-reports')
         ->name('api.bug-reports.store');
 
+    // ── Read-only integration feed (machine clients, NOT users) ─────────────────
+    // Authenticated by `integration_clients` tokens that never satisfy
+    // auth:sanctum, so no write route below is reachable with them. Only GET
+    // routes are registered here, and the middleware rejects other verbs too.
+    Route::prefix('integration')
+        ->middleware(['integration.token', 'throttle:60,1'])
+        ->name('api.integration.')
+        ->group(function () {
+            Route::get('/accounts', [App\Http\Controllers\Api\Integration\IntegrationController::class, 'accounts'])->name('accounts');
+            Route::get('/consultations', [App\Http\Controllers\Api\Integration\IntegrationController::class, 'consultations'])->name('consultations');
+            Route::get('/consultations/{consultationId}', [App\Http\Controllers\Api\Integration\IntegrationController::class, 'consultation'])
+                ->where('consultationId', '[A-Za-z0-9.\-]+')
+                ->name('consultations.show');
+            Route::get('/master-data/statuses', [App\Http\Controllers\Api\Integration\IntegrationController::class, 'statuses'])->name('statuses');
+            Route::get('/master-data/needs-categories', [App\Http\Controllers\Api\Integration\IntegrationController::class, 'needsCategories'])->name('needs-categories');
+        });
+
     // ── Authenticated ──────────────────────────────────────────────────────────
     // auth:sanctum accepts both session cookies AND Bearer tokens.
-    Route::middleware(['auth:sanctum'])->group(function () {
+    Route::middleware(['auth:sanctum', 'active.account'])->group(function () {
 
         // Auth
         Route::get('/auth/me', [AuthController::class, 'me'])->name('api.auth.me');

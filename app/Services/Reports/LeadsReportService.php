@@ -79,7 +79,7 @@ class LeadsReportService
         $query = Account::query();
 
         if ($user->isAdmin()) {
-            $query->whereKey($user->account_id);
+            $query->whereKey($user->activeAccountId());
         } else {
             if (! empty($filters['account'])) {
                 $query->whereKey((int) $filters['account']);
@@ -231,7 +231,7 @@ class LeadsReportService
 
         // Filter user access
         if ($user->isAdmin()) {
-            $activeSurveysQuery->where('account_id', $user->account_id);
+            $activeSurveysQuery->where('account_id', $user->activeAccountId());
         } elseif (! empty($filters['account'])) {
             $activeSurveysQuery->where('account_id', (int) $filters['account']);
         }
@@ -248,7 +248,7 @@ class LeadsReportService
             ->with(['consultation']);
 
         if ($user->isAdmin()) {
-            $prevDealsQuery->where('account_id', $user->account_id);
+            $prevDealsQuery->where('account_id', $user->activeAccountId());
         } elseif (! empty($filters['account'])) {
             $prevDealsQuery->where('account_id', (int) $filters['account']);
         }
@@ -264,7 +264,7 @@ class LeadsReportService
             ->with(['consultation']);
 
         if ($user->isAdmin()) {
-            $nextDealsQuery->where('account_id', $user->account_id);
+            $nextDealsQuery->where('account_id', $user->activeAccountId());
         } elseif (! empty($filters['account'])) {
             $nextDealsQuery->where('account_id', (int) $filters['account']);
         }

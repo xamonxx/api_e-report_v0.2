@@ -47,6 +47,9 @@ class SyncSurveyTeams extends Command
 
     public function handle(): int
     {
+        $this->error('Command Team A-F lama dinonaktifkan. Gunakan app:sync-green-muda-roster.');
+        return self::FAILURE;
+
         $credentials = null;
         $written = false;
         $committed = false;

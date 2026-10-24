@@ -157,12 +157,26 @@ class AuthController extends Controller
 
     private function formatUser($user): array
     {
+        $user->loadMissing(['account:id,name,logo_path', 'accounts:id,name,logo_path']);
+        $accounts = $user->isAdmin() ? $user->accounts : collect();
+        if ($user->isAdmin() && $accounts->isEmpty() && $user->account) {
+            $accounts = collect([$user->account]);
+        }
+        $activeAccountId = $user->isAdmin() ? ($user->activeAccountId() ?? $user->account_id) : null;
+
         return [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
             'role' => $user->role instanceof UserRole ? $user->role->value : $user->role,
             'account_id' => $user->account_id,
+            'default_account_id' => $user->account_id,
+            'active_account_id' => $activeAccountId,
+            'accounts' => $accounts->map(fn ($account) => [
+                'id' => $account->id,
+                'name' => $account->name,
+                'logo' => $account->logo_path,
+            ])->values()->all(),
             'survey_team' => $user->survey_team,
             'account' => $user->account ? [
                 'id' => $user->account->id,

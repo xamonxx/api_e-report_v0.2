@@ -82,3 +82,9 @@ composer.phar
 # Internal review notes
 /docs/SECURITY-REVIEW-*.md
 
+
+# Konfigurasi lokal tool agent (Serena).
+/.serena/
+# Artefak salah path: `php artisan tinker` sempat menulis riwayat psysh ke
+# folder bernama "C:" di dalam repo. Bukan bagian aplikasi.
+/C/

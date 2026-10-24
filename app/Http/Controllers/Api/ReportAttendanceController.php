@@ -16,6 +16,7 @@ use App\Support\AccountGroup;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
@@ -25,6 +26,7 @@ use Throwable;
 class ReportAttendanceController extends Controller
 {
     private const REPORT_CATEGORY_OPTIONS = ['ada_wa', 'nol_wa', 'libur_susulan'];
+
     private const STATUS_FILTER_OPTIONS = ['all', 'ada_wa', 'nol_wa', 'libur_susulan', 'belum_laporan'];
 
     /** Batas panjang rentang rekap, disamakan dengan batas kolom export. */
@@ -36,13 +38,13 @@ class ReportAttendanceController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = auth()->user();
-        if (!$user->isSuperAdmin() && !$user->isAdmin()) {
+        if (! $user->isSuperAdmin() && ! $user->isAdmin()) {
             return response()->json(['message' => 'Unauthorized. Super Admin role required.'], 403);
         }
 
         $selectedStatus = $request->get('status', 'all');
 
-        if (!in_array($selectedStatus, self::STATUS_FILTER_OPTIONS, true)) {
+        if (! in_array($selectedStatus, self::STATUS_FILTER_OPTIONS, true)) {
             $selectedStatus = 'all';
         }
 
@@ -63,7 +65,7 @@ class ReportAttendanceController extends Controller
         $dateStr = $date->format('Y-m-d');
 
         $adminsQuery = User::where('role', UserRole::Admin)
-            ->with(['account', 'reportAttendances' => fn($q) => $q->where('report_date', $dateStr)])
+            ->with(['account', 'accounts', 'reportAttendances' => fn ($q) => $q->where('report_date', $dateStr)])
             ->orderBy('name');
 
         if ($user->isAdmin()) {
@@ -71,17 +73,23 @@ class ReportAttendanceController extends Controller
         }
 
         $adminAttendances = $adminsQuery->get()
-            ->map(function ($admin) {
-                $attendance = $admin->reportAttendances->first();
-                return [
-                    'admin_id' => $admin->id,
-                    'admin_name' => $admin->name,
-                    'account_name' => $admin->account?->name ?? '-',
-                    'account_description' => $admin->account?->description,
-                    'has_reported' => $attendance !== null,
-                    'reported_at' => $attendance?->created_at,
-                    'report_category' => $attendance?->report_category,
-                ];
+            ->flatMap(function (User $admin) use ($user) {
+                $accounts = $this->attendanceAccountsFor($admin, $user);
+
+                return $accounts->map(function ($account) use ($admin) {
+                    $attendance = $admin->reportAttendances->firstWhere('account_id', $account->id);
+
+                    return [
+                        'admin_id' => $admin->id,
+                        'admin_name' => $admin->name,
+                        'account_id' => $account->id,
+                        'account_name' => $account->name,
+                        'account_description' => $account->description,
+                        'has_reported' => $attendance !== null,
+                        'reported_at' => $attendance?->created_at,
+                        'report_category' => $attendance?->report_category,
+                    ];
+                });
             });
 
         $statusCounts = [
@@ -139,6 +147,7 @@ class ReportAttendanceController extends Controller
         $adminsQuery = User::where('role', UserRole::Admin)
             ->with([
                 'account',
+                'accounts',
                 'reportAttendances' => fn ($q) => $q->whereBetween('report_date', [
                     $start->toDateString(),
                     $end->toDateString(),
@@ -150,26 +159,31 @@ class ReportAttendanceController extends Controller
             $adminsQuery->whereKey($user->id);
         }
 
-        $rows = $adminsQuery->get()->map(function (User $admin) use ($totalDays) {
-            $byCategory = $admin->reportAttendances->countBy('report_category');
-            $adaWa = (int) $byCategory->get('ada_wa', 0);
-            $nolWa = (int) $byCategory->get('nol_wa', 0);
-            $libur = (int) $byCategory->get('libur_susulan', 0);
-            $reported = $adaWa + $nolWa + $libur;
+        $rows = $adminsQuery->get()->flatMap(function (User $admin) use ($totalDays, $user) {
+            return $this->attendanceAccountsFor($admin, $user)->map(function ($account) use ($admin, $totalDays) {
+                $byCategory = $admin->reportAttendances
+                    ->where('account_id', $account->id)
+                    ->countBy('report_category');
+                $adaWa = (int) $byCategory->get('ada_wa', 0);
+                $nolWa = (int) $byCategory->get('nol_wa', 0);
+                $libur = (int) $byCategory->get('libur_susulan', 0);
+                $reported = $adaWa + $nolWa + $libur;
 
-            return [
-                'admin_id' => $admin->id,
-                'admin_name' => $admin->name,
-                'account_name' => $admin->account?->name ?? '-',
-                'account_description' => $admin->account?->description,
-                'ada_wa' => $adaWa,
-                'nol_wa' => $nolWa,
-                'libur_susulan' => $libur,
-                'reported_days' => $reported,
-                'missing_days' => max($totalDays - $reported, 0),
-                'total_days' => $totalDays,
-                'compliance_rate' => $totalDays > 0 ? round(($reported / $totalDays) * 100, 1) : 0.0,
-            ];
+                return [
+                    'admin_id' => $admin->id,
+                    'admin_name' => $admin->name,
+                    'account_id' => $account->id,
+                    'account_name' => $account->name,
+                    'account_description' => $account->description,
+                    'ada_wa' => $adaWa,
+                    'nol_wa' => $nolWa,
+                    'libur_susulan' => $libur,
+                    'reported_days' => $reported,
+                    'missing_days' => max($totalDays - $reported, 0),
+                    'total_days' => $totalDays,
+                    'compliance_rate' => $totalDays > 0 ? round(($reported / $totalDays) * 100, 1) : 0.0,
+                ];
+            });
         });
 
         $statusCounts = [
@@ -210,25 +224,24 @@ class ReportAttendanceController extends Controller
         Request $request,
         NotificationSummaryService $notificationSummaryService,
         WebPushService $webPush
-    ): JsonResponse
-    {
+    ): JsonResponse {
         $user = auth()->user();
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             return response()->json(['message' => 'Hanya admin yang dapat melakukan absensi report.'], 403);
         }
 
         $request->validate([
-            'report_category' => 'required|in:' . implode(',', self::REPORT_CATEGORY_OPTIONS),
+            'report_category' => 'required|in:'.implode(',', self::REPORT_CATEGORY_OPTIONS),
         ], [
             'report_category.required' => 'Pilih kategori laporan absen Anda.',
-            'report_category.in' => 'Kategori yang dipilih tidak valid.'
+            'report_category.in' => 'Kategori yang dipilih tidak valid.',
         ]);
 
         $today = Carbon::today();
 
         $inserted = DB::table('report_attendances')->insertOrIgnore([
             'user_id' => $user->id,
-            'account_id' => $user->account_id,
+            'account_id' => $user->activeAccountId(),
             'report_date' => $today->toDateString(),
             'report_category' => $request->report_category,
             'created_at' => now(),
@@ -244,7 +257,7 @@ class ReportAttendanceController extends Controller
         $attendance = ReportAttendance::query()
             ->with(['user:id,name,account_id', 'account:id,name'])
             ->where('user_id', $user->id)
-            ->where('account_id', $user->account_id)
+            ->where('account_id', $user->activeAccountId())
             ->where('report_date', $today->toDateString())
             ->first();
 
@@ -270,14 +283,15 @@ class ReportAttendanceController extends Controller
     public function upsertBySuperAdmin(Request $request): JsonResponse
     {
         $user = auth()->user();
-        if (!$user->isSuperAdmin()) {
+        if (! $user->isSuperAdmin()) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
+            'account_id' => 'required|exists:accounts,id',
             'report_date' => 'required|date',
-            'report_category' => 'nullable|in:' . implode(',', self::REPORT_CATEGORY_OPTIONS),
+            'report_category' => 'nullable|in:'.implode(',', self::REPORT_CATEGORY_OPTIONS),
         ], [
             'user_id.required' => 'Admin wajib dipilih.',
             'user_id.exists' => 'Admin tidak valid.',
@@ -286,11 +300,12 @@ class ReportAttendanceController extends Controller
         ]);
 
         $admin = User::where('role', UserRole::Admin)->findOrFail($validated['user_id']);
+        abort_unless($admin->hasAccountAccess((int) $validated['account_id']), 422, 'Akun tidak termasuk membership admin.');
         $reportDate = Carbon::parse($validated['report_date'])->toDateString();
 
         $attendance = ReportAttendance::firstOrNew([
             'user_id' => $admin->id,
-            'account_id' => $admin->account_id,
+            'account_id' => $validated['account_id'],
             'report_date' => $reportDate,
         ]);
 
@@ -305,7 +320,7 @@ class ReportAttendanceController extends Controller
         }
 
         $attendance->fill([
-            'account_id' => $admin->account_id,
+            'account_id' => $validated['account_id'],
             'report_category' => $validated['report_category'],
         ]);
         $attendance->save();
@@ -325,7 +340,7 @@ class ReportAttendanceController extends Controller
         SpreadsheetXmlToXlsxConverter $xlsxConverter
     ): Response {
         $user = auth()->user();
-        if (!$user->isSuperAdmin()) {
+        if (! $user->isSuperAdmin()) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
@@ -347,7 +362,7 @@ class ReportAttendanceController extends Controller
         ], [
             'end_date.after_or_equal' => 'Tanggal akhir tidak boleh sebelum tanggal awal.',
             'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
-                . implode(', ', AccountGroup::labels()) . '.',
+                .implode(', ', AccountGroup::labels()).'.',
         ]);
 
         // Grup kosong berarti semua grup dalam satu lembar.
@@ -392,7 +407,7 @@ class ReportAttendanceController extends Controller
 
         return response($xlsxConverter->convert($excelExporter->buildWorkbook($start, $accountGroup, $end, $accountIds)), 200, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             'Cache-Control' => 'max-age=0',
             'X-Recap-Range-Truncated' => $rangeTruncated ? '1' : '0',
         ]);
@@ -413,7 +428,7 @@ class ReportAttendanceController extends Controller
         SpreadsheetXmlToXlsxConverter $xlsxConverter
     ): Response {
         $user = auth()->user();
-        if (!$user->isSuperAdmin()) {
+        if (! $user->isSuperAdmin()) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
@@ -433,7 +448,7 @@ class ReportAttendanceController extends Controller
         ], [
             'end_date.after_or_equal' => 'Tanggal akhir tidak boleh sebelum tanggal awal.',
             'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
-                . implode(', ', AccountGroup::labels()) . '.',
+                .implode(', ', AccountGroup::labels()).'.',
         ]);
 
         $accountGroup = $validated['account_group'] ?? null;
@@ -472,7 +487,7 @@ class ReportAttendanceController extends Controller
 
         return response($xlsxConverter->convert($excelExporter->buildWorkbook($start, $accountGroup, $end, $accountIds)), 200, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             'Cache-Control' => 'max-age=0',
             'X-Recap-Range-Truncated' => $rangeTruncated ? '1' : '0',
         ]);
@@ -537,5 +552,18 @@ class ReportAttendanceController extends Controller
             'libur_susulan' => 'Libur Susulan',
             default => 'Absensi',
         };
+    }
+
+    private function attendanceAccountsFor(User $admin, User $viewer): Collection
+    {
+        $accounts = $admin->accounts->isNotEmpty()
+            ? $admin->accounts
+            : collect([$admin->account])->filter();
+
+        if ($viewer->isAdmin()) {
+            return $accounts->where('id', $viewer->activeAccountId())->values();
+        }
+
+        return $accounts->values();
     }
 }

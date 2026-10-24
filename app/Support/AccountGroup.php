@@ -30,15 +30,18 @@ final class AccountGroup
     public const TEAM_D = 'D';
     public const TEAM_E = 'E';
     public const TEAM_F = 'F';
+    public const INSIP = 'INSIP';
+    public const MITRA_SDK = 'MITRA SDK';
+    public const MITRA_BSR = 'MITRA BSR';
+    public const PRIBADI = 'PRIBADI';
 
     /** Label untuk dropdown dan tampilan. Hanya grup yang masih valid. */
     private const LABELS = [
-        self::TEAM_A => 'Team A',
-        self::TEAM_B => 'Team B',
-        self::TEAM_C => 'Team C',
-        self::TEAM_D => 'Team D',
-        self::TEAM_E => 'Team E',
-        self::TEAM_F => 'Team F',
+        self::PC => 'PC',
+        self::INSIP => 'INSIP',
+        self::MITRA_SDK => 'MITRA SDK',
+        self::MITRA_BSR => 'MITRA BSR',
+        self::PRIBADI => 'PRIBADI',
     ];
 
     /**
@@ -46,12 +49,11 @@ final class AccountGroup
      * itu ditulis â€” subtitleLabel() menurunkan sisanya dari sini.
      */
     private const UMBRELLA = [
-        self::TEAM_A => 'TEAM A',
-        self::TEAM_B => 'TEAM B',
-        self::TEAM_C => 'TEAM C',
-        self::TEAM_D => 'TEAM D',
-        self::TEAM_E => 'TEAM E',
-        self::TEAM_F => 'TEAM F',
+        self::PC => 'PC',
+        self::INSIP => 'INSIP',
+        self::MITRA_SDK => 'MITRA SDK',
+        self::MITRA_BSR => 'MITRA BSR',
+        self::PRIBADI => 'PRIBADI',
     ];
 
     /** Dipakai saat laporan tidak difilter ke satu grup. */
@@ -118,7 +120,7 @@ final class AccountGroup
             return null;
         }
 
-        $clean = str_replace(' ', '', mb_strtoupper(trim(preg_replace('/\s+/u', ' ', $value))));
+        $clean = mb_strtoupper(trim(preg_replace('/\s+/u', ' ', $value)));
 
         return in_array($clean, self::values(), true) ? $clean : null;
     }

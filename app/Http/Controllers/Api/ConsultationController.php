@@ -56,7 +56,7 @@ class ConsultationController extends Controller
         if ($request->filled('account')) {
             if ($user->isSuperAdmin()) {
                 $query->where('account_id', $request->account);
-            } elseif ((int) $user->account_id === (int) $request->account) {
+            } elseif ((int) $user->activeAccountId() === (int) $request->account) {
                 $query->where('account_id', $request->account);
             }
         }
@@ -193,11 +193,11 @@ class ConsultationController extends Controller
             ->unique()
             ->values();
         if ($user->isAdmin()) {
-            $validated['account_id'] = $user->account_id;
+            $validated['account_id'] = $user->activeAccountId();
         }
 
         // Admin restricted to own account
-        if ($user->isAdmin() && $user->account_id != $validated['account_id']) {
+        if ($user->isAdmin() && $user->activeAccountId() != $validated['account_id']) {
             return response()->json([
                 'message' => 'Anda tidak memiliki izin untuk membuat data pada akun lain.',
             ], 403);
@@ -248,10 +248,10 @@ class ConsultationController extends Controller
             ->unique()
             ->values();
         if ($user->isAdmin()) {
-            $validated['account_id'] = $user->account_id;
+            $validated['account_id'] = $user->activeAccountId();
         }
 
-        if ($user->isAdmin() && $user->account_id != $validated['account_id']) {
+        if ($user->isAdmin() && $user->activeAccountId() != $validated['account_id']) {
             return response()->json([
                 'message' => 'Anda tidak memiliki izin untuk memindahkan data ke akun lain.',
             ], 403);
@@ -366,8 +366,8 @@ class ConsultationController extends Controller
         ]);
 
         $accountId = $user->isAdmin()
-            ? $user->account_id
-            : ($validated['account_id'] ?? $user->account_id ?? 1);
+            ? $user->activeAccountId()
+            : ($validated['account_id'] ?? $user->activeAccountId() ?? 1);
         $previewId = Consultation::generateConsultationId($accountId);
 
         return response()->json([
