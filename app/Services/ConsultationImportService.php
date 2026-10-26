@@ -27,6 +27,9 @@ class ConsultationImportService
 {
     private const CHUNK_SIZE = 500;
 
+    /** Pergeseran kolom pada template 18 kolom (Alamat Lengkap + Total Item + Kategori). */
+    private const SHIFT_WITH_ADDRESS = 3;
+
     public function queue(UploadedFile $file, User $user): ConsultationImport
     {
         $storedPath = $file->store('imports/consultations');
@@ -549,15 +552,25 @@ class ConsultationImportService
             }
         }
 
-        // Template terbaru menyisipkan kolom Kecamatan di posisi J, menggeser
-        // kolom setelahnya satu langkah. File lama (14 kolom) tetap diterima.
-        $hasDistrictColumn = $this->hasDistrictColumn($row, $needsCategoryMap);
-        $shift = $hasDistrictColumn ? 1 : 0;
+        // Tiga generasi template beredar: 14 kolom (tanpa Kecamatan), 15 kolom
+        // (ada Kecamatan), dan 18 kolom (ada Alamat Lengkap, Total Item, dan
+        // Kategori). Ketiganya tetap diterima.
+        $shift = $this->templateShift($row, $needsCategoryMap);
+        $hasDistrictColumn = $shift >= 1;
+        $hasAddressColumn = $shift === self::SHIFT_WITH_ADDRESS;
 
+        // Alamat Lengkap menggeser seluruh kolom wilayah satu langkah.
+        $regionShift = $hasAddressColumn ? 1 : 0;
+        $provinceIndex = 7 + $regionShift;
+        $cityIndex = 8 + $regionShift;
+        $districtIndex = 9 + $regionShift;
+
+        // Kategori duduk di antara Jenis Kebutuhan dan Detail, jadi pada
+        // template beralamat jaraknya dua, bukan satu.
         $needIndex = 9 + $shift;
-        $detailIndex = 10 + $shift;
-        $notesIndex = 11 + $shift;
-        $statusIndex = 12 + $shift;
+        $detailIndex = $needIndex + ($hasAddressColumn ? 2 : 1);
+        $notesIndex = $detailIndex + 1;
+        $statusIndex = $notesIndex + 1;
 
         $needsCategoryIds = $this->resolveNeedsCategoryIds(
             $row[$needIndex] ?? '',
@@ -568,12 +581,14 @@ class ConsultationImportService
 
         // Ejaan wilayah disamakan ke format master; kecamatan yang diketik
         // manual dirapikan ke ejaan dataset bila ditemukan padanannya.
-        $province = WilayahNormalizer::canonicalProvince($row[7] ?? null) ?? ($row[7] !== '' ? $row[7] : null);
-        $city = WilayahNormalizer::canonicalCity($row[8] ?? null) ?? ($row[8] !== '' ? $row[8] : null);
+        $rawProvince = $row[$provinceIndex] ?? null;
+        $rawCity = $row[$cityIndex] ?? null;
+        $province = WilayahNormalizer::canonicalProvince($rawProvince) ?? ($rawProvince !== '' ? $rawProvince : null);
+        $city = WilayahNormalizer::canonicalCity($rawCity) ?? ($rawCity !== '' ? $rawCity : null);
 
         $district = null;
-        if ($hasDistrictColumn && ($row[9] ?? '') !== '') {
-            $resolved = WilayahNormalizer::canonicalDistrict($row[9], $city);
+        if ($hasDistrictColumn && ($row[$districtIndex] ?? '') !== '') {
+            $resolved = WilayahNormalizer::canonicalDistrict($row[$districtIndex], $city);
             $district = $resolved['value'];
 
             if (! $resolved['matched']) {
@@ -592,10 +607,11 @@ class ConsultationImportService
             'province' => PendingConfirmation::normalizeRegion($this->stripHtmlDelimiters($province)),
             'city' => PendingConfirmation::normalizeRegion($this->stripHtmlDelimiters($city)),
             'district' => PendingConfirmation::normalizeRegion($this->stripHtmlDelimiters($district)),
-            // Kolom G template adalah Domisili (Dalam/Luar Kota) yang terisi
-            // rumus otomatis, bukan alamat. Sebelumnya nilai itu tertulis ke
-            // kolom address. Template tidak punya kolom alamat, jadi dikosongkan.
-            'address' => null,
+            // Template 18 kolom punya Alamat Lengkap di indeks 6; versi lama
+            // tidak, dan kolom Domisili di sebelahnya hanya rumus Dalam/Luar
+            // Kota, bukan alamat. Placeholder wilayah tidak disimpan ke sini
+            // supaya kolom address tetap berisi alamat sungguhan.
+            'address' => $hasAddressColumn ? $this->addressFromTemplate($row[6] ?? null) : null,
             'product_details' => $this->stripHtmlDelimiters(
                 ($row[$detailIndex] ?? '') !== ''
                     ? $row[$detailIndex]
@@ -662,6 +678,47 @@ class ConsultationImportService
         }
 
         return array_values(array_unique($ids)) ?: [$defaultCategoryId];
+    }
+
+    /**
+     * Tentukan generasi template dari sebuah baris, dinyatakan sebagai
+     * pergeseran kolom Jenis Kebutuhan terhadap tata letak 14 kolom:
+     *
+     *   0 - 14 kolom, tanpa Kecamatan (Jenis Kebutuhan di indeks 9)
+     *   1 - 15 kolom, ada Kecamatan (indeks 10)
+     *   3 - 18 kolom, ada Alamat Lengkap + Total Item + Kategori (indeks 12)
+     *
+     * Posisi kolom Jenis Kebutuhan jadi petunjuk utama karena isinya bisa
+     * dicocokkan ke master kategori; lebar baris hanya dipakai bila ambigu.
+     */
+    private function templateShift(array $row, array $needsCategoryMap): int
+    {
+        $needAt = fn (int $index) => isset($needsCategoryMap[$this->normalizeLookup($row[$index] ?? '')]);
+
+        if ($needAt(12) && ! $needAt(10) && ! $needAt(9)) {
+            return self::SHIFT_WITH_ADDRESS;
+        }
+
+        if (count($row) >= 18 && ! $needAt(10) && ! $needAt(9)) {
+            return self::SHIFT_WITH_ADDRESS;
+        }
+
+        return $this->hasDistrictColumn($row, $needsCategoryMap) ? 1 : 0;
+    }
+
+    /**
+     * Alamat dari template: kosong atau placeholder wilayah tidak disimpan,
+     * supaya kolom address hanya berisi alamat sungguhan.
+     */
+    private function addressFromTemplate(?string $value): ?string
+    {
+        $clean = $this->stripHtmlDelimiters(trim(preg_replace('/\s+/u', ' ', (string) $value) ?? ''));
+
+        if ($clean === null || $clean === '' || PendingConfirmation::matches($clean)) {
+            return null;
+        }
+
+        return $clean;
     }
 
     /**

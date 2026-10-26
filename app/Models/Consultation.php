@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\ConsultationStatusGroups;
+use App\Support\PendingConfirmation;
 use App\Support\PhoneNumber;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -188,6 +189,78 @@ class Consultation extends Model
             ->filter()
             ->unique()
             ->implode(', ');
+    }
+
+    /**
+     * Alamat siap tampil: alamat jalan digabung wilayahnya.
+     *
+     * Kolom wilayah menyimpan placeholder 'Belum konfirmasi' untuk data yang
+     * belum lengkap (lihat PendingConfirmation), jadi placeholder itu dibuang
+     * dulu supaya tidak ikut terbaca sebagai nama tempat. Kalau tidak ada satu
+     * pun bagian yang tersisa, seluruh alamatnya memang belum dikonfirmasi.
+     */
+    public function getFullAddressAttribute(): string
+    {
+        $parts = [];
+
+        foreach ([$this->address, $this->district, $this->city, $this->province] as $raw) {
+            $part = trim(preg_replace('/\s+/u', ' ', (string) $raw) ?? '');
+
+            if ($part === '' || PendingConfirmation::matches($part)) {
+                continue;
+            }
+
+            // Admin sering menulis alamat jalan yang sudah menyebut kecamatan
+            // dan kotanya. Tanpa pengecekan ini, wilayahnya tertulis dua kali.
+            foreach ($parts as $existing) {
+                if (mb_stripos($existing, $part) !== false) {
+                    continue 2;
+                }
+            }
+
+            $parts[] = $part;
+        }
+
+        return $parts === []
+            ? PendingConfirmation::REGION_LABEL
+            : implode(', ', $parts);
+    }
+
+    /**
+     * Banyaknya kebutuhan nyata pada lead ini. Placeholder 'Tidak konfirmasi'
+     * bukan item, jadi lead yang kebutuhannya belum diisi bernilai 0.
+     */
+    public function getItemsTotalAttribute(): int
+    {
+        return $this->realProductNames()->count();
+    }
+
+    /**
+     * Label kategori ringkas untuk laporan: satu kebutuhan ditulis apa adanya,
+     * lebih dari satu diringkas menjadi 'Lain-lain'.
+     */
+    public function getCategoryLabelAttribute(): string
+    {
+        $names = $this->realProductNames();
+
+        if ($names->count() > 1) {
+            return NeedsCategory::OTHER_OPTION_LABEL;
+        }
+
+        return $names->first() ?? $this->product_names_label;
+    }
+
+    /** Nama kebutuhan tanpa placeholder, dasar hitungan item dan label kategori. */
+    private function realProductNames(): Collection
+    {
+        $placeholders = [NeedsCategory::PENDING_LABEL, NeedsCategory::PENDING_LEGACY_LABEL];
+
+        return $this->productCategories()
+            ->pluck('name')
+            ->filter()
+            ->unique()
+            ->reject(fn (string $name) => in_array(trim($name), $placeholders, true))
+            ->values();
     }
 
     public static function normalizeLeadText(?string $value): string

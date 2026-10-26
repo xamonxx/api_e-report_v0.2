@@ -29,10 +29,10 @@ class LeadsExcelExporter
     ];
 
     // NO, ID KONSUMEN, TGL. AWAL KONSUL, NAMA AKUN, Nama Konsumen, WA Konsumen,
-    // Domisili, Provinsi, Kota Kab., Kecamatan, Jenis Kebutuhan,
-    // Detail Kebutuhan, Catatan, kategori, Tanggal Update
+    // Alamat Lengkap, Domisili, Provinsi, Kota Kab., Kecamatan, Total Item,
+    // Jenis Kebutuhan, Kategori, Detail Kebutuhan, Catatan, Status, Tanggal Update
     private const DATA_LEADS_COLUMNS = [
-        28, 132, 125, 151, 169, 145, 145, 145, 145, 145, 131, 143, 272, 143, 167,
+        28, 132, 125, 151, 169, 145, 232, 145, 145, 145, 145, 72, 131, 145, 143, 272, 143, 167,
     ];
 
     private const ANALYSIS_COLUMNS = [213, 372, 143, 213];
@@ -547,30 +547,33 @@ class LeadsExcelExporter
             ], 36),
             $this->row([
                 $this->cell('', 'dataLeadNoteBlank'),
-                $this->cell('Contoh: Nama Akun, Provinsi, Kota Kab., Jenis Kebutuhan, Kategori', 'dataLeadBlueWrap', index: 6, mergeAcross: 1),
-                $this->cell('Contoh: Nama Konsumen, WA, Detail, Catatan', 'dataLeadBodyWrap', mergeAcross: 1),
-                $this->cell('Contoh: NO, ID Konsumen, Domisili', 'dataLeadAutoWrap', mergeAcross: 1),
+                $this->cell('Contoh: Nama Akun, Provinsi, Kota Kab., Jenis Kebutuhan, Status', 'dataLeadBlueWrap', index: 6, mergeAcross: 1),
+                $this->cell('Contoh: Nama Konsumen, WA, Alamat Lengkap, Detail, Catatan', 'dataLeadBodyWrap', mergeAcross: 1),
+                $this->cell('Contoh: NO, ID Konsumen, Domisili, Total Item, Kategori', 'dataLeadAutoWrap', mergeAcross: 1),
             ], 36),
             $this->row([
                 $this->cell('NO', 'dataLeadHeader', mergeDown: 1),
                 $this->cell('ID KONSUMEN', 'dataLeadHeader', mergeDown: 1),
                 $this->cell('TGL. AWAL KONSUL', 'dataLeadHeader', mergeDown: 1),
                 $this->cell('NAMA AKUN', 'dataLeadHeader', mergeDown: 1),
-                $this->cell('DATA KONSUMEN', 'dataLeadHeader', mergeAcross: 5),
-                $this->cell('KEBUTUHAN KATEGORI', 'dataLeadHeader', mergeAcross: 3),
+                $this->cell('DATA KONSUMEN', 'dataLeadHeader', mergeAcross: 6),
+                $this->cell('KEBUTUHAN KATEGORI', 'dataLeadHeader', mergeAcross: 5),
                 $this->cell('UPDATE', 'dataLeadHeader'),
             ], 21.75),
             $this->row([
                 $this->cell('Nama Konsumen', 'dataLeadHeader', index: 5),
                 $this->cell('WA Konsumen', 'dataLeadHeader'),
+                $this->cell('Alamat Lengkap', 'dataLeadHeader'),
                 $this->cell('Domisili', 'dataLeadHeader'),
                 $this->cell('Provinsi', 'dataLeadHeader'),
                 $this->cell('Kota Kab.', 'dataLeadHeader'),
                 $this->cell('Kecamatan', 'dataLeadHeader'),
+                $this->cell('Total Item', 'dataLeadHeader'),
                 $this->cell('Jenis Kebutuhan', 'dataLeadHeader'),
+                $this->cell('Kategori', 'dataLeadHeader'),
                 $this->cell('Detail Kebutuhan', 'dataLeadHeader'),
                 $this->cell('Catatan', 'dataLeadHeader'),
-                $this->cell('kategori', 'dataLeadHeader'),
+                $this->cell('Status', 'dataLeadHeader'),
                 $this->cell('Tanggal Update', 'dataLeadHeader'),
             ], 24.75),
         ];
@@ -596,11 +599,18 @@ class LeadsExcelExporter
             // Disimpan E.164 tanpa pemisah; ditampilkan dalam bentuk
             // internasional yang enak dibaca sesuai negaranya.
             $this->cell(PhoneNumber::format($item['phone'] ?? ''), 'dataLeadPhone'),
+            $this->cell($item['full_address'] ?? '', 'dataLeadBodyWrap'),
             $this->cell($item['domicile'] ?? '', 'dataLeadAuto', formula: $this->domicileByCityFormula()),
             $this->cell($item['province'] ?? '', 'dataLeadBlue'),
             $this->cell($this->excelCityName($item['city'] ?? ''), 'dataLeadBlue'),
             $this->cell($item['district'] ?? '', 'dataLeadBlue'),
+            $hasData
+                ? $this->cell($item['items_total'] ?? 0, 'dataLeadAuto', 'Number')
+                : $this->cell('', 'dataLeadAuto', formula: $this->itemsTotalFormula()),
             $this->cell($item['need'] ?? '', 'dataLeadBlue'),
+            $hasData
+                ? $this->cell($item['category_label'] ?? '', 'dataLeadAuto')
+                : $this->cell('', 'dataLeadAuto', formula: $this->categoryLabelFormula()),
             $this->cell($item['product_details'] ?? '', 'dataLeadBodyWrap'),
             $this->cell($item['notes'] ?? '', 'dataLeadBodyWrap'),
             $this->cell($item['status'] ?? '', 'dataLeadBlue'),
@@ -802,23 +812,23 @@ class LeadsExcelExporter
         $lastRow = 4 + $rowCount;
 
         // Rumus ditulis gaya A1 relatif terhadap sel kiri-atas tiap rentang:
-        // H5 = Provinsi, I5 = Kota Kab. Daftar kota dan kecamatan di sheet Opsi
+        // I5 = Provinsi, J5 = Kota Kab. Daftar kota dan kecamatan di sheet Opsi
         // sudah terurut per induknya, jadi satu blok berurutan bisa diambil
         // dengan OFFSET(anchor, MATCH-1, 0, COUNTIF, 1) tanpa perlu ratusan
         // named range terpisah.
-        $cityCascade = '=OFFSET(Opsi!$I$2,MATCH(H5,CityProvinceCol,0)-1,0,COUNTIF(CityProvinceCol,H5),1)';
-        $districtCascade = '=OFFSET(Opsi!$Q$2,MATCH(I5,DistrictCityCol,0)-1,0,COUNTIF(DistrictCityCol,I5),1)';
+        $cityCascade = '=OFFSET(Opsi!$I$2,MATCH(I5,CityProvinceCol,0)-1,0,COUNTIF(CityProvinceCol,I5),1)';
+        $districtCascade = '=OFFSET(Opsi!$Q$2,MATCH(J5,DistrictCityCol,0)-1,0,COUNTIF(DistrictCityCol,J5),1)';
 
         return [
             ['range' => "R5C4:R{$lastRow}C4", 'value' => '=AccountOptions'],
-            ['range' => "R5C8:R{$lastRow}C8", 'value' => '=ProvinceOptions'],
-            ['range' => "R5C9:R{$lastRow}C9", 'value' => $cityCascade],
+            ['range' => "R5C9:R{$lastRow}C9", 'value' => '=ProvinceOptions'],
+            ['range' => "R5C10:R{$lastRow}C10", 'value' => $cityCascade],
             // Kecamatan sengaja tidak mengikat: daftar dataset tidak selalu
             // lengkap, jadi user boleh mengetik nama yang tidak ada di dropdown.
             // Ejaannya dirapikan saat import oleh WilayahNormalizer.
-            ['range' => "R5C10:R{$lastRow}C10", 'value' => $districtCascade, 'strict' => false],
-            ['range' => "R5C11:R{$lastRow}C11", 'value' => '=ProductOptions'],
-            ['range' => "R5C14:R{$lastRow}C14", 'value' => '=StatusOptions'],
+            ['range' => "R5C11:R{$lastRow}C11", 'value' => $districtCascade, 'strict' => false],
+            ['range' => "R5C13:R{$lastRow}C13", 'value' => '=ProductOptions'],
+            ['range' => "R5C17:R{$lastRow}C17", 'value' => '=StatusOptions'],
         ];
     }
 
@@ -856,6 +866,31 @@ class LeadsExcelExporter
     private function domicileByCityFormula(): string
     {
         return '=IF(RC[2]="","",IFERROR(VLOOKUP(RC[2],CityDomicileLookup,2,FALSE),"Luar Kota"))';
+    }
+
+    /**
+     * Jumlah kebutuhan dihitung dari daftar nama di kolom Jenis Kebutuhan
+     * (RC[1]), yang digabung dengan koma oleh product_names_label. Placeholder
+     * 'Tidak konfirmasi' bukan item, jadi hasilnya 0.
+     */
+    private function itemsTotalFormula(): string
+    {
+        $pending = NeedsCategory::PENDING_LABEL;
+        $separatorCount = 'LEN(RC[1])-LEN(SUBSTITUTE(RC[1],",",""))';
+
+        return '=IF(OR(RC[1]="",TRIM(RC[1])="' . $pending . '"),0,' . $separatorCount . '+1)';
+    }
+
+    /**
+     * Label kategori ringkas: satu kebutuhan ditulis apa adanya, lebih dari
+     * satu diringkas jadi 'Lain-lain'. RC[-2] = Total Item, RC[-1] = Jenis
+     * Kebutuhan.
+     */
+    private function categoryLabelFormula(): string
+    {
+        $other = NeedsCategory::OTHER_OPTION_LABEL;
+
+        return '=IF(RC[-1]="","",IF(RC[-2]>1,"' . $other . '",RC[-1]))';
     }
 
     private function currentMonthKeyFormula(): string
