@@ -29,7 +29,7 @@ class BugReportController extends Controller
                 if ($image->isValid()) {
                     // store() generates a random hashed filename → no path traversal,
                     // no overwriting, no executable extension reuse.
-                    $imagePaths[] = $image->store('bug-reports', 'public');
+                    $imagePaths[] = $image->store('bug-reports', 'local');
                 }
             }
         }
@@ -126,11 +126,38 @@ class BugReportController extends Controller
         ]);
     }
 
+    /**
+     * GET /api/v1/bug-reports/{bugReport}/images/{index}  (super_admin only)
+     */
+    public function image(BugReport $bugReport, int $index)
+    {
+        $paths = $bugReport->image_paths ?? [];
+        $path = $paths[$index] ?? null;
+        if (! is_string($path) || $path === '') {
+            abort(404);
+        }
+
+        if (Storage::disk('local')->exists($path)) {
+            return Storage::disk('local')->response($path, null, [
+                'Cache-Control' => 'private, max-age=3600',
+            ]);
+        }
+
+        if (Storage::disk('public')->exists($path)) {
+            return Storage::disk('public')->response($path, null, [
+                'Cache-Control' => 'private, max-age=3600',
+            ]);
+        }
+
+        abort(404);
+    }
+
     /** Permanently remove a report and its uploaded screenshots. */
     public function destroy(BugReport $bugReport): JsonResponse
     {
         $images = $bugReport->image_paths ?? [];
         if ($images !== []) {
+            Storage::disk('local')->delete($images);
             Storage::disk('public')->delete($images);
         }
 

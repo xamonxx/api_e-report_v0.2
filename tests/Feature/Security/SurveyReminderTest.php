@@ -299,8 +299,17 @@ class SurveyReminderTest extends TestCase
 
     private function createFixtureSchema(): void
     {
+        Schema::create('account_groups', function (Blueprint $table) {
+            $table->id();
+            $table->string('code', 32)->unique();
+            $table->string('name', 120);
+            $table->unsignedInteger('sort_order')->default(0);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
         Schema::create('accounts', function (Blueprint $table) {
             $table->id(); $table->string('name'); $table->string('account_group')->nullable();
+            $table->foreignId('account_group_id')->nullable()->constrained('account_groups')->nullOnDelete();
             $table->string('description')->nullable();
             $table->timestamps(); $table->softDeletes();
         });
@@ -322,6 +331,7 @@ class SurveyReminderTest extends TestCase
         Schema::create('consultations', function (Blueprint $table) {
             $table->id(); $table->string('consultation_id')->unique(); $table->string('client_name');
             $table->foreignId('account_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('account_group_id')->nullable()->constrained('account_groups')->nullOnDelete();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('needs_category_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('status_category_id')->nullable()->constrained()->nullOnDelete();
@@ -352,6 +362,9 @@ class SurveyReminderTest extends TestCase
                 $table->text($column)->nullable();
             }
             $table->unsignedInteger('schedule_revision')->default(0);
+            // Mirrors the multi-account migration: the service writes this on every
+            // assign/reschedule, so the fixture schema needs it too.
+            $table->string('schedule_slot_key', 100)->nullable()->unique();
             $table->timestamps(); $table->softDeletes();
         });
         Schema::create('survey_reminder_settings', function (Blueprint $table) {

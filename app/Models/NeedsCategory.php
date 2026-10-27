@@ -11,7 +11,9 @@ class NeedsCategory extends Model
 {
     use HasFactory, SoftDeletes;
 
-    public const OTHER_OPTION_LABEL = 'Lain-lain';
+    public const OTHER_OPTION_LABEL = 'Lain-Lain';
+
+    public const OTHER_OPTION_LEGACY_LABEL = 'Lain-lain';
 
     /**
      * Kategori default ketika lead disimpan tanpa memilih kebutuhan apa pun.
@@ -26,49 +28,68 @@ class NeedsCategory extends Model
     public const PENDING_LEGACY_LABEL = PendingConfirmation::LEGACY_LABEL;
 
     /**
-     * Urutan tampil kategori bawaan. Ini hanya PETUNJUK URUTAN dan sumber
-     * seeder - bukan daftar putih. Kategori yang ditambahkan lewat Master Data
-     * tetap muncul, ditempatkan setelah nama-nama di bawah ini.
+     * Urutan tampil kategori bawaan (58 item resmi). Ini menentukan urutan kurasi
+     * pada form/dropdown dan menjadi sumber seeder.
      */
     public const DISPLAY_NAMES = [
-        self::PENDING_LABEL,
-        self::OTHER_OPTION_LABEL,
-        'Kitchenset',
-        'Wall Moulding',
+        'Alumunium',
         'Backdrop TV',
-        'Full Home',
-        'Kamarset',
-        'Apartement',
-        'Wall Panel',
-        'Almunium',
-        'Dipan',
-        'Lemari',
-        'Living Room',
-        'Partisi',
-        'Semi Full Home',
-        'Sipil',
         'Bench',
-        'Box',
+        'Box Elektronik',
         'Cabinet',
         'Cabinet Laundry',
-        'Cafe Resto',
         'Cermin',
         'Cradienza',
-        'Jasa Design',
+        'Dipan',
+        'Full Home',
+        'Headboard',
+        'Interior Apartemen',
+        'Interior Cafe',
+        'Interior Hotel',
+        'Interior Kantor',
+        'Interior Penginapan',
+        'Interior Resort',
+        'Interior Restaurant',
+        'Interior Rumah Makan',
+        'Interior Rumah Sakit',
+        'Interior Toko',
+        'Interior Vila',
+        'Jasa Desain',
         'Kaca',
-        'Kantor',
+        'Kamarset',
+        'Kitchenset',
+        'Kitchenset Alumunium',
+        'Lemari',
+        'Lemari Alumunium',
         'Lemari Bawah Tangga',
+        'Living Room',
         'Meja',
+        'Meja Island',
         'Meja Kerja',
         'Meja Rias',
         'Mini Bar',
         'Nakas',
+        'Partisi',
+        'Partisi Alumunium',
         'Pintu',
         'Rak',
-        'Renovasi Rumah',
-        'Toko',
+        'Renovasi Interior',
+        'Renovasi Sipil',
+        'Semi Full Home',
+        'Sipil',
         'Walkin Closet',
+        'Wall Moulding',
+        'Wall Panel',
         'Wardrobe',
+        'Meja Alumunium',
+        'Cabinet Alumunium',
+        self::OTHER_OPTION_LABEL,
+        self::PENDING_LABEL,
+        'Mihrab',
+        'Interior Mushola',
+        'Interior Salon',
+        'Cafe Resto',
+        'Interior laundry',
     ];
 
     protected $fillable = ['name'];
@@ -80,12 +101,8 @@ class NeedsCategory extends Model
 
     /**
      * Opsi kategori untuk form konsultasi dan dropdown template.
-     *
-     * Sengaja TIDAK memfilter nama: sebelumnya scope ini memakai
-     * whereIn('name', DISPLAY_NAMES), sehingga kategori yang ditambahkan lewat
-     * halaman Master Data tidak pernah muncul di form maupun template.
-     * DISPLAY_NAMES kini hanya menentukan urutan - nama kurasi tampil lebih
-     * dulu, sisanya menyusul menurut abjad.
+     * DISPLAY_NAMES menentukan urutan - nama kurasi tampil lebih dulu,
+     * sisanya menyusul menurut abjad.
      */
     public function scopeForConsultationOptions($query)
     {

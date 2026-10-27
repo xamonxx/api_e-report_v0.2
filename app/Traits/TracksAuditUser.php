@@ -12,27 +12,40 @@ namespace App\Traits;
  */
 trait TracksAuditUser
 {
+    protected static array $columnCache = [];
+
+    protected static function hasAuditColumn($model, string $column): bool
+    {
+        $key = ($model->getConnectionName() ?? 'default').':'.$model->getTable().':'.$column;
+
+        if (! array_key_exists($key, static::$columnCache)) {
+            static::$columnCache[$key] = $model->getConnection()->getSchemaBuilder()->hasColumn($model->getTable(), $column);
+        }
+
+        return static::$columnCache[$key];
+    }
+
     public static function bootTracksAuditUser(): void
     {
         static::creating(function ($model) {
             if (
                 auth()->check()
-                && !$model->isDirty('created_by')
-                && $model->getConnection()->getSchemaBuilder()->hasColumn($model->getTable(), 'created_by')
+                && ! $model->isDirty('created_by')
+                && static::hasAuditColumn($model, 'created_by')
             ) {
                 $model->created_by = auth()->id();
             }
         });
 
         static::updating(function ($model) {
-            if (auth()->check() && $model->getConnection()->getSchemaBuilder()->hasColumn($model->getTable(), 'updated_by')) {
+            if (auth()->check() && static::hasAuditColumn($model, 'updated_by')) {
                 $model->updated_by = auth()->id();
             }
         });
 
         if (method_exists(static::class, 'bootSoftDeletes') || in_array(\Illuminate\Database\Eloquent\SoftDeletes::class, class_uses_recursive(static::class))) {
             static::deleting(function ($model) {
-                if (auth()->check() && $model->getConnection()->getSchemaBuilder()->hasColumn($model->getTable(), 'deleted_by')) {
+                if (auth()->check() && static::hasAuditColumn($model, 'deleted_by')) {
                     $model->deleted_by = auth()->id();
                     $model->saveQuietly();
                 }
@@ -45,7 +58,7 @@ trait TracksAuditUser
      */
     public function createdByUser()
     {
-        return $this->belongsTo(\App\Models\User::class, 'created_by');
+        return $this->belongsTo(\App\Models\User::class, 'created_by')->withTrashed();
     }
 
     /**
@@ -53,7 +66,7 @@ trait TracksAuditUser
      */
     public function updatedByUser()
     {
-        return $this->belongsTo(\App\Models\User::class, 'updated_by');
+        return $this->belongsTo(\App\Models\User::class, 'updated_by')->withTrashed();
     }
 
     /**
@@ -61,6 +74,6 @@ trait TracksAuditUser
      */
     public function deletedByUser()
     {
-        return $this->belongsTo(\App\Models\User::class, 'deleted_by');
+        return $this->belongsTo(\App\Models\User::class, 'deleted_by')->withTrashed();
     }
 }

@@ -207,25 +207,36 @@ class DashboardService
     private function buildAccountRanking(): array
     {
         $dealIds = $this->statusIds('deal');
-        $query = Account::withCount(['consultations']);
+        $query = Account::withCount(['currentGroupConsultations as consultations_count']);
 
         if ($dealIds) {
-            $query->withCount(['consultations as deals_count' => fn ($q) => $q->whereIn('status_category_id', $dealIds)]);
+            $query->withCount(['currentGroupConsultations as deals_count' => fn ($q) => $q->whereIn('status_category_id', $dealIds)]);
         }
 
         return $query->with(['admins:id,name,account_id'])
             ->get()
+            ->each(function (Account $a) use ($dealIds) {
+                if (! $dealIds) {
+                    $a->setAttribute('deals_count', 0);
+                }
+            })
             ->sortByDesc(fn ($a) => $a->conversion_rate)
             ->values()
             ->take(10)
-            ->map(fn ($a) => [
-                'id' => $a->id,
-                'name' => $a->name,
-                'total_leads' => $a->consultations_count,
-                'deals' => $a->deals_count ?? 0,
-                'conversion_rate' => $a->conversion_rate,
-                'admins' => $a->admins->map(fn ($u) => ['id' => $u->id, 'name' => $u->name])->toArray(),
-            ])
+            ->map(function (Account $a) use ($dealIds) {
+                if (! $dealIds) {
+                    $a->setAttribute('deals_count', 0);
+                }
+
+                return [
+                    'id' => $a->id,
+                    'name' => $a->name,
+                    'total_leads' => $a->consultations_count,
+                    'deals' => $a->deals_count ?? 0,
+                    'conversion_rate' => $a->conversion_rate,
+                    'admins' => $a->admins->map(fn ($u) => ['id' => $u->id, 'name' => $u->name])->toArray(),
+                ];
+            })
             ->toArray();
     }
 

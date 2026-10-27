@@ -12,12 +12,13 @@ use Illuminate\Support\Facades\DB;
  * Satu sumber kebenaran buat status "lapor konsul harian" per akun per
  * tanggal — dipakai bareng oleh exporter matrix kalender
  * (AdminReportAttendanceExcelExporter) dan exporter log harian
- * (ConsultationDailyLogExcelExporter) supaya warna/status di dua format
+ * (ConsultationDailyLogExcelExporter & PDF) supaya warna/status di dua format
  * export itu tidak pernah beda untuk kombinasi akun+tanggal yang sama.
  *
  * Diekstrak dari AdminReportAttendanceExcelExporter — logika penentuan
  * warnanya TIDAK diubah, cuma dipindah lokasi & resolveCell() diperkaya
- * jadi resolveStatus() yang juga mengembalikan label & keterangan teks.
+ * jadi resolveStatus() yang juga mengembalikan label & keterangan teks,
+ * serta waktu laporan (reportedAt).
  */
 class ConsultationRecapStatusResolver
 {
@@ -78,8 +79,9 @@ class ConsultationRecapStatusResolver
      * Konsul per akun per tanggal, dipecah jadi laporan tepat waktu dan
      * susulan. Pembandingnya `DATE(created_at)` vs `consultation_date`:
      * dibuat di hari yang sama = tepat waktu, dibuat belakangan = susulan.
+     * Ditambah first_normal_at untuk waktu konsultasi normal pertama.
      *
-     * @return Collection<int, Collection<string, array{normal:int, susulan:int}>>
+     * @return Collection<int, Collection<string, array{normal:int, susulan:int, first_normal_at:?string}>>
      */
     public function consultationCountsByDate(Collection $accountIds, string $start, string $end): Collection
     {
@@ -93,6 +95,7 @@ class ConsultationRecapStatusResolver
                 DB::raw('DATE(consultation_date) as consultation_day'),
                 DB::raw('SUM(CASE WHEN DATE(created_at) = DATE(consultation_date) THEN 1 ELSE 0 END) as normal_total'),
                 DB::raw('SUM(CASE WHEN DATE(created_at) > DATE(consultation_date) THEN 1 ELSE 0 END) as susulan_total'),
+                DB::raw('MIN(CASE WHEN DATE(created_at) = DATE(consultation_date) THEN created_at END) as first_normal_at'),
             ])
             ->whereNull('deleted_at')
             ->whereIn('account_id', $accountIds->all())
@@ -105,15 +108,15 @@ class ConsultationRecapStatusResolver
                 (string) $row->consultation_day => [
                     'normal' => (int) $row->normal_total,
                     'susulan' => (int) $row->susulan_total,
+                    'first_normal_at' => $row->first_normal_at ? (string) $row->first_normal_at : null,
                 ],
             ]));
     }
 
     /**
-     * Kategori absensi per akun per tanggal. Satu akun bisa punya lebih dari
-     * satu admin, jadi nilainya daftar — bukan satu kategori.
+     * Kategori absensi per akun per tanggal beserta waktu laporan terawal (MIN(created_at)).
      *
-     * @return Collection<int, Collection<string, list<string>>>
+     * @return Collection<int, Collection<string, array{categories: list<string>, first_reported_at: ?string}>>
      */
     public function attendanceCategoriesByDate(Collection $accountIds, string $start, string $end): Collection
     {
@@ -122,7 +125,7 @@ class ConsultationRecapStatusResolver
         }
 
         return DB::table('report_attendances')
-            ->select(['account_id', 'report_date', 'report_category'])
+            ->select(['account_id', 'report_date', 'report_category', 'created_at'])
             ->whereIn('account_id', $accountIds->all())
             ->whereDate('report_date', '>=', $start)
             ->whereDate('report_date', '<=', $end)
@@ -130,16 +133,28 @@ class ConsultationRecapStatusResolver
             ->groupBy(fn ($row) => (int) $row->account_id)
             ->map(fn (Collection $rows) => $rows
                 ->groupBy(fn ($row) => Carbon::parse($row->report_date)->format('Y-m-d'))
-                ->map(fn (Collection $dayRows) => $dayRows
-                    ->pluck('report_category')
-                    ->filter()
-                    ->unique()
-                    ->values()
-                    ->all()));
+                ->map(function (Collection $dayRows) {
+                    $firstCreatedAt = $dayRows
+                        ->pluck('created_at')
+                        ->filter()
+                        ->sort()
+                        ->first();
+
+                    return [
+                        'categories' => $dayRows
+                            ->pluck('report_category')
+                            ->filter()
+                            ->unique()
+                            ->values()
+                            ->all(),
+                        'first_reported_at' => $firstCreatedAt ? (string) $firstCreatedAt : null,
+                    ];
+                }));
     }
 
     /**
-     * @param  array{normal:int, susulan:int}  $split
+     * @param  array{consultation_counts: Collection}  $row
+     * @return array{normal:int, susulan:int, first_normal_at:?string}
      */
     public function splitForDate(array $row, string $dateKey): array
     {
@@ -148,27 +163,30 @@ class ConsultationRecapStatusResolver
         return [
             'normal' => (int) ($counts['normal'] ?? 0),
             'susulan' => (int) ($counts['susulan'] ?? 0),
+            'first_normal_at' => isset($counts['first_normal_at']) ? (string) $counts['first_normal_at'] : null,
         ];
     }
 
     /**
-     * Menentukan style warna, angka, label, dan keterangan satu sel
-     * akun+tanggal. Urutan prioritas, berhenti di kecocokan pertama:
+     * Menentukan style warna, angka, label, keterangan, dan waktu lapor satu sel akun+tanggal.
+     * Urutan prioritas:
      *   1. ada laporan tepat waktu  -> hijau, angka = tepat waktu + susulan
      *   2. hanya laporan susulan    -> biru,  angka = susulan
      *   3. absen & bekerja          -> kuning, angka 0
      *   4. absen & libur/susulan    -> biru,   angka 0
      *   5. tidak ada apa-apa        -> merah,  angka 0
      *
-     * Aturan 1 yang menjaga tanggal yang sudah hijau tidak berubah jadi biru
-     * ketika kemudian ditambah data susulan — susulan hanya menambah angka.
-     * Aturan 3 didahulukan atas 4 supaya akun dengan dua admin, yang satu
-     * melapor kerja dan satunya libur, tidak terbaca sebagai hari libur.
-     *
      * @param  list<string>  $categories
      */
-    public function resolveStatus(int $normal, int $susulan, array $categories): ConsultationRecapStatus
-    {
+    public function resolveStatus(
+        int $normal,
+        int $susulan,
+        array $categories,
+        ?string $attendanceReportedAt = null,
+        ?string $firstNormalAt = null
+    ): ConsultationRecapStatus {
+        $reportedAt = $attendanceReportedAt ?? ($normal > 0 ? $firstNormalAt : null);
+
         if ($normal > 0) {
             return new ConsultationRecapStatus(
                 self::CELL_GREEN,
@@ -176,7 +194,8 @@ class ConsultationRecapStatusResolver
                 'ADA WA',
                 $susulan > 0
                     ? sprintf('%d konsultasi tepat waktu, %d susulan', $normal, $susulan)
-                    : sprintf('%d konsultasi tepat waktu', $normal)
+                    : sprintf('%d konsultasi tepat waktu', $normal),
+                $reportedAt
             );
         }
 
@@ -185,19 +204,38 @@ class ConsultationRecapStatusResolver
                 self::CELL_BLUE,
                 $susulan,
                 'SUSULAN / LIBUR',
-                sprintf('%d konsultasi susulan', $susulan)
+                sprintf('%d konsultasi susulan', $susulan),
+                $reportedAt
             );
         }
 
         if (array_intersect(self::WORKING_CATEGORIES, $categories) !== []) {
-            return new ConsultationRecapStatus(self::CELL_YELLOW, 0, '0 DATA', 'Admin lapor kerja, 0 konsultasi');
+            return new ConsultationRecapStatus(
+                self::CELL_YELLOW,
+                0,
+                '0 DATA',
+                'Admin lapor kerja, 0 konsultasi',
+                $reportedAt
+            );
         }
 
         if (in_array(self::CATEGORY_DAY_OFF, $categories, true)) {
-            return new ConsultationRecapStatus(self::CELL_BLUE, 0, 'SUSULAN / LIBUR', 'Diklaim libur/susulan admin');
+            return new ConsultationRecapStatus(
+                self::CELL_BLUE,
+                0,
+                'SUSULAN / LIBUR',
+                'Diklaim libur/susulan admin',
+                $reportedAt
+            );
         }
 
-        return new ConsultationRecapStatus(self::CELL_RED, 0, 'TIDAK LAPORAN', 'Tidak ada laporan/aktivitas');
+        return new ConsultationRecapStatus(
+            self::CELL_RED,
+            0,
+            'TIDAK LAPORAN',
+            'Tidak ada laporan/aktivitas',
+            null
+        );
     }
 
     /**
@@ -206,11 +244,22 @@ class ConsultationRecapStatusResolver
     public function resolveStatusForDate(array $row, string $dateKey): ConsultationRecapStatus
     {
         $split = $this->splitForDate($row, $dateKey);
+        $attendance = $row['attendance_categories']->get($dateKey);
+
+        $categories = is_array($attendance) && isset($attendance['categories'])
+            ? $attendance['categories']
+            : (is_array($attendance) ? $attendance : []);
+
+        $attendanceReportedAt = is_array($attendance) && isset($attendance['first_reported_at'])
+            ? $attendance['first_reported_at']
+            : null;
 
         return $this->resolveStatus(
             $split['normal'],
             $split['susulan'],
-            $row['attendance_categories']->get($dateKey, [])
+            $categories,
+            $attendanceReportedAt,
+            $split['first_normal_at'] ?? null
         );
     }
 

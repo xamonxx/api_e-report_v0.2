@@ -123,6 +123,8 @@ Route::prefix('v1')->group(function () {
                 ->name('api.report-attendances.export');
             Route::get('/report-attendances/export-log', [App\Http\Controllers\Api\ReportAttendanceController::class, 'exportLog'])
                 ->name('api.report-attendances.export-log');
+            Route::get('/report-attendances/export-log-pdf', [App\Http\Controllers\Api\ReportAttendanceController::class, 'exportLogPdf'])
+                ->name('api.report-attendances.export-log-pdf');
             Route::post('/report-attendances', [App\Http\Controllers\Api\ReportAttendanceController::class, 'store'])
                 ->name('api.report-attendances.store');
             Route::post('/report-attendances/upsert-by-super-admin', [App\Http\Controllers\Api\ReportAttendanceController::class, 'upsertBySuperAdmin'])
@@ -235,6 +237,9 @@ Route::prefix('v1')->group(function () {
                 ->name('api.bug-reports.index');
             Route::get('/bug-reports/{bugReport}', [App\Http\Controllers\Api\BugReportController::class, 'show'])
                 ->name('api.bug-reports.show');
+            Route::get('/bug-reports/{bugReport}/images/{index}', [App\Http\Controllers\Api\BugReportController::class, 'image'])
+                ->whereNumber('index')
+                ->name('api.bug-reports.image');
             Route::patch('/bug-reports/{bugReport}', [App\Http\Controllers\Api\BugReportController::class, 'update'])
                 ->name('api.bug-reports.update');
             Route::delete('/bug-reports/{bugReport}', [App\Http\Controllers\Api\BugReportController::class, 'destroy'])
@@ -252,7 +257,7 @@ Route::prefix('v1')->group(function () {
             ->name('api.master-data.surveyors');
         Route::get('/master-data/survey-statuses', [MasterDataController::class, 'surveyStatuses'])
             ->name('api.master-data.survey-statuses');
-        Route::get('/master-data/account-groups', [MasterDataController::class, 'accountGroups'])
+        Route::get('/master-data/account-groups', [App\Http\Controllers\Api\AccountGroupController::class, 'index'])
             ->name('api.master-data.account-groups');
 
         // Master Data CRUD — F-008: write operations restricted to super_admin at route level.
@@ -265,6 +270,11 @@ Route::prefix('v1')->group(function () {
 
             // All mutating operations + user management: super_admin only (F-008)
             Route::middleware('role:super_admin')->group(function () {
+                Route::post('/account-groups', [App\Http\Controllers\Api\AccountGroupController::class, 'store'])->name('account-groups.store');
+                Route::patch('/account-groups/reorder', [App\Http\Controllers\Api\AccountGroupController::class, 'reorder'])->name('account-groups.reorder');
+                Route::put('/account-groups/{accountGroup}', [App\Http\Controllers\Api\AccountGroupController::class, 'update'])->name('account-groups.update');
+                Route::patch('/account-groups/{accountGroup}/status', [App\Http\Controllers\Api\AccountGroupController::class, 'status'])->name('account-groups.status');
+
                 Route::post('/categories', [MasterDataController::class, 'storeCategory'])->name('categories.store');
                 Route::put('/categories/{category}', [MasterDataController::class, 'updateCategory'])->name('categories.update');
                 Route::delete('/categories/{category}', [MasterDataController::class, 'destroyCategory'])->name('categories.destroy');

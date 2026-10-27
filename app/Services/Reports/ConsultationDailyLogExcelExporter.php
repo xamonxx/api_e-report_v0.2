@@ -7,16 +7,8 @@ use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
 /**
- * Log harian rekap konsul: satu baris per akun per tanggal (bukan matrix
- * seperti AdminReportAttendanceExcelExporter) — kolom NO, TANGGAL, AKUN,
- * TEAM, STATUS, KETERANGAN. Dirancang supaya bisa langsung disalin (copy
- * TANGGAL/AKUN/STATUS/KETERANGAN) ke sheet log warna manual yang sudah
- * dipakai user di luar sistem — makanya header, urutan kolom, dan nilai
- * STATUS sengaja dibuat sama persis dengan konvensi itu.
- *
- * Status & warnanya berasal dari [[ConsultationRecapStatusResolver]] yang
- * sama dipakai AdminReportAttendanceExcelExporter, supaya kedua format
- * export selalu konsisten untuk kombinasi akun+tanggal yang sama.
+ * Log harian rekap konsul: satu baris per akun per tanggal — kolom
+ * NO, TANGGAL, JAM LAPORAN, AKUN, TEAM, STATUS, KETERANGAN.
  */
 class ConsultationDailyLogExcelExporter
 {
@@ -60,12 +52,6 @@ class ConsultationDailyLogExcelExporter
         ]);
     }
 
-    /**
-     * Sama persis perilakunya dengan AdminReportAttendanceExcelExporter::resolveRange().
-     * Public: controller perlu tahu rentang SEBENARNYA (bisa terpotong 92
-     * hari) sebelum menulis nama file export, supaya nama file tidak
-     * mengklaim rentang yang lebih panjang dari isi filenya.
-     */
     public function resolveRange(Carbon $start, ?Carbon $end): array
     {
         if ($end === null) {
@@ -115,10 +101,10 @@ class ConsultationDailyLogExcelExporter
         );
 
         return $this->row([
-            $this->cell('LOG HARIAN LAPORAN KONSUL (per Tanggal & Akun)', 'title', mergeAcross: 5),
+            $this->cell('LOG HARIAN LAPORAN KONSUL (per Tanggal & Akun)', 'title', mergeAcross: 6),
         ], 34)
             . $this->row([
-                $this->cell($subtitle, 'subtitle', mergeAcross: 5),
+                $this->cell($subtitle, 'subtitle', mergeAcross: 6),
             ], 22);
     }
 
@@ -126,7 +112,7 @@ class ConsultationDailyLogExcelExporter
     {
         $cells = array_map(
             fn (string $label) => $this->cell($label, 'header'),
-            ['NO', 'TANGGAL', 'AKUN', 'TEAM', 'STATUS', 'KETERANGAN']
+            ['NO', 'TANGGAL', 'JAM LAPORAN', 'AKUN', 'TEAM', 'STATUS', 'KETERANGAN']
         );
 
         return $this->row($cells, 24);
@@ -141,18 +127,20 @@ class ConsultationDailyLogExcelExporter
         $xml = '';
         $number = 1;
 
-        // Tanggal jadi loop luar (bukan akun) supaya urutan baris kronologis
-        // per tanggal — sama seperti sheet log warna manual yang jadi acuan.
         foreach ($dates as $dateKey) {
             $date = Carbon::parse($dateKey);
 
             foreach ($accounts as $account) {
                 $status = $this->resolver->resolveStatusForDate($account, $dateKey);
                 $zebra = $number % 2 === 0 ? 'Alt' : '';
+                $reportedAtText = $status->reportedAt
+                    ? Carbon::parse($status->reportedAt)->format('H:i') . ' WIB'
+                    : '-';
 
                 $cells = [
                     $this->cell($number, 'rowNumber' . $zebra, 'Number'),
                     $this->cell($date->format('Y-m-d\T00:00:00.000'), 'dateCell' . $zebra, 'DateTime'),
+                    $this->cell($reportedAtText, 'textCenter' . $zebra),
                     $this->cell(strtoupper($account['account_name']), 'text' . $zebra),
                     $this->cell(strtoupper(AccountGroup::label($account['account_group']) ?? ''), 'textCenter' . $zebra),
                     $this->cell($status->label, $status->style),
@@ -169,7 +157,7 @@ class ConsultationDailyLogExcelExporter
 
     private function legendRowsXml(): string
     {
-        return $this->row([$this->cell('', 'blank', mergeAcross: 5)], 14)
+        return $this->row([$this->cell('', 'blank', mergeAcross: 6)], 14)
             . $this->legendRow(ConsultationRecapStatusResolver::CELL_GREEN, 'Laporan - ada WA Konsumen baru')
             . $this->legendRow(ConsultationRecapStatusResolver::CELL_YELLOW, 'Laporan - 0 data WA Konsumen baru')
             . $this->legendRow(ConsultationRecapStatusResolver::CELL_BLUE, 'Rekapan laporan susulan / Hari Libur')
@@ -180,13 +168,13 @@ class ConsultationDailyLogExcelExporter
     {
         return $this->row([
             $this->cell('', $swatchStyle),
-            $this->cell($label, 'legendText', mergeAcross: 4),
+            $this->cell($label, 'legendText', mergeAcross: 5),
         ], 18);
     }
 
     private function columnsXml(): string
     {
-        return collect([40, 110, 260, 90, 130, 260])
+        return collect([40, 110, 95, 260, 90, 130, 260])
             ->map(fn (int $width) => sprintf('<Column ss:AutoFitWidth="0" ss:Width="%s"/>', (float) $width))
             ->implode('');
     }

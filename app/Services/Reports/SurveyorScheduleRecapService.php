@@ -2,7 +2,6 @@
 
 namespace App\Services\Reports;
 
-use App\Models\Account;
 use App\Models\Survey;
 use App\Models\User;
 use App\Support\AccountGroup;
@@ -95,7 +94,7 @@ class SurveyorScheduleRecapService
             ->leftJoin('consultations', 'consultations.id', '=', 'surveys.consultation_id')
             ->addSelect([
                 'surveyors.name as surveyor_name',
-                'accounts.account_group as account_group',
+                'consultations.account_group as account_group',
                 'consultations.consultation_id as consumer_id',
                 'consultations.client_name as client_name',
                 'consultations.city as city',
@@ -103,10 +102,15 @@ class SurveyorScheduleRecapService
             ->whereIn('surveys.state', self::COUNTED_STATES)
             ->whereNotNull('surveys.scheduled_at')
             ->whereBetween('surveys.scheduled_at', [$period['start'], $period['end']])
-            ->when($accountGroup, fn ($query) => $query->whereIn(
-                'surveys.account_id',
-                Account::query()->where('account_group', $accountGroup)->select('id')
-            ))
+            ->when($accountGroup, fn ($query) => $query->where(function ($groupQuery) use ($accountGroup) {
+                $groupQuery->whereIn('consultations.account_group_id', \App\Models\AccountGroup::query()
+                    ->where('code', $accountGroup)
+                    ->select('id'))
+                    ->orWhere(function ($legacyQuery) use ($accountGroup) {
+                        $legacyQuery->whereNull('consultations.account_group_id')
+                            ->where('consultations.account_group', $accountGroup);
+                    });
+            }))
             ->when($accountId, fn ($query) => $query->where('surveys.account_id', (int) $accountId))
             ->when($surveyorId, fn ($query) => $query->where('surveys.surveyor_id', (int) $surveyorId))
             // surveys.id terakhir: urutan deterministik, jadi grid dan Excel

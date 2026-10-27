@@ -265,6 +265,35 @@ class ReminderCronJobTest extends TestCase
 
     private function createFixtureSchema(): void
     {
+        // ResolveActiveAccount reads the admin's memberships on every authenticated
+        // request, so both tables must exist even though these tests never scope by
+        // account.
+        Schema::create('account_groups', function (Blueprint $table) {
+            $table->id();
+            $table->string('code', 32)->unique();
+            $table->string('name', 120);
+            $table->unsignedInteger('sort_order')->default(0);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
+
+        Schema::create('accounts', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('account_group')->nullable();
+            $table->foreignId('account_group_id')->nullable()->constrained('account_groups')->nullOnDelete();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('account_user', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('account_id');
+            $table->timestamps();
+            $table->unique(['user_id', 'account_id']);
+        });
+
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');

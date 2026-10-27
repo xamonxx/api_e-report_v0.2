@@ -50,12 +50,18 @@ class TelegramNotifier
     private function sendPhotos(string $token, string $chatId, array $paths, BugReport $report): void
     {
         try {
-            $disk = Storage::disk('public');
+            $localDisk = Storage::disk('local');
+            $publicDisk = Storage::disk('public');
             $request = $this->http()->timeout(25);
             $media = [];
 
             foreach (array_slice($paths, 0, 10) as $path) {
-                if (! $disk->exists($path)) {
+                $disk = null;
+                if ($localDisk->exists($path)) {
+                    $disk = $localDisk;
+                } elseif ($publicDisk->exists($path)) {
+                    $disk = $publicDisk;
+                } else {
                     continue;
                 }
 

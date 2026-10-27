@@ -121,10 +121,11 @@ class SurveyorRecapDemoSeeder extends Seeder
                 'email' => sprintf('surveyor%d@demo.test', $index + 1),
                 'name' => $name,
                 'password' => $password,
-                'role' => UserRole::Surveyor,
                 // Surveyor adalah tim pusat, bukan milik satu akun.
                 'account_id' => null,
             ]);
+            $surveyor->role = UserRole::Surveyor;
+            $surveyor->save();
 
             $this->command?->line("  + surveyor {$name}");
 

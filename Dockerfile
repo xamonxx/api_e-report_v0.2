@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG COMPOSER_IMAGE=composer:2.10.3@sha256:af98f42dfff7c68ba8d53c2164fd9fde1087b7d449514baa38c418b1f6bc4bac
-ARG PHP_IMAGE=php:8.3.35-cli-bookworm@sha256:c24b55afdf860c874b9ec6267ced132ff52de97d308ab08e6cf41e8596e509f7
+ARG PHP_IMAGE=php:8.3.36-cli-bookworm@sha256:cdb77e306d6bb99db40e513fbe036ecc6c53b575cbcb7e581387845fef26d755
 
 FROM ${COMPOSER_IMAGE} AS composer
 
@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         default-mysql-client \
         curl \
     && docker-php-ext-install pdo_mysql mbstring gd zip intl bcmath pcntl opcache \
+    && printf "expose_php = Off\nsession.upload_progress.enabled = 0\n" > /usr/local/etc/php/conf.d/zz-security.ini \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY --link --from=composer /usr/bin/composer /usr/bin/composer

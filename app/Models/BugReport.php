@@ -30,7 +30,7 @@ class BugReport extends Model
 
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed();
     }
 
     /**
@@ -54,7 +54,8 @@ class BugReport extends Model
     public function imageUrls(): array
     {
         return collect($this->image_paths ?? [])
-            ->map(fn (string $path) => Storage::disk('public')->url($path))
+            ->values()
+            ->map(fn (string $path, int $index) => url("/api/v1/bug-reports/{$this->id}/images/{$index}"))
             ->all();
     }
 }

@@ -73,12 +73,13 @@ class ConsultationImportService
 
         try {
             [$defaultStatus, $defaultCategory] = $this->resolveDefaults();
-            $accounts = Account::query()->get(['id', 'name', 'account_group']);
+            $accounts = Account::query()->get(['id', 'name', 'account_group_id', 'account_group']);
             $validAccountIds = $accounts->pluck('id')->all();
             $accountNameMap = $accounts
                 ->mapWithKeys(fn (Account $account) => [$this->normalizeLookup($account->name) => $account->id])
                 ->all();
             $accountGroupMap = $accounts->pluck('account_group', 'id')->all();
+            $accountGroupIdMap = $accounts->pluck('account_group_id', 'id')->all();
             $needsCategoryMap = NeedsCategory::query()
                 ->get(['id', 'name'])
                 ->mapWithKeys(fn (NeedsCategory $category) => [$this->normalizeLookup($category->name) => $category->id])
@@ -91,6 +92,32 @@ class ConsultationImportService
             $currentPendingKey = $this->normalizeLookup(NeedsCategory::PENDING_LABEL);
             if (! isset($needsCategoryMap[$legacyPendingKey]) && isset($needsCategoryMap[$currentPendingKey])) {
                 $needsCategoryMap[$legacyPendingKey] = $needsCategoryMap[$currentPendingKey];
+            }
+
+            // Alias legacy untuk mapping kategori lama ke kategori resmi hasil konsolidasi 58 item
+            $legacyCategoryAliases = [
+                'almunium' => 'alumunium',
+                'aluminium' => 'alumunium',
+                'apartement' => 'interior apartemen',
+                'apartment' => 'interior apartemen',
+                'box' => 'box elektronik',
+                'jasa design' => 'jasa desain',
+                'kantor' => 'interior kantor',
+                'renovasi rumah' => 'renovasi interior',
+                'renovasi' => 'renovasi interior',
+                'toko' => 'interior toko',
+                'kitchen set' => 'kitchenset',
+                'rak buku' => 'rak',
+                'interior full' => 'full home',
+                'lain-lain' => 'lain-lain',
+            ];
+
+            foreach ($legacyCategoryAliases as $legacyAlias => $canonicalName) {
+                $legacyKey = $this->normalizeLookup($legacyAlias);
+                $canonicalKey = $this->normalizeLookup($canonicalName);
+                if (! isset($needsCategoryMap[$legacyKey]) && isset($needsCategoryMap[$canonicalKey])) {
+                    $needsCategoryMap[$legacyKey] = $needsCategoryMap[$canonicalKey];
+                }
             }
             $statusCategoryMap = StatusCategory::query()
                 ->get(['id', 'name'])
@@ -152,7 +179,8 @@ class ConsultationImportService
                         $defaultCategory->id,
                         $defaultStatus->id,
                         $import->user_id,
-                        $accountGroupMap
+                        $accountGroupMap,
+                        $accountGroupIdMap
                     );
 
                     $successCount += $inserted;
@@ -167,7 +195,8 @@ class ConsultationImportService
                     $defaultCategory->id,
                     $defaultStatus->id,
                     $import->user_id,
-                    $accountGroupMap
+                    $accountGroupMap,
+                    $accountGroupIdMap
                 );
 
                 $successCount += $inserted;
@@ -273,7 +302,8 @@ class ConsultationImportService
         int $defaultCategoryId,
         int $defaultStatusId,
         int $createdBy,
-        array $accountGroupMap
+        array $accountGroupMap,
+        array $accountGroupIdMap
     ): array {
         $inserted = 0;
         $updated = 0;
@@ -286,7 +316,7 @@ class ConsultationImportService
             // kode lama; pivot-lah yang menyimpan daftar lengkapnya.
             $categoryIds = $row['needs_category_ids'] ?? [$categoryId];
 
-            $consultation = DB::transaction(function () use ($createdBy, $categoryId, $categoryIds, $statusId, $row, $accountGroupMap) {
+            $consultation = DB::transaction(function () use ($createdBy, $categoryId, $categoryIds, $statusId, $row, $accountGroupMap, $accountGroupIdMap) {
                 $existingLead = $this->findImportTarget($row, $categoryIds);
 
                 $attributes = [
@@ -318,6 +348,7 @@ class ConsultationImportService
                 $lead = Consultation::create(array_merge($attributes, [
                     'consultation_id' => $consultationId,
                     'created_by' => $createdBy,
+                    'account_group_id' => $accountGroupIdMap[(int) $row['account_id']] ?? null,
                     'account_group' => $accountGroupMap[(int) $row['account_id']] ?? null,
                 ]));
 

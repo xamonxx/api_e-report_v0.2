@@ -34,6 +34,7 @@ class Consultation extends Model
         'address',
         'account_id',
         'account_group',
+        'account_group_id',
         'needs_category_id',
         'product_details',
         'status_category_id',
@@ -64,12 +65,34 @@ class Consultation extends Model
 
     public function account()
     {
-        return $this->belongsTo(Account::class);
+        return $this->belongsTo(Account::class)->withTrashed();
+    }
+
+    public function accountGroup()
+    {
+        return $this->belongsTo(AccountGroup::class, 'account_group_id');
+    }
+
+    public function scopeInAccountGroup(Builder $query, ?string $code): Builder
+    {
+        if (! filled($code)) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $groupQuery) use ($code) {
+            $groupQuery->whereIn('consultations.account_group_id', AccountGroup::query()
+                ->where('code', $code)
+                ->select('id'))
+                ->orWhere(function (Builder $legacyQuery) use ($code) {
+                    $legacyQuery->whereNull('consultations.account_group_id')
+                        ->where('consultations.account_group', $code);
+                });
+        });
     }
 
     public function needsCategory()
     {
-        return $this->belongsTo(NeedsCategory::class);
+        return $this->belongsTo(NeedsCategory::class)->withTrashed();
     }
 
     public function needsCategories()
@@ -99,12 +122,12 @@ class Consultation extends Model
 
     public function statusCategory()
     {
-        return $this->belongsTo(StatusCategory::class);
+        return $this->belongsTo(StatusCategory::class)->withTrashed();
     }
 
     public function creator()
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(User::class, 'created_by')->withTrashed();
     }
 
     public function timelineNotes()

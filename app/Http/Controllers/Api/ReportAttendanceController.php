@@ -10,9 +10,11 @@ use App\Models\User;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\AdminReportAttendanceExcelExporter;
 use App\Services\Reports\ConsultationDailyLogExcelExporter;
+use App\Services\Reports\ConsultationRecapStatusResolver;
 use App\Services\Reports\SpreadsheetXmlToXlsxConverter;
 use App\Services\WebPushService;
 use App\Support\AccountGroup;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -228,6 +230,10 @@ class ReportAttendanceController extends Controller
         $user = auth()->user();
         if (! $user->isAdmin()) {
             return response()->json(['message' => 'Hanya admin yang dapat melakukan absensi report.'], 403);
+        }
+
+        if (! $user->activeAccountId()) {
+            return response()->json(['message' => 'Akun Anda belum ditugaskan ke akun interior mana pun.'], 403);
         }
 
         $request->validate([
@@ -487,6 +493,123 @@ class ReportAttendanceController extends Controller
 
         return response($xlsxConverter->convert($excelExporter->buildWorkbook($start, $accountGroup, $end, $accountIds)), 200, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Cache-Control' => 'max-age=0',
+            'X-Recap-Range-Truncated' => $rangeTruncated ? '1' : '0',
+        ]);
+    }
+
+    /**
+     * GET /api/v1/report-attendances/export-log-pdf (Super Admin Only)
+     *
+     * Format PDF dari log harian: satu baris per akun per tanggal
+     * dengan tampilan spreadsheet A4 Landscape.
+     */
+    public function exportLogPdf(
+        Request $request,
+        ConsultationDailyLogExcelExporter $excelExporter,
+        ConsultationRecapStatusResolver $resolver
+    ): Response {
+        $user = auth()->user();
+        if (! $user->isSuperAdmin()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        if ($request->filled('account_group')) {
+            $request->merge([
+                'account_group' => AccountGroup::normalize($request->input('account_group'))
+                    ?? $request->input('account_group'),
+            ]);
+        }
+
+        $validated = $request->validate([
+            'date' => ['nullable', 'date'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'account_group' => ['nullable', Rule::in(AccountGroup::values())],
+            'account_ids' => ['nullable', 'string'],
+        ], [
+            'end_date.after_or_equal' => 'Tanggal akhir tidak boleh sebelum tanggal awal.',
+            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
+                .implode(', ', AccountGroup::labels()).'.',
+        ]);
+
+        $accountGroup = $validated['account_group'] ?? null;
+        $accountIds = filled($validated['account_ids'] ?? null)
+            ? collect(explode(',', $validated['account_ids']))
+                ->map(fn ($id) => (int) trim($id))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all()
+            : null;
+        $hasRange = filled($validated['start_date'] ?? null) && filled($validated['end_date'] ?? null);
+
+        $start = Carbon::parse(
+            $hasRange
+                ? $validated['start_date']
+                : ($validated['date'] ?? Carbon::today()->format('Y-m-d'))
+        );
+        $end = $hasRange ? Carbon::parse($validated['end_date']) : null;
+
+        $groupSlug = str(AccountGroup::label($accountGroup) ?? 'semua-grup')->slug()->toString();
+
+        [$rangeStart, $actualEnd] = $excelExporter->resolveRange($start, $end);
+        $rangeTruncated = $hasRange && ! $actualEnd->equalTo($end);
+
+        $filename = $hasRange
+            ? sprintf(
+                'log-harian-konsul-%s-%s-%s.pdf',
+                $groupSlug,
+                $start->format('Ymd'),
+                $actualEnd->format('Ymd')
+            )
+            : sprintf('log-harian-konsul-%s-%s.pdf', $groupSlug, $start->format('Y-m'));
+
+        $selectedGroup = AccountGroup::normalize($accountGroup);
+        $accounts = $resolver->accountRows($rangeStart, $actualEnd, $selectedGroup, $accountIds);
+
+        $dates = [];
+        $cursor = $rangeStart->copy();
+        while ($cursor->lte($actualEnd)) {
+            $dates[] = $cursor->format('Y-m-d');
+            $cursor->addDay();
+        }
+
+        $rows = [];
+        $number = 1;
+        foreach ($dates as $dateKey) {
+            $date = Carbon::parse($dateKey);
+            foreach ($accounts as $account) {
+                $status = $resolver->resolveStatusForDate($account, $dateKey);
+                $rows[] = [
+                    'number' => $number++,
+                    'date' => $date->format('d/m/Y'),
+                    'time' => $status->reportedAt ? Carbon::parse($status->reportedAt)->format('H:i') . ' WIB' : '-',
+                    'account_name' => $account['account_name'],
+                    'team' => AccountGroup::label($account['account_group']) ?? '',
+                    'status_label' => $status->label,
+                    'status_style' => $status->style,
+                    'description' => $status->description,
+                ];
+            }
+        }
+
+        $subtitle = sprintf(
+            '%s - %s sampai %s',
+            AccountGroup::subtitleLabel($selectedGroup),
+            $rangeStart->format('d/m/Y'),
+            $actualEnd->format('d/m/Y')
+        );
+
+        $pdf = Pdf::loadView('reports.pdf.daily-log', [
+            'title' => 'LOG HARIAN LAPORAN KONSUL (per Tanggal & Akun)',
+            'subtitle' => $subtitle,
+            'rows' => $rows,
+        ])->setPaper('a4', 'landscape');
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             'Cache-Control' => 'max-age=0',
             'X-Recap-Range-Truncated' => $rangeTruncated ? '1' : '0',

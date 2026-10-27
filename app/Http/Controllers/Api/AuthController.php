@@ -177,7 +177,6 @@ class AuthController extends Controller
                 'name' => $account->name,
                 'logo' => $account->logo_path,
             ])->values()->all(),
-            'survey_team' => $user->survey_team,
             'account' => $user->account ? [
                 'id' => $user->account->id,
                 'name' => $user->account->name,

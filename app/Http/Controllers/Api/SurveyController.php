@@ -44,7 +44,7 @@ class SurveyController extends Controller
             'consultation.needsCategories:id,name',
             // account_group akun saat ini untuk filter dan tampilan rekap.
             'account:id,account_group',
-            'surveyor:id,name,survey_team',
+            'surveyor:id,name',
             'assigner:id,name',
             'requester:id,name',
             'resultStatus:id,name,color,css_class',
@@ -90,7 +90,7 @@ class SurveyController extends Controller
             'requested_date' => ['nullable', 'date', 'after_or_equal:today'],
             'requested_time' => ['nullable', 'date_format:H:i'],
             'requested_item' => ['nullable', 'string', 'max:1000'],
-            'google_maps_url' => ['nullable', 'url', 'max:2048'],
+            'google_maps_url' => ['nullable', 'url:http,https', 'max:2048'],
             'admin_notes' => ['nullable', 'string', 'max:5000'],
         ], [
             'google_maps_url.url' => 'Link Google Maps tidak valid. Tempelkan tautan lengkap dari aplikasi Maps.',
@@ -417,7 +417,7 @@ class SurveyController extends Controller
         }
 
         $validated = $request->validate([
-            'google_maps_url' => ['nullable', 'url', 'max:2048'],
+            'google_maps_url' => ['nullable', 'url:http,https', 'max:2048'],
         ], [
             'google_maps_url.url' => 'Link Google Maps tidak valid. Tempelkan tautan lengkap dari aplikasi Maps.',
         ]);

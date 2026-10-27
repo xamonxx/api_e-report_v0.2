@@ -436,10 +436,19 @@ class SurveyTeamIsolationTest extends TestCase
     {
         // Minimal final schema, including FK and active-survey uniqueness constraints.
         // Raw fixture inserts avoid model observers manufacturing unrelated audit history.
+        Schema::create('account_groups', function (Blueprint $table) {
+            $table->id();
+            $table->string('code', 32)->unique();
+            $table->string('name', 120);
+            $table->unsignedInteger('sort_order')->default(0);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
         Schema::create('accounts', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->string('account_group')->nullable();
+            $table->foreignId('account_group_id')->nullable()->constrained('account_groups')->nullOnDelete();
             $table->string('description')->nullable();
             $table->timestamps();
             $table->softDeletes();
@@ -474,6 +483,7 @@ class SurveyTeamIsolationTest extends TestCase
             $table->string('consultation_id')->unique();
             $table->string('client_name');
             $table->foreignId('account_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('account_group_id')->nullable()->constrained('account_groups')->nullOnDelete();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('needs_category_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('status_category_id')->nullable()->constrained()->nullOnDelete();

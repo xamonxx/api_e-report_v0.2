@@ -82,19 +82,19 @@ class ExportController extends Controller
                 $phone = $consultation->phone ? "'" . $consultation->phone : '';
 
                 fputcsv($handle, [
-                    $consultation->consultation_id,
-                    $consultation->client_name,
+                    $this->sanitizeCsvCell($consultation->consultation_id),
+                    $this->sanitizeCsvCell($consultation->client_name),
                     $phone,
-                    $consultation->province,
-                    $consultation->city,
-                    $consultation->account?->name,
-                    $consultation->product_names_label,
-                    $consultation->product_details,
-                    $consultation->statusCategory?->name,
-                    $consultation->getAttribute('notes'),
-                    $consultation->consultation_date?->format('d/m/Y'),
-                    $consultation->creator?->name,
-                    $consultation->updated_at?->format('d/m/Y H:i'),
+                    $this->sanitizeCsvCell($consultation->province),
+                    $this->sanitizeCsvCell($consultation->city),
+                    $this->sanitizeCsvCell($consultation->account?->name),
+                    $this->sanitizeCsvCell($consultation->product_names_label),
+                    $this->sanitizeCsvCell($consultation->product_details),
+                    $this->sanitizeCsvCell($consultation->statusCategory?->name),
+                    $this->sanitizeCsvCell($consultation->getAttribute('notes')),
+                    $consultation->consultation_date?->format('d/m/Y') ?? '',
+                    $this->sanitizeCsvCell($consultation->creator?->name),
+                    $consultation->updated_at?->format('d/m/Y H:i') ?? '',
                 ]);
             }
 
@@ -104,6 +104,17 @@ class ExportController extends Controller
             'Pragma' => 'public',
             'Cache-Control' => 'no-cache, must-revalidate',
         ]);
+    }
+
+    private function sanitizeCsvCell(?string $value): string
+    {
+        $text = (string) ($value ?? '');
+
+        if ($text !== '' && in_array($text[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
+            return "'" . $text;
+        }
+
+        return $text;
     }
 
     public function exportLeadsExcel(

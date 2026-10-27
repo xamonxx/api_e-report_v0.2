@@ -41,7 +41,7 @@ class ConsultationController extends Controller
         // atau belum, tanpa query tambahan per baris.
         $query = Consultation::query()->withProductRelations()->with([
             'activeSurvey' => fn ($query) => $query->visibleTo($user),
-            'activeSurvey.surveyor:id,name,survey_team',
+            'activeSurvey.surveyor:id,name',
             'activeSurvey.resultStatus:id,name,color',
         ]);
         $query->forUser($user);
@@ -154,7 +154,7 @@ class ConsultationController extends Controller
                 'activeSurvey' => fn ($query) => $query->visibleTo($user),
                 // Menentukan apakah kartu Status Survey menampilkan survey yang
                 // berjalan atau ajakan "belum diajukan".
-                'activeSurvey.surveyor:id,name,survey_team',
+                'activeSurvey.surveyor:id,name',
                 'activeSurvey.resultStatus:id,name,color',
                 'timelineNotes.user',
                 'reminders' => function ($query) use ($user) {
@@ -210,7 +210,10 @@ class ConsultationController extends Controller
         // Snapshot grup akun saat konsul dibuat; tidak boleh diturunkan dari
         // accounts.account_group secara live saat dibaca (lihat migration
         // add_account_group_to_consultations_table).
-        $validated['account_group'] = Account::whereKey($validated['account_id'])->value('account_group');
+        $groupSnapshot = Account::whereKey($validated['account_id'])
+            ->first(['account_group_id', 'account_group']);
+        $validated['account_group_id'] = $groupSnapshot?->account_group_id;
+        $validated['account_group'] = $groupSnapshot?->account_group;
 
         $consultation = DB::transaction(function () use ($validated, $productIds) {
             $consultation = Consultation::create(Arr::except($validated, ['needs_category_ids']));
@@ -361,6 +364,9 @@ class ConsultationController extends Controller
     public function previewId(Request $request): JsonResponse
     {
         $user = $request->user();
+        if ($user->isAdmin() && ! $user->activeAccountId()) {
+            abort(403, 'Akun Anda belum ditugaskan ke akun interior mana pun.');
+        }
         $validated = $request->validate([
             'account_id' => ['nullable', 'integer', 'exists:accounts,id'],
         ]);

@@ -23,6 +23,25 @@ class ResolveActiveAccount
         }
 
         $requested = $request->header('X-Account-Id');
+
+        // An admin with no account at all has nothing to scope to yet. This group
+        // also covers /auth/me, /auth/logout and the push endpoints, so aborting
+        // here would lock such an admin out of the app entirely. Per-endpoint
+        // authorization still applies; only the account scope stays unset.
+        if ($allowedIds->isEmpty()) {
+            abort_if($request->headers->has('X-Account-Id'), 403, 'Anda tidak memiliki akses ke akun ini.');
+
+            if ($request->is('api/v1/auth/*', 'api/v1/settings/*', 'api/v1/notifications/*', 'api/v1/push/*')) {
+                return $next($request);
+            }
+
+            if ($request->isMethodSafe() && ! $request->is('api/v1/consultations/preview-id', 'api/v1/consultations/id-preview')) {
+                return $next($request);
+            }
+
+            abort(403, 'Akun Anda belum ditugaskan ke akun interior mana pun.');
+        }
+
         $activeId = $requested !== null && $requested !== ''
             ? filter_var($requested, FILTER_VALIDATE_INT)
             : (int) $user->account_id;

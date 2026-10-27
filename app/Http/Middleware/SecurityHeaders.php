@@ -51,7 +51,7 @@ class SecurityHeaders
 
         // F-007: HSTS — only enabled in production over HTTPS to avoid breaking
         // local HTTP development. Never set Secure-related headers over plain HTTP.
-        if (app()->environment('production') && $request->isSecure()) {
+        if (app()->environment('production') && ($request->isSecure() || $request->header('X-Forwarded-Proto') === 'https')) {
             $response->headers->set(
                 'Strict-Transport-Security',
                 'max-age=31536000'

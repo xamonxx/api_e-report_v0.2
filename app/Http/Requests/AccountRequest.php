@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Support\AccountGroup;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,11 +18,19 @@ class AccountRequest extends FormRequest
             ? trim(preg_replace('/\s+/u', ' ', (string) $value))
             : null;
 
-        $this->merge([
+        $payload = [
             'name' => $cleanText($this->input('name')),
             'description' => $cleanText($this->input('description')),
             'remove_logo' => $this->boolean('remove_logo') ? '1' : '0',
-        ]);
+        ];
+
+        if ($this->exists('account_group')) {
+            $payload['account_group'] = $this->filled('account_group')
+                ? mb_strtoupper(trim((string) $this->input('account_group')))
+                : $this->input('account_group');
+        }
+
+        $this->merge($payload);
 
         if ($this->hasFile('logo') && !$this->file('logo')->isValid()) {
             $this->merge(['logo' => null]);
@@ -43,7 +50,11 @@ class AccountRequest extends FormRequest
                 Rule::unique('accounts', 'name')->ignore($accountId),
             ],
             'description' => ['nullable', 'string', 'max:120'],
-            'account_group' => [$accountId ? 'sometimes' : 'required', 'required', Rule::in(AccountGroup::values())],
+            'account_group' => [
+                $accountId ? 'sometimes' : 'required',
+                'required',
+                Rule::exists('account_groups', 'code')->where('is_active', true),
+            ],
             'target_leads' => ['nullable', 'integer', 'min:1', 'max:1000000'],
             // F-009: SVG removed — SVG files can contain embedded <script> tags (stored XSS).
             'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:2048'],
@@ -60,17 +71,8 @@ class AccountRequest extends FormRequest
             'name.unique' => 'Nama akun sudah digunakan.',
             'description.max' => 'Kategori/tagline terlalu panjang (maksimal 120 karakter).',
             'account_group.required' => 'Grup akun tidak boleh dikosongkan. Pilih salah satu: '
-                . implode(', ', AccountGroup::labels()) . '.',
-            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
-                . implode(', ', AccountGroup::labels()) . '.',
-            'account_group.required' => 'Grup akun tidak boleh dikosongkan. Pilih salah satu: '
-                . implode(', ', AccountGroup::labels()) . '.',
-            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
-                . implode(', ', AccountGroup::labels()) . '.',
-            'account_group.required' => 'Grup akun tidak boleh dikosongkan. Pilih salah satu: '
-                . implode(', ', AccountGroup::labels()) . '.',
-            'account_group.in' => 'Grup akun tidak valid. Pilih salah satu: '
-                . implode(', ', AccountGroup::labels()) . '.',
+                . 'grup aktif.',
+            'account_group.exists' => 'Grup akun tidak valid atau sudah diarsipkan.',
             'target_leads.integer' => 'Target leads harus berupa angka.',
             'target_leads.min' => 'Target leads minimal 1.',
             'target_leads.max' => 'Target leads terlalu besar (maksimal 1.000.000).',

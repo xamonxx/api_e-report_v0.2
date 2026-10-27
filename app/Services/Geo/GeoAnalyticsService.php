@@ -2,7 +2,6 @@
 
 namespace App\Services\Geo;
 
-use App\Models\Account;
 use App\Models\Consultation;
 use App\Models\StatusCategory;
 use App\Models\User;
@@ -77,10 +76,7 @@ class GeoAnalyticsService
         }
 
         if ($user->isSuperAdmin() && ! empty($filters['account_group'])) {
-            $query->whereIn(
-                'consultations.account_id',
-                Account::query()->where('account_group', $filters['account_group'])->select('id')
-            );
+            $query->inAccountGroup($filters['account_group']);
         }
 
         if (! empty($filters['status'])) {

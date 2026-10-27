@@ -2,6 +2,9 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
 /**
  * Taksonomi grup akun.
  *
@@ -35,20 +38,8 @@ final class AccountGroup
     public const MITRA_BSR = 'MITRA BSR';
     public const PRIBADI = 'PRIBADI';
 
-    /** Label untuk dropdown dan tampilan. Hanya grup yang masih valid. */
-    private const LABELS = [
-        self::PC => 'PC',
-        self::INSIP => 'INSIP',
-        self::MITRA_SDK => 'MITRA SDK',
-        self::MITRA_BSR => 'MITRA BSR',
-        self::PRIBADI => 'PRIBADI',
-    ];
-
-    /**
-     * Nama payung yang dipakai di judul laporan. INI SATU-SATUNYA tempat nama
-     * itu ditulis â€” subtitleLabel() menurunkan sisanya dari sini.
-     */
-    private const UMBRELLA = [
+    /** Fallback saat migration awal berjalan sebelum tabel master tersedia. */
+    private const DEFAULT_LABELS = [
         self::PC => 'PC',
         self::INSIP => 'INSIP',
         self::MITRA_SDK => 'MITRA SDK',
@@ -62,20 +53,43 @@ final class AccountGroup
     /** @return list<string> */
     public static function values(): array
     {
-        return array_keys(self::LABELS);
+        return array_keys(self::labels());
     }
 
     /** @return array<string, string> */
     public static function labels(): array
     {
-        return self::LABELS;
+        if (! Schema::hasTable('account_groups')) {
+            return self::DEFAULT_LABELS;
+        }
+
+        return DB::table('account_groups')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('name', 'code')
+            ->all();
+    }
+
+    /** @return array<string, string> */
+    public static function activeLabels(): array
+    {
+        if (! Schema::hasTable('account_groups')) {
+            return self::DEFAULT_LABELS;
+        }
+
+        return DB::table('account_groups')
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('name', 'code')
+            ->all();
     }
 
     public static function label(?string $group): ?string
     {
         $group = self::normalize($group);
 
-        return $group === null ? null : self::LABELS[$group];
+        return $group === null ? null : self::labels()[$group];
     }
 
     /**
@@ -95,19 +109,14 @@ final class AccountGroup
             return self::ALL_LABEL;
         }
 
-        $umbrella = self::UMBRELLA[$group];
-        $shared = count(array_keys(self::UMBRELLA, $umbrella, true)) > 1;
-
-        return $shared
-            ? sprintf('%s (%s)', $umbrella, self::LABELS[$group])
-            : $umbrella;
+        return self::labels()[$group];
     }
 
     public static function umbrella(?string $group): string
     {
         $group = self::normalize($group);
 
-        return $group === null ? self::ALL_LABEL : self::UMBRELLA[$group];
+        return $group === null ? self::ALL_LABEL : self::labels()[$group];
     }
 
     /**

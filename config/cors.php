@@ -32,7 +32,7 @@ return [
 
     // F-010: Restrict to only headers actually sent by the Next.js SPA.
     // Using ['*'] is overly permissive.
-    'allowed_headers' => ['Content-Type', 'X-XSRF-TOKEN', 'Accept', 'Authorization', 'X-Requested-With'],
+    'allowed_headers' => ['Content-Type', 'X-XSRF-TOKEN', 'Accept', 'Authorization', 'X-Requested-With', 'X-Account-Id'],
 
     // Tanpa ini, browser CORS memblokir JS baca header ini dari response
     // cross-origin (localhost:3000 -> localhost:8000) meski server sudah

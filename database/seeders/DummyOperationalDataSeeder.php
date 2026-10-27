@@ -156,15 +156,47 @@ class DummyOperationalDataSeeder extends Seeder
         }
     }
 
+    /**
+     * Consultations to generate, split across survey states.
+     *
+     * DUMMY_TOTAL_CONSULTATIONS scales the plan while keeping the original mix
+     * (requested/scheduled/in_progress/completed/none). Leaving it unset keeps
+     * the default 360.
+     */
     private function statePlan(): array
     {
-        return [
-            ...array_fill(0, self::TOTAL_REQUESTED, 'requested'),
-            ...array_fill(0, self::TOTAL_SCHEDULED, 'scheduled'),
-            ...array_fill(0, self::TOTAL_IN_PROGRESS, 'in_progress'),
-            ...array_fill(0, self::TOTAL_COMPLETED, 'completed'),
-            ...array_fill(0, self::TOTAL_CONSULTATION_ONLY, 'none'),
+        $shares = [
+            'requested' => self::TOTAL_REQUESTED,
+            'scheduled' => self::TOTAL_SCHEDULED,
+            'in_progress' => self::TOTAL_IN_PROGRESS,
+            'completed' => self::TOTAL_COMPLETED,
+            'none' => self::TOTAL_CONSULTATION_ONLY,
         ];
+
+        $default = array_sum($shares);
+        $total = (int) env('DUMMY_TOTAL_CONSULTATIONS', $default);
+        if ($total < 1) {
+            throw new RuntimeException('DUMMY_TOTAL_CONSULTATIONS harus minimal 1.');
+        }
+
+        $plan = [];
+        if ($total !== $default) {
+            foreach ($shares as $state => $share) {
+                $shares[$state] = max(1, (int) round($share / $default * $total));
+            }
+
+            // Rounding can overshoot or undershoot; settle the difference on the
+            // largest bucket so the caller gets exactly what they asked for.
+            $largest = array_search(max($shares), $shares, true);
+            $shares[$largest] += $total - array_sum($shares);
+            $shares[$largest] = max(1, $shares[$largest]);
+        }
+
+        foreach ($shares as $state => $share) {
+            $plan = [...$plan, ...array_fill(0, $share, $state)];
+        }
+
+        return $plan;
     }
 
     private function makeConsultation(

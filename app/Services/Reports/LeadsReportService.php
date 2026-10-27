@@ -88,7 +88,11 @@ class LeadsReportService
                 $query->whereIn('id', $filters['account_ids']);
             }
             if (! empty($filters['account_group'])) {
-                $query->where('account_group', $filters['account_group']);
+                $groupCode = $filters['account_group'];
+                $query->where(function (Builder $q) use ($groupCode) {
+                    $q->whereHas('group', fn ($groupQuery) => $groupQuery->where('code', $groupCode))
+                        ->orWhere('account_group', $groupCode);
+                });
             }
         }
 
@@ -508,7 +512,7 @@ class LeadsReportService
                 // Filter pakai kolom snapshot konsul, bukan join live ke
                 // accounts -- konsul lama tak boleh direklasifikasi oleh
                 // perpindahan grup akun yang terjadi belakangan.
-                $query->where('account_group', $filters['account_group']);
+                $query->inAccountGroup($filters['account_group']);
             }
         }
 

@@ -50,7 +50,7 @@ class NotificationController extends Controller
             ->whereHas('survey', fn ($query) => $query->visibleTo($user))
             ->with([
                 'survey.consultation:id,consultation_id,client_name,district,city,province',
-                'survey.surveyor:id,name,survey_team',
+                'survey.surveyor:id,name',
             ])
             ->where('user_id', $user->id)
             ->latest()
@@ -140,7 +140,6 @@ class NotificationController extends Controller
                         'location' => $location ?: null,
                         'schedule_label' => $schedule?->translatedFormat('d M Y, H:i'),
                         'surveyor_name' => $survey?->surveyor?->name,
-                        'surveyor_team' => $survey?->surveyor?->survey_team,
                     ];
                 }),
             'attendances' => $attendanceNotifications

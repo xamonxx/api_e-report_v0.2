@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AccountRequest;
 use App\Models\Account;
+use App\Models\AccountGroup;
 use App\Models\StatusCategory;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -26,12 +27,9 @@ class AccountController extends Controller
      */
     public function categories(): JsonResponse
     {
-        $categories = Account::query()
-            ->whereNotNull('account_group')
-            ->where('account_group', '!=', '')
-            ->distinct()
-            ->orderBy('account_group')
-            ->pluck('account_group')
+        $categories = AccountGroup::query()
+            ->ordered()
+            ->pluck('code')
             ->values();
 
         return response()->json(['data' => $categories]);
@@ -40,18 +38,18 @@ class AccountController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Account::query()
-            ->withCount('consultations')
-            ->with(['admins:id,name,account_id']);
+            ->withCount(['currentGroupConsultations as consultations_count'])
+            ->with(['admins:id,name,account_id', 'group:id,code,name,is_active']);
 
         if ($dealStatusId = $this->resolveDealStatusId()) {
             $query->withCount([
-                'consultations as deals_count' => fn ($builder) => $builder->where('status_category_id', $dealStatusId),
+                'currentGroupConsultations as deals_count' => fn ($builder) => $builder->where('status_category_id', $dealStatusId),
             ]);
         }
 
         if ($surveyStatusId = $this->resolveRequestSurveyStatusId()) {
             $query->withCount([
-                'consultations as surveys_count' => fn ($builder) => $builder->where('status_category_id', $surveyStatusId),
+                'currentGroupConsultations as surveys_count' => fn ($builder) => $builder->where('status_category_id', $surveyStatusId),
             ]);
         }
 
@@ -67,7 +65,7 @@ class AccountController extends Controller
         }
 
         if ($request->filled('category')) {
-            $query->where('account_group', $request->category);
+            $query->whereHas('group', fn ($group) => $group->where('code', $request->category));
         }
 
         $perPage = (int) $request->input('per_page', 20);
@@ -101,16 +99,17 @@ class AccountController extends Controller
 
             unset($validated['logo'], $validated['remove_logo']);
 
-            $group = $validated['account_group'];
+            $group = AccountGroup::query()->active()->where('code', $validated['account_group'])->firstOrFail();
             unset($validated['account_group']);
             $account = new Account($validated);
-            $account->account_group = $group;
+            $account->account_group_id = $group->id;
+            $account->account_group = $group->code;
             $account->save();
         });
 
         return response()->json([
             'message' => 'Akun interior baru berhasil ditambahkan!',
-            'data' => $account,
+            'data' => $account->load('group:id,code,name,is_active'),
         ], 201);
     }
 
@@ -119,18 +118,18 @@ class AccountController extends Controller
      */
     public function show(Account $account): JsonResponse
     {
-        $account->load(['admins:id,name,account_id']);
+        $account->load(['admins:id,name,account_id', 'group:id,code,name,is_active']);
+        $account->loadCount(['currentGroupConsultations as consultations_count']);
 
         if ($dealStatusId = $this->resolveDealStatusId()) {
             $account->loadCount([
-                'consultations',
-                'consultations as deals_count' => fn ($builder) => $builder->where('status_category_id', $dealStatusId),
+                'currentGroupConsultations as deals_count' => fn ($builder) => $builder->where('status_category_id', $dealStatusId),
             ]);
         }
 
         if ($surveyStatusId = $this->resolveRequestSurveyStatusId()) {
             $account->loadCount([
-                'consultations as surveys_count' => fn ($builder) => $builder->where('status_category_id', $surveyStatusId),
+                'currentGroupConsultations as surveys_count' => fn ($builder) => $builder->where('status_category_id', $surveyStatusId),
             ]);
         }
 
@@ -145,6 +144,7 @@ class AccountController extends Controller
     public function update(AccountRequest $request, Account $account): JsonResponse
     {
         $validated = $request->validated();
+        $previousGroup = $account->group?->only(['id', 'code', 'name']);
 
         DB::transaction(function () use ($request, &$validated, $account) {
             if ($request->boolean('remove_logo')) {
@@ -162,15 +162,25 @@ class AccountController extends Controller
             unset($validated['logo'], $validated['remove_logo']);
 
             if (array_key_exists('account_group', $validated)) {
-                $account->account_group = $validated['account_group'];
+                $group = AccountGroup::query()->active()->where('code', $validated['account_group'])->firstOrFail();
+                $account->account_group_id = $group->id;
+                $account->account_group = $group->code;
                 unset($validated['account_group']);
             }
             $account->fill($validated)->save();
         });
 
+        $updatedAccount = $account->fresh()->load('group:id,code,name,is_active');
+
         return response()->json([
             'message' => 'Data akun berhasil diperbarui!',
-            'data' => $account,
+            'data' => $updatedAccount,
+            'group_change' => $previousGroup && $previousGroup['id'] !== $updatedAccount->account_group_id
+                ? [
+                    'from' => $previousGroup,
+                    'to' => $updatedAccount->group?->only(['id', 'code', 'name']),
+                ]
+                : null,
         ]);
     }
 
@@ -190,6 +200,8 @@ class AccountController extends Controller
             User::where('role', UserRole::Admin)
                 ->where('account_id', $account->id)
                 ->update(['account_id' => null]);
+
+            $account->members()->detach();
 
             if ($account->logo_path) {
                 Storage::disk('public')->delete($account->logo_path);

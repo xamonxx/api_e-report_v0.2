@@ -30,7 +30,7 @@ class ConsultationDailyLogExportTest extends TestCase
     public function test_super_admin_can_export_log_and_other_roles_are_forbidden(): void
     {
         $this->travelTo(Carbon::parse('2026-09-23 10:00:00'));
-        $account = $this->createAccount('Log Export Akun', AccountGroup::TEAM_A);
+        $account = $this->createAccount('Log Export Akun', AccountGroup::PC);
 
         Sanctum::actingAs($this->createUser(UserRole::SuperAdmin));
         $response = $this->get('/api/v1/report-attendances/export-log?date=2026-09-23');
@@ -49,8 +49,8 @@ class ConsultationDailyLogExportTest extends TestCase
     {
         $this->travelTo(Carbon::parse('2026-09-23 10:00:00'));
 
-        $accountWithConsult = $this->createAccount('Ada Wa Akun', AccountGroup::TEAM_A);
-        $accountSilent = $this->createAccount('Tidak Laporan Akun', AccountGroup::TEAM_A);
+        $accountWithConsult = $this->createAccount('Ada Wa Akun', AccountGroup::PC);
+        $accountSilent = $this->createAccount('Tidak Laporan Akun', AccountGroup::PC);
 
         // Konsultasi dibuat hari yang sama dengan consultation_date -> tepat
         // waktu -> hijau/ADA WA. $accountSilent sengaja tidak punya apa-apa
@@ -83,14 +83,14 @@ class ConsultationDailyLogExportTest extends TestCase
     {
         $this->travelTo(Carbon::parse('2026-09-23 10:00:00'));
 
-        $teamAAccount = $this->createAccount('Akun Tim A', AccountGroup::TEAM_A);
-        $teamBAccount = $this->createAccount('Akun Tim B', AccountGroup::TEAM_B);
+        $teamAAccount = $this->createAccount('Akun Grup PC', AccountGroup::PC);
+        $teamBAccount = $this->createAccount('Akun Grup INSIP', AccountGroup::INSIP);
 
         $xml = app(ConsultationDailyLogExcelExporter::class)
-            ->buildWorkbook(Carbon::parse('2026-09-23'), AccountGroup::TEAM_A);
+            ->buildWorkbook(Carbon::parse('2026-09-23'), AccountGroup::PC);
 
-        $this->assertStringContainsString('AKUN TIM A', $xml);
-        $this->assertStringNotContainsString('AKUN TIM B', $xml);
+        $this->assertStringContainsString('AKUN GRUP PC', $xml);
+        $this->assertStringNotContainsString('AKUN GRUP INSIP', $xml);
     }
 
     /**
@@ -103,7 +103,7 @@ class ConsultationDailyLogExportTest extends TestCase
         $this->travelTo(Carbon::parse('2026-09-23 10:00:00'));
         $date = Carbon::parse('2026-09-23');
 
-        $susulanAccount = $this->createAccount('Susulan Akun', AccountGroup::TEAM_A);
+        $susulanAccount = $this->createAccount('Susulan Akun', AccountGroup::PC);
         $susulanConsultation = Consultation::query()->create([
             'consultation_id' => 'CNS-TEST-0002',
             'client_name' => 'Klien Susulan',
@@ -116,10 +116,10 @@ class ConsultationDailyLogExportTest extends TestCase
         // benar-benar mensimulasikan laporan susulan.
         $susulanConsultation->forceFill(['created_at' => $date->copy()->addDay()])->save();
 
-        $nolWaAccount = $this->createAccount('Nol Wa Akun', AccountGroup::TEAM_A);
+        $nolWaAccount = $this->createAccount('Nol Wa Akun', AccountGroup::PC);
         $this->reportAttendance($nolWaAccount, $date, 'nol_wa');
 
-        $liburAccount = $this->createAccount('Libur Akun', AccountGroup::TEAM_A);
+        $liburAccount = $this->createAccount('Libur Akun', AccountGroup::PC);
         $this->reportAttendance($liburAccount, $date, 'libur_susulan');
 
         $accountIds = [$susulanAccount->id, $nolWaAccount->id, $liburAccount->id];
@@ -150,7 +150,7 @@ class ConsultationDailyLogExportTest extends TestCase
         $this->travelTo(Carbon::parse('2026-09-23 10:00:00'));
         $date = Carbon::parse('2026-09-23');
 
-        $account = $this->createAccount('Dua Admin Akun', AccountGroup::TEAM_A);
+        $account = $this->createAccount('Dua Admin Akun', AccountGroup::PC);
         $this->reportAttendance($account, $date, 'nol_wa');
         $this->reportAttendance($account, $date, 'libur_susulan');
 
@@ -165,7 +165,7 @@ class ConsultationDailyLogExportTest extends TestCase
     {
         $this->travelTo(Carbon::parse('2026-09-23 10:00:00'));
         $date = Carbon::parse('2026-09-23');
-        $account = $this->createAccount('Tanpa Admin Akun', AccountGroup::TEAM_A);
+        $account = $this->createAccount('Tanpa Admin Akun', AccountGroup::PC);
 
         $xml = app(ConsultationDailyLogExcelExporter::class)->buildWorkbook($date, null, $date->copy(), [$account->id]);
 
@@ -177,7 +177,7 @@ class ConsultationDailyLogExportTest extends TestCase
     {
         $this->travelTo(Carbon::parse('2026-09-23 10:00:00'));
         $date = Carbon::parse('2026-09-23');
-        $account = $this->createAccount('Soft Delete Akun', AccountGroup::TEAM_A);
+        $account = $this->createAccount('Soft Delete Akun', AccountGroup::PC);
 
         $consultation = Consultation::query()->create([
             'consultation_id' => 'CNS-TEST-0003',
@@ -254,17 +254,88 @@ class ConsultationDailyLogExportTest extends TestCase
             ->assertOk();
     }
 
-    private function reportAttendance(Account $account, Carbon $date, string $category): void
+    /**
+     * Kolom JAM LAPORAN pada Excel log harian:
+     * - Header XML memuat 'JAM LAPORAN'
+     * - Akun dengan absensi ReportAttendance menampilkan jam dari created_at (format H:i WIB)
+     * - Akun dengan konsultasi normal tanpa absensi (fallback) menampilkan jam dari consultations.created_at (format H:i WIB)
+     * - Akun tanpa laporan status TIDAK LAPORAN menampilkan '-'
+     */
+    public function test_log_export_displays_reported_time_column_correctly(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-23 10:00:00'));
+        $date = Carbon::parse('2026-09-23');
+
+        // 1. Akun dengan absensi ReportAttendance (created_at 08:30 WIB)
+        $accountAttendance = $this->createAccount('Akun Absensi', AccountGroup::PC);
+        $this->reportAttendance($accountAttendance, $date, 'ada_wa', Carbon::parse('2026-09-23 08:30:00'));
+
+        // 2. Akun dengan konsultasi normal tanpa absensi (fallback consultations.created_at 14:15 WIB)
+        $accountFallback = $this->createAccount('Akun Fallback', AccountGroup::PC);
+        $consultation = Consultation::query()->create([
+            'consultation_id' => 'CNS-TIME-0001',
+            'client_name' => 'Klien Fallback',
+            'account_id' => $accountFallback->id,
+            'consultation_date' => $date,
+        ]);
+        $consultation->forceFill(['created_at' => Carbon::parse('2026-09-23 14:15:00')])->save();
+
+        // 3. Akun tanpa laporan sama sekali (status TIDAK LAPORAN)
+        $accountSilent = $this->createAccount('Akun Tanpa Laporan', AccountGroup::PC);
+
+        $accountIds = [$accountAttendance->id, $accountFallback->id, $accountSilent->id];
+        $xml = app(ConsultationDailyLogExcelExporter::class)
+            ->buildWorkbook($date, null, $date->copy(), $accountIds);
+
+        // Header verifikasi
+        $this->assertStringContainsString('>JAM LAPORAN<', $xml);
+
+        // Value verifikasi
+        $this->assertRowContainsText($xml, 'AKUN ABSENSI', '>08:30 WIB<');
+        $this->assertRowContainsText($xml, 'AKUN FALLBACK', '>14:15 WIB<');
+        $this->assertRowContainsText($xml, 'AKUN TANPA LAPORAN', '>-<');
+    }
+
+    /**
+     * Endpoint GET /api/v1/report-attendances/export-log-pdf:
+     * - Super admin bisa export PDF (200 OK, Content-Type application/pdf, filename .pdf)
+     * - Role non-super-admin ditolak 403 Forbidden
+     */
+    public function test_super_admin_can_export_log_pdf_and_other_roles_are_forbidden(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-23 10:00:00'));
+        $account = $this->createAccount('PDF Export Akun', AccountGroup::PC);
+
+        Sanctum::actingAs($this->createUser(UserRole::SuperAdmin));
+        $response = $this->get('/api/v1/report-attendances/export-log-pdf?date=2026-09-23');
+        $response->assertOk();
+        $this->assertSame(
+            'application/pdf',
+            $response->headers->get('Content-Type')
+        );
+        $disposition = (string) $response->headers->get('Content-Disposition');
+        $this->assertStringContainsString('attachment', $disposition);
+        $this->assertStringContainsString('.pdf', $disposition);
+
+        Sanctum::actingAs($this->createUser(UserRole::Admin, $account));
+        $this->get('/api/v1/report-attendances/export-log-pdf?date=2026-09-23')->assertForbidden();
+    }
+
+    private function reportAttendance(Account $account, Carbon $date, string $category, ?Carbon $createdAt = null): void
     {
         static $sequence = 0;
         $sequence++;
         $admin = $this->createUser(UserRole::Admin, $account);
-        ReportAttendance::query()->create([
+        $attendance = ReportAttendance::query()->create([
             'user_id' => $admin->id,
             'account_id' => $account->id,
             'report_date' => $date->toDateString(),
             'report_category' => $category,
         ]);
+
+        if ($createdAt !== null) {
+            $attendance->forceFill(['created_at' => $createdAt])->save();
+        }
     }
 
     /** Baris <Row>...</Row> yang memuat nama akun tertentu harus punya style tertentu. */

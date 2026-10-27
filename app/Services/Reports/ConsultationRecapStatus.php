@@ -13,6 +13,7 @@ final class ConsultationRecapStatus
         public readonly int $count,
         public readonly string $label,
         public readonly string $description,
+        public readonly ?string $reportedAt = null,
     ) {
     }
 }

@@ -116,7 +116,7 @@ class MasterDataController extends Controller
                 ->where('role', UserRole::Surveyor->value)
                 ->when($user->isSurveyor(), fn ($query) => $query->whereKey($user->id))
                 ->orderBy('name')
-                ->get(['id', 'name', 'survey_team']),
+                ->get(['id', 'name']),
         ]);
     }
 
@@ -503,7 +503,6 @@ class MasterDataController extends Controller
             'password' => 'required|string|min:8',
             'password_confirmation' => 'required|string|same:password',
             'role' => ['required', new Enum(UserRole::class)],
-            'survey_team' => ['nullable'],
             'account_id' => 'nullable|exists:accounts,id',
             'account_ids' => 'nullable|array|min:1',
             'account_ids.*' => 'integer|distinct|exists:accounts,id',
@@ -570,6 +569,8 @@ class MasterDataController extends Controller
                 return $createdUser;
             });
 
+            Cache::forget(User::SUPER_ADMIN_CACHE_KEY);
+
             return response()->json([
                 'message' => "User {$user->name} berhasil ditambahkan!",
                 'data' => $user,
@@ -593,7 +594,6 @@ class MasterDataController extends Controller
             'name' => 'required|string|max:255|regex:/^[^\<\>]+$/',
             'email' => 'required|email|max:255|unique:users,email,'.$user->id,
             'role' => ['required', new Enum(UserRole::class)],
-            'survey_team' => ['nullable'],
             'account_id' => 'nullable|exists:accounts,id',
             'account_ids' => 'nullable|array|min:1',
             'account_ids.*' => 'integer|distinct|exists:accounts,id',
@@ -639,15 +639,16 @@ class MasterDataController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($user, $validated, $role, $accountIds, $defaultAccountId) {
+            DB::transaction(function () use ($request, $user, $validated, $role, $accountIds, $defaultAccountId) {
                 $user->loadMissing('account');
+                $oldRole = $user->role instanceof UserRole ? $user->role->value : (string) $user->role;
+                $roleOrPasswordChanged = $oldRole !== $role->value || $request->filled('password');
                 $oldValues = [
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
-                    'role' => $user->role instanceof UserRole ? $user->role->value : $user->role,
+                    'role' => $oldRole,
                     'account_id' => $user->account_id,
-                    'survey_team' => $user->survey_team,
                 ];
 
                 // F-014: role assigned explicitly (not via mass-assignment) to prevent
@@ -665,6 +666,10 @@ class MasterDataController extends Controller
                 $user->save();
                 $user->accounts()->sync($role === UserRole::Admin ? $accountIds : []);
 
+                if ($roleOrPasswordChanged) {
+                    $this->revokeUserSessionsAndTokens($user);
+                }
+
                 app(NotificationSummaryService::class)->forgetForUser((int) $user->id);
 
                 $user->refresh()->loadMissing('account');
@@ -675,6 +680,8 @@ class MasterDataController extends Controller
                     sprintf('Memperbarui user %s menjadi role %s.', $user->name, $role->value)
                 );
             });
+
+            Cache::forget(User::SUPER_ADMIN_CACHE_KEY);
 
             return response()->json([
                 'message' => "Data user {$user->name} berhasil diperbarui!",
@@ -725,6 +732,7 @@ class MasterDataController extends Controller
         try {
             DB::transaction(function () use ($user) {
                 $user->loadMissing('account');
+                $this->revokeUserSessionsAndTokens($user);
                 $user->delete();
 
                 AuditLog::logDeleted(
@@ -732,6 +740,8 @@ class MasterDataController extends Controller
                     sprintf('Menghapus user %s dari sistem.', $user->name)
                 );
             });
+
+            Cache::forget(User::SUPER_ADMIN_CACHE_KEY);
 
             return response()->json([
                 'message' => 'User berhasil dihapus!',
@@ -769,6 +779,8 @@ class MasterDataController extends Controller
                     'password' => Hash::make($request->password),
                 ]);
 
+                $this->revokeUserSessionsAndTokens($user);
+
                 AuditLog::logUpdated(
                     $user->fresh(),
                     ['password' => '[REDACTED]'],
@@ -783,6 +795,16 @@ class MasterDataController extends Controller
             report($exception);
 
             return response()->json(['message' => "Password untuk {$user->name} gagal direset. Silakan coba lagi."], 500);
+        }
+    }
+
+    private function revokeUserSessionsAndTokens(User $user): void
+    {
+        if (\Illuminate\Support\Facades\Schema::hasTable(config('session.table', 'sessions'))) {
+            DB::table(config('session.table', 'sessions'))->where('user_id', $user->id)->delete();
+        }
+        if (\Illuminate\Support\Facades\Schema::hasTable('personal_access_tokens')) {
+            $user->tokens()->delete();
         }
     }
 

@@ -279,10 +279,7 @@ class AnalyticsReportService
         }
 
         if ($user->isSuperAdmin() && $this->accountGroup) {
-            $query->whereIn(
-                $this->consultationColumn('account_id'),
-                Account::query()->where('account_group', $this->accountGroup)->select('id')
-            );
+            $query->inAccountGroup($this->accountGroup);
         }
 
         return $query;
@@ -426,7 +423,12 @@ class AnalyticsReportService
         }
 
         if ($this->accountGroup) {
-            $query->where('account_group', $this->accountGroup);
+            $query->whereHas('consultations', fn ($builder) => $builder
+                ->whereBetween('consultation_date', [
+                    $period['start']->toDateString(),
+                    $period['end']->toDateString(),
+                ])
+                ->inAccountGroup($this->accountGroup));
         }
 
         $query->withCount([
@@ -434,7 +436,7 @@ class AnalyticsReportService
                 $builder->whereBetween('consultation_date', [
                     $period['start']->toDateString(),
                     $period['end']->toDateString(),
-                ]);
+                ])->when($this->accountGroup, fn ($scope) => $scope->inAccountGroup($this->accountGroup));
             },
         ]);
 
@@ -444,7 +446,8 @@ class AnalyticsReportService
                     $builder->whereBetween('consultation_date', [
                         $period['start']->toDateString(),
                         $period['end']->toDateString(),
-                    ])->whereIn('status_category_id', $surveyStatusIds->all());
+                    ])->whereIn('status_category_id', $surveyStatusIds->all())
+                        ->when($this->accountGroup, fn ($scope) => $scope->inAccountGroup($this->accountGroup));
                 },
             ]);
         }
@@ -455,7 +458,8 @@ class AnalyticsReportService
                     $builder->whereBetween('consultation_date', [
                         $period['start']->toDateString(),
                         $period['end']->toDateString(),
-                    ])->whereIn('status_category_id', $dealStatusIds->all());
+                    ])->whereIn('status_category_id', $dealStatusIds->all())
+                        ->when($this->accountGroup, fn ($scope) => $scope->inAccountGroup($this->accountGroup));
                 },
             ]);
         }
@@ -490,7 +494,7 @@ class AnalyticsReportService
                     $builder->whereBetween('consultation_date', [
                         $period['start']->toDateString(),
                         $period['end']->toDateString(),
-                    ]);
+                    ])->when($this->accountGroup, fn ($scope) => $scope->inAccountGroup($this->accountGroup));
                 },
             ]);
 
@@ -499,10 +503,12 @@ class AnalyticsReportService
         }
 
         if ($this->accountGroup) {
-            $query->whereIn(
-                'account_id',
-                Account::query()->where('account_group', $this->accountGroup)->select('id')
-            );
+            $query->whereHas('consultations', fn ($builder) => $builder
+                ->whereBetween('consultation_date', [
+                    $period['start']->toDateString(),
+                    $period['end']->toDateString(),
+                ])
+                ->inAccountGroup($this->accountGroup));
         }
 
         return $query->get()
@@ -910,10 +916,8 @@ class AnalyticsReportService
             }
 
             if ($this->accountGroup) {
-                $builder->whereIn(
-                    'account_id',
-                    Account::query()->where('account_group', $this->accountGroup)->select('id')
-                );
+                $builder->whereHas('consultation', fn ($consultation) => $consultation
+                    ->inAccountGroup($this->accountGroup));
             }
 
             return $builder;
@@ -1026,10 +1030,8 @@ class AnalyticsReportService
         }
 
         if ($this->accountGroup) {
-            $query->whereIn(
-                'account_id',
-                Account::query()->where('account_group', $this->accountGroup)->select('id')
-            );
+            $query->whereHas('consultation', fn ($consultation) => $consultation
+                ->inAccountGroup($this->accountGroup));
         }
 
         return $query;

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Security;
 
+use App\Console\Commands\SyncGreenMudaRoster;
 use App\Enums\UserRole;
 use App\Models\Survey;
 use App\Models\User;
@@ -39,10 +40,28 @@ class GreenMudaGlobalAccessTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Schema::create('account_groups', function (Blueprint $table) {
+            $table->id();
+            $table->string('code', 32)->unique();
+            $table->string('name', 120);
+            $table->unsignedInteger('sort_order')->default(0);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
+        $sortOrder = 1;
+        foreach (array_keys(GreenMudaRoster::GROUPS) as $code) {
+            DB::table('account_groups')->insert([
+                'code' => $code,
+                'name' => $code,
+                'sort_order' => $sortOrder++,
+                'is_active' => true,
+            ]);
+        }
         Schema::create('accounts', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->string('account_group', 10)->nullable();
+            $table->foreignId('account_group_id')->nullable()->constrained('account_groups')->nullOnDelete();
             $table->string('logo_path')->nullable();
             $table->softDeletes();
             $table->timestamps();
@@ -90,21 +109,173 @@ class GreenMudaGlobalAccessTest extends TestCase
             $table->timestamps();
             $table->unique(['user_id', 'account_id', 'report_date']);
         });
+        Schema::create('consultations', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('account_id')->nullable();
+            $table->string('account_group', 10)->nullable();
+            $table->foreignId('account_group_id')->nullable();
+            $table->date('consultation_date')->nullable();
+            $table->timestamps();
+        });
     }
 
     public function test_roster_contract_has_exact_accounts_groups_and_surveyors(): void
     {
         $rows = GreenMudaRoster::accounts();
 
-        $this->assertCount(31, $rows);
+        $this->assertCount(33, $rows);
         $this->assertSame(AccountGroup::values(), array_keys(GreenMudaRoster::GROUPS));
         $this->assertCount(7, GreenMudaRoster::SURVEYORS);
-        $this->assertCount(31, collect($rows)->pluck('account')->unique());
+        $this->assertCount(33, collect($rows)->pluck('account')->unique());
         $this->assertCount(18, collect($rows)->pluck('admin')->unique());
         $this->assertSame('SRI', collect($rows)->firstWhere('account', 'FURNITURE CIMAHI')['admin']);
         $this->assertSame('LISA', collect($rows)->firstWhere('account', 'MEWAH INTERIOR')['admin']);
         $this->assertSame('HASNI', collect($rows)->firstWhere('account', 'MEDIAN INTERIOR')['admin']);
+        $this->assertSame('HASNI', collect($rows)->firstWhere('account', 'INTERIOR KITA')['admin']);
+        $this->assertSame('HASNI', collect($rows)->firstWhere('account', 'ALLFAR INTERIOR')['admin']);
         $this->assertSame('superadmin@ereport.app', GreenMudaRoster::SUPER_ADMIN['email']);
+    }
+
+    public function test_roster_admin_resolver_prefers_active_canonical_users_over_historical_collisions(): void
+    {
+        foreach (['OMEN', 'ANO', 'DIAN G', 'AGUNG', 'UNIR'] as $index => $displayName) {
+            $defaultId = DB::table('accounts')->insertGetId([
+                'name' => "Default {$displayName}",
+                'account_group' => 'PC',
+            ]);
+            $secondaryId = DB::table('accounts')->insertGetId([
+                'name' => "Secondary {$displayName}",
+                'account_group' => 'PC',
+            ]);
+
+            $historical = $this->user(UserRole::Admin, $defaultId);
+            $historical->name = $displayName;
+            $historical->email = "historical-{$index}@example.test";
+            $historical->save();
+            $historical->delete();
+
+            $unrelated = $this->user(UserRole::Admin, $defaultId);
+            $unrelated->name = "UNRELATED {$index}";
+            $unrelated->save();
+
+            $canonical = $this->user(UserRole::Admin, $secondaryId);
+            $canonical->name = match ($displayName) {
+                'ANO' => 'ANOTHER NAME',
+                'DIAN G' => 'DIAN',
+                default => $displayName,
+            };
+            $canonical->email = $displayName === 'ANO'
+                ? 'ano.admin@ereport.app'
+                : "canonical-{$index}@example.test";
+            $canonical->save();
+
+            DB::table('account_user')->insert([
+                'user_id' => $canonical->id,
+                'account_id' => $secondaryId,
+            ]);
+
+            $command = new SyncGreenMudaRoster;
+            $method = new \ReflectionMethod($command, 'activeAdminCandidates');
+            $candidates = $method->invoke($command, $displayName);
+
+            $this->assertSame($canonical->id, $candidates->first()?->id, "Resolver salah untuk {$displayName}");
+            $this->assertFalse($candidates->contains('id', $historical->id));
+        }
+    }
+
+    public function test_roster_admin_resolver_does_not_rename_unrelated_single_account_user(): void
+    {
+        $accountId = DB::table('accounts')->insertGetId([
+            'name' => 'Target Account',
+            'account_group' => 'PC',
+        ]);
+        $unrelated = $this->user(UserRole::Admin, $accountId);
+        $unrelated->name = 'UNRELATED USER';
+        $unrelated->email = 'unrelated@example.test';
+        $unrelated->save();
+
+        $command = new SyncGreenMudaRoster;
+        $method = new \ReflectionMethod($command, 'activeAdminCandidates');
+        $candidates = $method->invoke($command, 'HASNI');
+
+        $this->assertCount(0, $candidates);
+        $this->assertSame('UNRELATED USER', $unrelated->fresh()->name);
+    }
+
+    public function test_roster_admin_resolver_rejects_duplicate_active_identities(): void
+    {
+        foreach ([1, 2] as $suffix) {
+            $user = $this->user(UserRole::Admin);
+            $user->name = 'OMEN';
+            $user->email = "omen-duplicate-{$suffix}@example.test";
+            $user->save();
+        }
+
+        $command = new SyncGreenMudaRoster;
+        $method = new \ReflectionMethod($command, 'activeAdminCandidates');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Admin OMEN ambigu');
+
+        $method->invoke($command, 'OMEN');
+    }
+
+    public function test_roster_admin_resolver_selects_unique_canonical_email_among_duplicate_names(): void
+    {
+        $duplicate = $this->user(UserRole::Admin);
+        $duplicate->name = 'OMEN';
+        $duplicate->email = 'omen-other@example.test';
+        $duplicate->save();
+
+        $canonical = $this->user(UserRole::Admin);
+        $canonical->name = 'OMEN';
+        $canonical->email = 'omen.admin@ereport.app';
+        $canonical->save();
+
+        $command = new SyncGreenMudaRoster;
+        $method = new \ReflectionMethod($command, 'activeAdminCandidates');
+        $candidates = $method->invoke($command, 'OMEN');
+
+        $this->assertCount(1, $candidates);
+        $this->assertSame($canonical->id, $candidates->first()?->id);
+    }
+
+    public function test_roster_sync_migrates_consultations_since_specified_date_to_new_account_group(): void
+    {
+        $pcGroup = DB::table('account_groups')->where('code', 'PC')->first();
+        $account = DB::table('accounts')->insertGetId([
+            'name' => 'PORTFOLIO OLD',
+            'account_group' => 'A',
+            'account_group_id' => null,
+        ]);
+
+        $oldId = DB::table('consultations')->insertGetId([
+            'account_id' => $account,
+            'account_group' => 'A',
+            'account_group_id' => null,
+            'consultation_date' => '2026-10-20',
+        ]);
+        $newId = DB::table('consultations')->insertGetId([
+            'account_id' => $account,
+            'account_group' => 'A',
+            'account_group_id' => null,
+            'consultation_date' => '2026-10-21',
+        ]);
+
+        DB::table('accounts')->where('id', $account)->update([
+            'account_group' => 'PC',
+            'account_group_id' => $pcGroup->id,
+        ]);
+
+        $command = new SyncGreenMudaRoster;
+        $method = new \ReflectionMethod($command, 'syncConsultations');
+        $affected = $method->invoke($command, '2026-10-21');
+
+        $this->assertSame(1, $affected);
+        $this->assertSame('A', DB::table('consultations')->where('id', $oldId)->value('account_group'));
+        $this->assertNull(DB::table('consultations')->where('id', $oldId)->value('account_group_id'));
+        $this->assertSame('PC', DB::table('consultations')->where('id', $newId)->value('account_group'));
+        $this->assertSame($pcGroup->id, DB::table('consultations')->where('id', $newId)->value('account_group_id'));
     }
 
     public function test_admin_can_select_only_a_membership_account(): void

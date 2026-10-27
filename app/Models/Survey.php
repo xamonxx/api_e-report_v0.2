@@ -157,7 +157,7 @@ class Survey extends Model
 
     public function resultStatus()
     {
-        return $this->belongsTo(SurveyStatus::class, 'result_status_id');
+        return $this->belongsTo(SurveyStatus::class, 'result_status_id')->withTrashed();
     }
 
     public function histories()
