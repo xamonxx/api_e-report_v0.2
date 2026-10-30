@@ -33,7 +33,6 @@ class ConsultationRequest extends FormRequest
         // belum dijalankan di environment tersebut.
         $pendingConfirmationCategoryId = $this->resolveNeedsCategoryId(NeedsCategory::PENDING_LABEL)
             ?? $this->resolveNeedsCategoryId(NeedsCategory::PENDING_LEGACY_LABEL);
-        $otherNeedsCategoryId = $this->resolveNeedsCategoryId(NeedsCategory::OTHER_OPTION_LABEL);
         $productIds = $this->input('needs_category_ids');
 
         if ($productIds === null && $this->filled('needs_category_id')) {
@@ -144,6 +143,10 @@ class ConsultationRequest extends FormRequest
                 }
             }
         }
+        // Detail proyek selalu disimpan apa pun kategorinya (keputusan Mon
+        // 2026-10-30). Dulu dibuang diam-diam bila "Lain-Lain" tidak dipilih,
+        // padahal form mengajak semua lead mengisinya. Kewajiban mengisi saat
+        // "Lain-Lain" dipilih tetap ada di rules().
         $productDetails = $trimmed($this->input('product_details'));
         // Disimpan E.164 supaya satu nomor selalu punya satu bentuk, apa pun
         // negaranya. Nomor tanpa "+" diperlakukan sebagai nomor Indonesia.
@@ -155,10 +158,6 @@ class ConsultationRequest extends FormRequest
         $emergencyPhone = $rawEmergencyPhone
             ? (PhoneNumber::toE164($rawEmergencyPhone) ?? $rawEmergencyPhone)
             : null;
-
-        if (! $otherNeedsCategoryId || ! in_array($otherNeedsCategoryId, $productIds, true)) {
-            $productDetails = null;
-        }
 
         $this->merge([
             'client_name' => $trimmed($this->input('client_name')) ?? Consultation::generatePlaceholderClientName(),
