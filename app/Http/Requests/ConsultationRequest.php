@@ -13,6 +13,20 @@ use Illuminate\Validation\Validator;
 
 class ConsultationRequest extends FormRequest
 {
+    /** Batas jumlah kab/kota yang disebut di pesan error sebelum diringkas. */
+    private const MAX_LISTED_CITIES = 5;
+
+    /** Pola karakter untuk nama wilayah yang diketik manual (bukan dari dataset). */
+    private const MANUAL_REGION_REGEX = 'regex:/^[\pL0-9\s\-.,\/()\']+$/u';
+
+    /**
+     * Diisi prepareForValidation() bila kecamatan tanpa kota cocok dengan
+     * lebih dari satu kab/kota.
+     *
+     * @var array{district: string, cities: list<string>}|null
+     */
+    private ?array $ambiguousDistrict = null;
+
     protected function prepareForValidation(): void
     {
         // Fallback ke ejaan lama supaya tetap berfungsi bila migrasi rename
@@ -95,21 +109,38 @@ class ConsultationRequest extends FormRequest
             $resolved = WilayahNormalizer::canonicalDistrict($district, $city !== $none ? $city : null);
             $district = $resolved['value'] ?? $district;
 
-            if ($resolved['matched'] && ($city === $none || $province === $none)) {
-                foreach (\App\Support\Wilayah::districtMapping() as $item) {
-                    if (($item['district'] ?? null) !== $district) {
-                        continue;
-                    }
+            if ($resolved['matched'] && $city === $none) {
+                // Nama kecamatan bisa dipakai di beberapa kab/kota (mis. Cibadak
+                // di Kab. Lebak dan Kab. Sukabumi). Kota hanya diisi otomatis bila
+                // kandidatnya tunggal setelah dibatasi provinsi terpilih; bila masih
+                // ambigu, user diminta memilih kota lewat error validasi.
+                $candidates = WilayahNormalizer::districtCandidates(
+                    $district,
+                    $province !== $none ? $province : null
+                );
 
-                    if ($city === $none) {
-                        $city = $item['city'] ?? $city;
-                    }
+                if (count($candidates) === 1) {
+                    $district = $candidates[0]['district'];
+                    $city = $candidates[0]['city'];
 
                     if ($province === $none) {
-                        $province = $item['province'] ?? $province;
+                        $province = $candidates[0]['province'] ?: $province;
                     }
-
-                    break;
+                } elseif (count($candidates) > 1) {
+                    $this->ambiguousDistrict = [
+                        'district' => $district,
+                        'cities' => array_column($candidates, 'city'),
+                    ];
+                }
+            } elseif ($resolved['matched'] && $province === $none) {
+                // Kota terisi tapi tidak dikenal dataset (kota dikenal sudah
+                // melengkapi provinsi di atas). Perilaku lama dipertahankan;
+                // validasi kota tetap menolaknya.
+                foreach (\App\Support\Wilayah::districtMapping() as $item) {
+                    if (($item['district'] ?? null) === $district) {
+                        $province = $item['province'] ?? $province;
+                        break;
+                    }
                 }
             }
         }
@@ -200,9 +231,15 @@ class ConsultationRequest extends FormRequest
                     }
                 },
             ],
-            'province'           => ['nullable', 'string', 'min:3', 'max:100', 'regex:/^[\pL0-9\s\-.,]+$/u'],
-            'city'               => ['nullable', 'string', 'min:3', 'max:100', 'regex:/^[\pL0-9\s\-.,]+$/u'],
-            'district'           => ['nullable', 'string', 'min:3', 'max:100', 'regex:/^[\pL0-9\s\-.,]+$/u'],
+            'province'           => $this->regionRules(
+                in_array($this->input('province'), \App\Support\Wilayah::provinces(), true)
+            ),
+            'city'               => $this->regionRules(
+                is_string($this->input('city')) && isset(\App\Support\Wilayah::cityMapping()[$this->input('city')])
+            ),
+            'district'           => $this->regionRules(
+                WilayahNormalizer::isKnownDistrict($this->input('district'))
+            ),
             'address'            => ['nullable', 'string', 'min:5', 'max:500', 'regex:/^[^<>]+$/'], // No HTML tags
             'account_id'         => [
                 Rule::requiredIf(auth()->user()->isSuperAdmin()),
@@ -277,16 +314,29 @@ class ConsultationRequest extends FormRequest
                         });
 
                         if (! $matchingDistrict) {
-                            $actual = $knownDistricts->first();
-                            $validator->errors()->add(
-                                'district',
-                                sprintf(
+                            $cities = $knownDistricts
+                                ->pluck('city')
+                                ->filter()
+                                ->unique()
+                                ->values();
+
+                            if ($cities->count() <= 1) {
+                                $actual = $knownDistricts->first();
+                                $message = sprintf(
                                     'Kecamatan %s terdaftar di %s, %s.',
                                     $district,
                                     $actual['city'] ?? '-',
                                     $actual['province'] ?? '-'
-                                )
-                            );
+                                );
+                            } else {
+                                $message = sprintf(
+                                    'Kecamatan %s terdaftar di beberapa kabupaten/kota: %s. Pilih kabupaten/kota yang sesuai.',
+                                    $district,
+                                    $this->formatCityList($cities->all())
+                                );
+                            }
+
+                            $validator->errors()->add('district', $message);
                         }
                     }
                 }
@@ -297,6 +347,56 @@ class ConsultationRequest extends FormRequest
             }
 
         });
+
+        // Dicek terpisah dari blok di atas supaya tetap muncul bersama error
+        // kolom lain: kota memang belum terisi, jadi tidak ada aturan lain yang
+        // akan menangkapnya.
+        $validator->after(function (Validator $validator) {
+            if ($this->ambiguousDistrict === null) {
+                return;
+            }
+
+            $validator->errors()->add(
+                'city',
+                sprintf(
+                    'Kecamatan %s ada di beberapa kabupaten/kota: %s. Pilih kabupaten/kota.',
+                    $this->ambiguousDistrict['district'],
+                    $this->formatCityList($this->ambiguousDistrict['cities'])
+                )
+            );
+        });
+    }
+
+    /**
+     * Nama dari dataset sudah pasti sah, jadi cukup dibatasi panjangnya. Nama
+     * resmi seperti "O", "Ki", atau "Tiro/Truseb" tidak boleh tertolak oleh
+     * aturan untuk ketikan manual.
+     *
+     * @return list<string>
+     */
+    private function regionRules(bool $isKnown): array
+    {
+        if ($isKnown) {
+            return ['nullable', 'string', 'max:100'];
+        }
+
+        return ['nullable', 'string', 'min:3', 'max:100', self::MANUAL_REGION_REGEX];
+    }
+
+    /**
+     * "A, B, C, D, E, dan 2 lainnya".
+     *
+     * @param  list<string>  $cities
+     */
+    private function formatCityList(array $cities): string
+    {
+        $cities = array_values(array_unique($cities));
+        $listed = array_slice($cities, 0, self::MAX_LISTED_CITIES);
+        $rest = count($cities) - count($listed);
+
+        $text = implode(', ', $listed);
+
+        return $rest > 0 ? "{$text}, dan {$rest} lainnya" : $text;
     }
 
     /**
@@ -313,12 +413,15 @@ class ConsultationRequest extends FormRequest
             'phone.regex'                 => 'Format nomor telepon tidak valid (hanya mendukung angka dan simbol spesifik).',
             'emergency_phone.max'         => 'Teks nomor telepon darurat terlalu panjang (maksimal 30 karakter).',
             'emergency_phone.regex'       => 'Format nomor telepon darurat tidak valid (hanya mendukung angka dan simbol spesifik).',
+            'province.min'                => 'Provinsi minimal 3 karakter.',
             'province.max'                => 'Provinsi terlalu panjang (maksimal 100 karakter).',
             'province.regex'              => 'Provinsi mengandung karakter yang tidak diizinkan.',
+            'city.min'                    => 'Kota/Kabupaten minimal 3 karakter.',
             'city.max'                    => 'Kota/Kabupaten terlalu panjang (maksimal 100 karakter).',
             'city.regex'                  => 'Kota mengandung karakter yang tidak diizinkan.',
+            'district.min'                => 'Kecamatan minimal 3 karakter.',
             'district.max'                => 'Kecamatan terlalu panjang (maksimal 100 karakter).',
-            'district.regex'              => 'Kecamatan mengandung karakter yang tidak diizinkan.',
+            'district.regex'              => 'Kecamatan hanya boleh berisi huruf, angka, spasi, dan tanda baca - . , / ( ) \'.',
             'address.max'                 => 'Alamat terlalu panjang (maksimal 500 karakter).',
             'address.regex'               => 'Alamat tidak boleh mengandung tag HTML atau simbol < >.',
             'product_details.max'         => 'Detail kebutuhan produk terlalu panjang (maksimal 1500 karakter).',

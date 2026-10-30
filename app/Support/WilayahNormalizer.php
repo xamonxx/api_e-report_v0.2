@@ -94,6 +94,12 @@ final class WilayahNormalizer
     /** @var array<string, string>|null kunci longgar => nama kecamatan (lintas kota) */
     private static ?array $districtIndex = null;
 
+    /** @var array<string, list<array{district: string, city: string, province: string}>>|null kunci rapat => baris dataset, satu per kota */
+    private static ?array $districtRowsBySquash = null;
+
+    /** @var array<string, true>|null nama kecamatan persis seperti di dataset */
+    private static ?array $districtNameSet = null;
+
     // ── Kunci pembanding ────────────────────────────────────────────
 
     /**
@@ -299,6 +305,56 @@ final class WilayahNormalizer
     }
 
     /**
+     * Semua baris dataset yang bernama sama dengan kecamatan ini, satu baris
+     * per kab/kota, dalam urutan dataset. Nama dibandingkan lewat squashKey
+     * supaya varian ejaan ("Ki"/"KI", "Suka Makmur"/"Sukamakmur") ikut
+     * terkumpul, sejalan dengan pencocokan global canonicalDistrict().
+     *
+     * Bila provinsi diisi, kandidat dibatasi ke provinsi itu.
+     *
+     * @return list<array{district: string, city: string, province: string}>
+     */
+    public static function districtCandidates(?string $district, ?string $province = null): array
+    {
+        if (! filled($district)) {
+            return [];
+        }
+
+        $rows = self::districtRowsBySquash()[self::squashKey($district)] ?? [];
+
+        // Ejaan yang sama persis (selain huruf besar/kecil) didahulukan; varian
+        // rapat ("Suka Makmur") hanya dipakai bila ejaan persisnya tidak ada.
+        $loose = self::looseKey($district);
+        $exact = array_values(array_filter(
+            $rows,
+            fn (array $row) => self::looseKey($row['district']) === $loose
+        ));
+
+        if ($exact !== []) {
+            $rows = $exact;
+        }
+
+        if (filled($province)) {
+            $rows = array_values(array_filter(
+                $rows,
+                fn (array $row) => strcasecmp($row['province'], (string) $province) === 0
+            ));
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Apakah nilai ini persis nama kecamatan di dataset (case-sensitive,
+     * sesuai ejaan kanonik). Dipakai untuk melonggarkan aturan panjang/karakter
+     * bagi nama resmi seperti "O", "Ki", atau "Tiro/Truseb".
+     */
+    public static function isKnownDistrict(?string $district): bool
+    {
+        return filled($district) && isset(self::districtNameSet()[(string) $district]);
+    }
+
+    /**
      * @return list<string> kecamatan milik satu kota, terurut
      */
     public static function districtsForCity(string $city): array
@@ -396,5 +452,53 @@ final class WilayahNormalizer
         }
 
         return self::$districtIndex;
+    }
+
+    private static function districtRowsBySquash(): array
+    {
+        if (self::$districtRowsBySquash === null) {
+            self::$districtRowsBySquash = [];
+            $seen = [];
+
+            foreach (Wilayah::districtMapping() as $row) {
+                $district = $row['district'] ?? null;
+                $city = $row['city'] ?? null;
+
+                if (! $district || ! $city) {
+                    continue;
+                }
+
+                $key = self::squashKey($district);
+
+                // Satu kandidat per kota cukup; baris kembar di kota yang sama
+                // tidak boleh membuat kecamatan terlihat ambigu.
+                if (isset($seen[$key][$city])) {
+                    continue;
+                }
+
+                $seen[$key][$city] = true;
+                self::$districtRowsBySquash[$key][] = [
+                    'district' => $district,
+                    'city' => $city,
+                    'province' => (string) ($row['province'] ?? ''),
+                ];
+            }
+        }
+
+        return self::$districtRowsBySquash;
+    }
+
+    private static function districtNameSet(): array
+    {
+        if (self::$districtNameSet === null) {
+            self::$districtNameSet = [];
+            foreach (Wilayah::districtMapping() as $row) {
+                if (! empty($row['district'])) {
+                    self::$districtNameSet[$row['district']] = true;
+                }
+            }
+        }
+
+        return self::$districtNameSet;
     }
 }
