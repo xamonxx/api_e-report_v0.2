@@ -13,11 +13,12 @@ Schedule::call(fn () => \App\Models\LoginAttempt::purgeOlderThan(30))->daily();
 
 // ── Web Push: kirim notifikasi untuk reminder yang jatuh tempo ───
 // Butuh cron server menjalankan `php artisan schedule:run` tiap menit.
-Schedule::command('reminders:push-due')->everyMinute()->withoutOverlapping();
+// Lock overlap 10 menit (default 24 jam): run yang crash tidak mengunci job seharian.
+Schedule::command('reminders:push-due')->everyMinute()->withoutOverlapping(10);
 
 // ── Web Push: pengingat cron terjadwal (mis. absensi harian admin) ───
-Schedule::command('reminders:send-due-cron-jobs')->everyMinute()->withoutOverlapping();
+Schedule::command('reminders:send-due-cron-jobs')->everyMinute()->withoutOverlapping(10);
 
 // ── Pengingat survey terjadwal (B3) - nonaktif secara default lewat
 //    survey_reminder_settings.enabled, jadi aman selalu terdaftar. ───
-Schedule::command('surveys:dispatch-due-reminders')->everyMinute()->withoutOverlapping();
+Schedule::command('surveys:dispatch-due-reminders')->everyMinute()->withoutOverlapping(10);

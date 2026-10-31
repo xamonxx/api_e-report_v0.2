@@ -17,6 +17,7 @@ use App\Services\SurveyReminderService;
 use App\Services\WebPushService;
 use App\Support\ConsultationStatusGroups;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -499,40 +500,7 @@ class SurveyController extends Controller
         if ($request->filled('state')) {
             $query->where('state', $request->string('state'));
         }
-        if ($request->filled('account') && ($user->isManagerSurveyor() || $user->isSuperAdmin())) {
-            $query->where('account_id', (int) $request->account);
-        }
-        if ($request->filled('surveyor_id') && ($user->isManagerSurveyor() || $user->isSuperAdmin())) {
-            $query->where('surveyor_id', (int) $request->surveyor_id);
-        }
-        if ($request->filled('search')) {
-            $search = trim((string) $request->input('search'));
-            $normalizedSearch = Consultation::normalizeLeadPhone($search);
-            $query->where(function ($query) use ($search, $normalizedSearch) {
-                $query
-                    ->where('requested_item', 'like', "%{$search}%")
-                    ->orWhereHas('surveyor', fn ($surveyor) => $surveyor->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('consultation', function ($consultation) use ($search, $normalizedSearch) {
-                        $consultation
-                            ->where('client_name', 'like', "%{$search}%")
-                            ->orWhere('consultation_id', 'like', "%{$search}%")
-                            ->orWhere('address', 'like', "%{$search}%")
-                            ->orWhereHas('account', fn ($account) => $account->where('name', 'like', "%{$search}%"));
-
-                        if ($normalizedSearch !== '') {
-                            $consultation
-                                ->orWhere('phone_normalized', 'like', "%{$normalizedSearch}%")
-                                ->orWhere('emergency_phone_normalized', 'like', "%{$normalizedSearch}%");
-                        }
-                    });
-            });
-        }
-        if ($request->filled('start_date')) {
-            $query->whereDate('scheduled_at', '>=', $request->start_date);
-        }
-        if ($request->filled('end_date')) {
-            $query->whereDate('scheduled_at', '<=', $request->end_date);
-        }
+        $this->applyListFilters($query, $request, $user);
 
         $state = $request->string('state')->value();
         $sort = $request->string('sort')->value();
@@ -574,6 +542,98 @@ class SurveyController extends Controller
                 'total' => $paginated->total(),
             ],
         ]);
+    }
+
+    /**
+     * GET /api/v1/surveys/counts
+     * Jumlah survey per state untuk tab halaman /surveys, memakai scope dan
+     * filter yang sama dengan index() kecuali `state`, sort, dan paginasi.
+     *
+     * `today` / `overdue`: survey `scheduled` yang tanggal scheduled_at sama
+     * dengan / sebelum hari ini. Batas hari dihitung di PHP (app.timezone
+     * Asia/Jakarta), bukan CURDATE() MySQL yang mengikuti zona sesi DB, karena
+     * scheduled_at disimpan sebagai jam dinding WIB.
+     */
+    public function counts(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Survey::class);
+
+        $user = auth()->user();
+        $query = Survey::query()->visibleTo($user);
+        $this->applyListFilters($query, $request, $user);
+
+        $perState = (clone $query)->toBase()
+            ->select('surveys.state', DB::raw('COUNT(*) as aggregate'))
+            ->groupBy('surveys.state')
+            ->pluck('aggregate', 'state');
+
+        $byState = [];
+        foreach (Survey::STATES as $state) {
+            $byState[$state] = (int) ($perState[$state] ?? 0);
+        }
+
+        $todayStart = now()->startOfDay();
+        $tomorrowStart = $todayStart->copy()->addDay();
+
+        $scheduled = (clone $query)->toBase()
+            ->where('surveys.state', Survey::STATE_SCHEDULED)
+            ->whereNotNull('surveys.scheduled_at')
+            ->selectRaw(
+                'COALESCE(SUM(CASE WHEN surveys.scheduled_at >= ? AND surveys.scheduled_at < ? THEN 1 ELSE 0 END), 0) as today_count, '
+                .'COALESCE(SUM(CASE WHEN surveys.scheduled_at < ? THEN 1 ELSE 0 END), 0) as overdue_count',
+                [$todayStart->toDateTimeString(), $tomorrowStart->toDateTimeString(), $todayStart->toDateTimeString()]
+            )
+            ->first();
+
+        return response()->json([
+            'data' => [
+                'by_state' => $byState,
+                'today' => (int) ($scheduled->today_count ?? 0),
+                'overdue' => (int) ($scheduled->overdue_count ?? 0),
+            ],
+        ]);
+    }
+
+    /**
+     * Filter daftar survey yang dipakai bersama index() dan counts():
+     * account, surveyor_id, search, start_date, end_date.
+     */
+    private function applyListFilters(Builder $query, Request $request, User $user): void
+    {
+        if ($request->filled('account') && ($user->isManagerSurveyor() || $user->isSuperAdmin())) {
+            $query->where('account_id', (int) $request->account);
+        }
+        if ($request->filled('surveyor_id') && ($user->isManagerSurveyor() || $user->isSuperAdmin())) {
+            $query->where('surveyor_id', (int) $request->surveyor_id);
+        }
+        if ($request->filled('search')) {
+            $search = trim((string) $request->input('search'));
+            $normalizedSearch = Consultation::normalizeLeadPhone($search);
+            $query->where(function ($query) use ($search, $normalizedSearch) {
+                $query
+                    ->where('requested_item', 'like', "%{$search}%")
+                    ->orWhereHas('surveyor', fn ($surveyor) => $surveyor->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('consultation', function ($consultation) use ($search, $normalizedSearch) {
+                        $consultation
+                            ->where('client_name', 'like', "%{$search}%")
+                            ->orWhere('consultation_id', 'like', "%{$search}%")
+                            ->orWhere('address', 'like', "%{$search}%")
+                            ->orWhereHas('account', fn ($account) => $account->where('name', 'like', "%{$search}%"));
+
+                        if ($normalizedSearch !== '') {
+                            $consultation
+                                ->orWhere('phone_normalized', 'like', "%{$normalizedSearch}%")
+                                ->orWhere('emergency_phone_normalized', 'like', "%{$normalizedSearch}%");
+                        }
+                    });
+            });
+        }
+        if ($request->filled('start_date')) {
+            $query->whereDate('scheduled_at', '>=', $request->start_date);
+        }
+        if ($request->filled('end_date')) {
+            $query->whereDate('scheduled_at', '<=', $request->end_date);
+        }
     }
 
     /**

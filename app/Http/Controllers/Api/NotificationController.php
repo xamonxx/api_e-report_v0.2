@@ -255,8 +255,11 @@ class NotificationController extends Controller
                 $notes = $noteQuery->update(['is_read' => true]);
             }
 
+            // Hanya pengingat milik sendiri: `forUser` super admin = semua pengingat,
+            // dan menandai semuanya terbaca membuat push pengingat admin lain hilang.
             $reminders = Reminder::query()
                 ->forUser($user)
+                ->ownedBy($user)
                 ->where('is_read', false)
                 ->update(['is_read' => true]);
 

@@ -156,6 +156,9 @@ Route::prefix('v1')->group(function () {
             ->name('api.surveys.recap');
         Route::get('/surveys/availability', [SurveyController::class, 'availability'])
             ->name('api.surveys.availability');
+        // Harus SEBELUM /surveys/{survey}, kalau tidak "counts" ke-binding sebagai {survey}.
+        Route::get('/surveys/counts', [SurveyController::class, 'counts'])
+            ->name('api.surveys.counts');
         Route::get('/surveys', [SurveyController::class, 'index'])->name('api.surveys.index');
         Route::get('/surveys/{survey}', [SurveyController::class, 'show'])->name('api.surveys.show');
         Route::get('/surveys/{survey}/history', [SurveyController::class, 'history'])

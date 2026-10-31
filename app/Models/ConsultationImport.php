@@ -11,6 +11,7 @@ class ConsultationImport extends Model
     // mass-assignment of unintended columns if new columns are added to the table.
     protected $fillable = [
         'user_id',
+        'account_id',
         'original_name',
         'stored_path',
         'status',

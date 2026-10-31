@@ -186,7 +186,14 @@ class ConsultationRequest extends FormRequest
      */
     public function rules(): array
     {
-        $accountId = (int) ($this->input('account_id') ?? auth()->user()->activeAccountId());
+        // Admin selalu disimpan ke akun aktifnya (controller menimpa account_id),
+        // jadi cek duplikat juga wajib di akun itu. Kalau memakai input, admin
+        // bisa melewati cek akunnya sendiri dan membaca ID lead akun lain dari
+        // pesan error.
+        $user = auth()->user();
+        $accountId = $user->isAdmin()
+            ? (int) $user->activeAccountId()
+            : (int) ($this->input('account_id') ?? $this->route('consultation')?->account_id ?? $user->activeAccountId());
         $consultationId = $this->route('consultation')?->id;
 
         return [

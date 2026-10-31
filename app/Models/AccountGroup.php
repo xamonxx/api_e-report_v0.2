@@ -23,6 +23,14 @@ class AccountGroup extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        $flush = fn () => \App\Support\AccountGroup::flushCache();
+
+        static::saved($flush);
+        static::deleted($flush);
+    }
+
     public function accounts(): HasMany
     {
         return $this->hasMany(Account::class);

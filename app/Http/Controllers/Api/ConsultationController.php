@@ -9,6 +9,7 @@ use App\Models\Consultation;
 use App\Models\ConsultationStatusHistory;
 use App\Models\StatusCategory;
 use App\Models\Survey;
+use App\Models\User;
 use App\Services\ConsultationImportService;
 use App\Services\NotificationSummaryService;
 use App\Services\Reports\LeadsExcelExporter;
@@ -151,6 +152,8 @@ class ConsultationController extends Controller
             [
                 'account',
                 'statusCategory',
+                // "Dibuat oleh" di halaman detail; tanpa ini selalu tampil "Sistem".
+                'creator:id,name',
                 'activeSurvey' => fn ($query) => $query->visibleTo($user),
                 // Menentukan apakah kartu Status Survey menampilkan survey yang
                 // berjalan atau ajakan "belum diajukan".
@@ -374,7 +377,7 @@ class ConsultationController extends Controller
         $accountId = $user->isAdmin()
             ? $user->activeAccountId()
             : ($validated['account_id'] ?? $user->activeAccountId() ?? 1);
-        $previewId = Consultation::generateConsultationId($accountId);
+        $previewId = Consultation::previewConsultationId($accountId);
 
         return response()->json([
             'id' => $previewId,
@@ -506,7 +509,11 @@ class ConsultationController extends Controller
 
     private function flushDashboardCache(array $accountIds = []): void
     {
-        Cache::forget('dashboard:super_admin:'.auth()->id());
+        // Cache super admin dikunci per id super admin, bukan per pengubah;
+        // perubahan oleh admin juga wajib menyegarkan dashboard semua super admin.
+        foreach (User::cachedSuperAdminIds() as $superAdminId) {
+            Cache::forget("dashboard:super_admin:{$superAdminId}");
+        }
 
         foreach (collect($accountIds)->filter(fn ($id) => (int) $id > 0)->unique() as $accountId) {
             Cache::forget("dashboard:admin:{$accountId}");

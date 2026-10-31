@@ -17,6 +17,15 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // Seeder ini mengosongkan seluruh data operasional dan menghapus permanen
+        // user non-super admin. Hanya boleh jalan di lingkungan dev/test, sama
+        // seperti ResetOperationalData; `migrate --seed` di produksi = hilang data.
+        if (! app()->environment(['local', 'testing'])) {
+            throw new \RuntimeException(
+                'DatabaseSeeder hanya boleh dijalankan di APP_ENV local/testing karena menghapus seluruh data operasional.'
+            );
+        }
+
         $seedPassword = env('SEED_DEFAULT_PASSWORD', '1234567890d');
         $hashedPassword = Hash::make($seedPassword);
         $superAdminEmail = env('SEED_SUPER_ADMIN_EMAIL', 'superadmin@ereport.app');

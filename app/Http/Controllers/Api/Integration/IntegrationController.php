@@ -59,7 +59,9 @@ class IntegrationController extends Controller
         }
 
         if (! empty($validated['updated_since'])) {
-            $query->where('updated_at', '>=', Carbon::parse($validated['updated_since'])->utc());
+            // Kolom disimpan dalam jam app.timezone (WIB); binding Carbon diformat
+            // apa adanya tanpa konversi, jadi cursor `...Z` wajib dikonversi dulu.
+            $query->where('updated_at', '>=', Carbon::parse($validated['updated_since'])->setTimezone(config('app.timezone')));
         }
 
         if (! empty($validated['search'])) {

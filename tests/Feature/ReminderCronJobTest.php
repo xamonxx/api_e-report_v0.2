@@ -216,6 +216,41 @@ class ReminderCronJobTest extends TestCase
         $this->assertSame(0, ReminderCronJob::query()->whereNotNull('last_sent_date')->count());
     }
 
+    public function test_missed_minute_is_caught_up_once_within_window(): void
+    {
+        $this->travelTo(now()->setTime(14, 0, 20));
+        $pendingAdmin = $this->createUser(UserRole::Admin);
+
+        // Jadwal 13:50 terlewat (schedule:run telat / lock overlap) tetap terkirim.
+        $missed = ReminderCronJob::query()->create([
+            'name' => 'Terlewat',
+            'type' => ReminderCronJob::TYPE_ATTENDANCE_REMINDER,
+            'time_of_day' => '13:50',
+            'is_active' => true,
+        ]);
+        // Di luar jendela susulan 30 menit: dianggap sudah lewat, tidak dikirim.
+        $stale = ReminderCronJob::query()->create([
+            'name' => 'Terlalu lama',
+            'type' => ReminderCronJob::TYPE_ATTENDANCE_REMINDER,
+            'time_of_day' => '13:00',
+            'is_active' => true,
+        ]);
+
+        $this->mock(WebPushService::class, function (MockInterface $mock) use ($pendingAdmin): void {
+            $mock->shouldReceive('sendToUsers')
+                ->once()
+                ->withArgs(fn (array $userIds, array $payload) => $userIds === [$pendingAdmin->id]
+                    && $payload['title'] === 'Terlewat');
+        });
+
+        $this->assertSame(Command::SUCCESS, Artisan::call('reminders:send-due-cron-jobs'), Artisan::output());
+        $this->travelTo(now()->setTime(14, 1, 20));
+        $this->assertSame(Command::SUCCESS, Artisan::call('reminders:send-due-cron-jobs'), Artisan::output());
+
+        $this->assertSame(now()->toDateString(), $missed->fresh()->last_sent_date?->toDateString());
+        $this->assertNull($stale->fresh()->last_sent_date);
+    }
+
     public function test_unexpected_push_exception_does_not_mark_job_as_sent(): void
     {
         $this->createUser(UserRole::Admin);

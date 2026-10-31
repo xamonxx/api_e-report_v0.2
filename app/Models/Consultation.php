@@ -46,7 +46,7 @@ class Consultation extends Model
     protected function casts(): array
     {
         return [
-            'consultation_date' => 'date',
+            'consultation_date' => 'date:Y-m-d',
         ];
     }
 
@@ -563,6 +563,26 @@ class Consultation extends Model
         }
 
         return $query;
+    }
+
+    /**
+     * Perkiraan ID berikutnya untuk pratinjau form, TANPA menaikkan sequence.
+     * Dulu pratinjau memanggil generateConsultationId() sehingga tiap buka
+     * form / ganti akun membakar satu nomor dan ID tersimpan beda dari yang
+     * ditampilkan. Nomor final tetap diambil saat simpan.
+     */
+    public static function previewConsultationId($accountId = null, $date = null): string
+    {
+        $normalizedAccountId = (int) ($accountId ?? 0);
+        $accountPadded = str_pad((string) $normalizedAccountId, 2, '0', STR_PAD_LEFT);
+        $yearMonth = ($date ? Carbon::parse($date) : Carbon::now())->format('ym');
+
+        $lastNumber = (int) DB::table('consultation_sequences')
+            ->where('account_id', $normalizedAccountId)
+            ->where('year_month', $yearMonth)
+            ->value('last_number');
+
+        return $accountPadded.'.'.$yearMonth.'.'.str_pad((string) ($lastNumber + 1), 4, '0', STR_PAD_LEFT);
     }
 
     /**

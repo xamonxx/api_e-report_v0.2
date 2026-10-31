@@ -21,23 +21,31 @@ return new class extends Migration
                 ->where('id', '!=', $row->keep_id)
                 ->delete());
 
-        Schema::table('account_user', function (Blueprint $table) {
-            $table->unique(['user_id', 'account_id'], 'account_user_membership_unique');
-        });
+        // DDL MySQL tidak transaksional: guard supaya migration bisa diulang bila
+        // sempat gagal di tengah (mis. bentrok jadwal di backfill di bawah).
+        if (! Schema::hasIndex('account_user', 'account_user_membership_unique')) {
+            Schema::table('account_user', function (Blueprint $table) {
+                $table->unique(['user_id', 'account_id'], 'account_user_membership_unique');
+            });
+        }
 
-        Schema::table('surveys', function (Blueprint $table) {
-            $table->string('schedule_slot_key', 100)->nullable()->after('scheduled_at');
-            $table->unique('schedule_slot_key', 'surveys_schedule_slot_unique');
-        });
+        if (! Schema::hasColumn('surveys', 'schedule_slot_key')) {
+            Schema::table('surveys', function (Blueprint $table) {
+                $table->string('schedule_slot_key', 100)->nullable()->after('scheduled_at');
+                $table->unique('schedule_slot_key', 'surveys_schedule_slot_unique');
+            });
+        }
 
-        Survey::query()->withTrashed()
+        // Survey soft-deleted sengaja tanpa slot key (lihat Survey::booted), jadi
+        // tidak ikut di-backfill; kalau ikut, bisa bentrok dengan survey aktif.
+        Survey::query()
             ->whereNotNull('surveyor_id')
             ->whereNotNull('scheduled_at')
             ->whereIn('state', [Survey::STATE_SCHEDULED, Survey::STATE_IN_PROGRESS])
             ->orderBy('id')
             ->each(function (Survey $survey) {
                 $key = $survey->surveyor_id.'|'.$survey->scheduled_at->format('Y-m-d H:i:s');
-                if (DB::table('surveys')->where('schedule_slot_key', $key)->exists()) {
+                if (DB::table('surveys')->where('schedule_slot_key', $key)->where('id', '!=', $survey->id)->exists()) {
                     throw new RuntimeException("Bentrok jadwal lama ditemukan pada slot {$key}; rapikan data sebelum migration.");
                 }
                 DB::table('surveys')->where('id', $survey->id)->update(['schedule_slot_key' => $key]);

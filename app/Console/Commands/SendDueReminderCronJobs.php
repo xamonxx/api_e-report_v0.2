@@ -16,16 +16,22 @@ class SendDueReminderCronJobs extends Command
 
     protected $description = 'Kirim web push untuk cron job pengingat yang jatuh tempo.';
 
+    private const CATCH_UP_MINUTES = 30;
+
     public function handle(WebPushService $webPush): int
     {
         $now = now();
-        $minuteStart = $now->copy()->startOfMinute()->format('H:i:s');
+        // Jendela mundur, bukan menit persis: kalau `schedule:run` telat atau
+        // menit itu terlewat (lock overlap, restart), job tetap terkirim sekali
+        // pada run berikutnya. `last_sent_date` mencegah kirim ganda.
+        $windowStart = $now->copy()->subMinutes(self::CATCH_UP_MINUTES)->startOfMinute();
+        $windowStartTime = $windowStart->isSameDay($now) ? $windowStart->format('H:i:s') : '00:00:00';
         $minuteEnd = $now->copy()->endOfMinute()->format('H:i:s');
         $today = $now->toDateString();
 
         $dueJobs = ReminderCronJob::query()
             ->where('is_active', true)
-            ->whereBetween('time_of_day', [$minuteStart, $minuteEnd])
+            ->whereBetween('time_of_day', [$windowStartTime, $minuteEnd])
             ->where(function ($query) use ($today) {
                 $query->whereNull('last_sent_date')
                     ->orWhereDate('last_sent_date', '<>', $today);

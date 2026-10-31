@@ -42,9 +42,12 @@ class ResolveActiveAccount
             abort(403, 'Akun Anda belum ditugaskan ke akun interior mana pun.');
         }
 
+        // Tanpa header: pakai akun primer bila masih termasuk akses admin. Akun
+        // primer bisa null/terlepas (mis. akunnya dihapus) padahal admin masih
+        // memegang akun lain di pivot; jangan kunci admin itu dengan 403.
         $activeId = $requested !== null && $requested !== ''
             ? filter_var($requested, FILTER_VALIDATE_INT)
-            : (int) $user->account_id;
+            : ($allowedIds->contains((int) $user->account_id) ? (int) $user->account_id : $allowedIds->first());
 
         abort_unless($activeId && $allowedIds->contains((int) $activeId), 403, 'Akun aktif tidak termasuk akses admin ini.');
 

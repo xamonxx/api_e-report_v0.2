@@ -62,7 +62,7 @@ class Survey extends Model
     {
         return [
             'requested_at' => 'datetime',
-            'requested_date' => 'date',
+            'requested_date' => 'date:Y-m-d',
             'assigned_at' => 'datetime',
             'scheduled_at' => 'datetime',
             'actual_start_at' => 'datetime',

@@ -49,16 +49,35 @@ class Reminder extends Model
     /**
      * Scope query berdasarkan hak akses user.
      * Admin hanya melihat pengingat miliknya (atau yang dibuatnya), SuperAdmin melihat semua.
+     * Role lain (surveyor, manager surveyor) tidak memakai pengingat lead, jadi
+     * tidak boleh melihat maupun menandai pengingat siapa pun.
      */
     public function scopeForUser($query, $user)
     {
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
         if ($user->isAdmin()) {
-            $query->where(function ($q) use ($user) {
+            return $query->where(function ($q) use ($user) {
                 $q->where('creator_id', $user->id)
                   ->orWhere('user_id', $user->id);
             });
         }
 
-        return $query;
+        return $query->whereRaw('1 = 0');
+    }
+
+    /**
+     * Pengingat yang memang milik user ini (penerima atau pembuat), dipakai
+     * untuk aksi massal seperti "bersihkan semua" agar super admin tidak
+     * menandai terbaca pengingat milik admin lain.
+     */
+    public function scopeOwnedBy($query, $user)
+    {
+        return $query->where(function ($q) use ($user) {
+            $q->where('creator_id', $user->id)
+              ->orWhere('user_id', $user->id);
+        });
     }
 }

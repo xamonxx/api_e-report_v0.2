@@ -440,13 +440,19 @@ final class WilayahNormalizer
     {
         if (self::$districtIndex === null) {
             self::$districtIndex = [];
-            foreach (Wilayah::districtMapping() as $row) {
-                $district = $row['district'] ?? null;
-                if (! $district) {
-                    continue;
-                }
+            $districts = array_values(array_filter(array_map(
+                fn ($row) => $row['district'] ?? null,
+                Wilayah::districtMapping()
+            )));
 
+            // Dua putaran: key persis (loose) semua kecamatan dulu, baru key tanpa
+            // spasi (squash). Kalau dicampur satu putaran, squash "Tompo Bulu"
+            // bisa merebut key persis kecamatan lain bernama "Tompobulu".
+            foreach ($districts as $district) {
                 self::$districtIndex[self::looseKey($district)] ??= $district;
+            }
+
+            foreach ($districts as $district) {
                 self::$districtIndex[self::squashKey($district)] ??= $district;
             }
         }

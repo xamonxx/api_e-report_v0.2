@@ -10,11 +10,13 @@ use App\Models\StatusCategory;
 use App\Models\User;
 use App\Services\NotificationSummaryService;
 use App\Services\WebPushService;
+use App\Support\ActiveAccount;
 use App\Support\PendingConfirmation;
 use App\Support\PhoneNumber;
 use App\Support\WilayahNormalizer;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -36,6 +38,9 @@ class ConsultationImportService
 
         $import = ConsultationImport::create([
             'user_id' => $user->id,
+            // Worker antrean tidak punya request, jadi akun aktif admin saat
+            // upload wajib disimpan; kalau tidak, import jatuh ke akun primer.
+            'account_id' => $user->isAdmin() ? $user->activeAccountId() : null,
             'original_name' => $file->getClientOriginalName(),
             'stored_path' => $storedPath,
             'status' => 'queued',
@@ -45,6 +50,41 @@ class ConsultationImportService
         ProcessConsultationImportJob::dispatch($import->id);
 
         return $import;
+    }
+
+    /**
+     * Pasang kembali akun aktif admin saat upload supaya semua
+     * `activeAccountId()` di bawah (akun tujuan baris, cek duplikat, badge)
+     * memakai akun itu, bukan fallback akun primer di worker antrean.
+     */
+    private function restoreActiveAccount(ConsultationImport $import): void
+    {
+        if (! $import->account_id || ! $import->user?->isAdmin()) {
+            return;
+        }
+
+        $account = Account::query()->find($import->account_id);
+
+        if (! $account || ! $import->user->hasAccountAccess((int) $account->id)) {
+            throw new RuntimeException('Akun tujuan import sudah tidak tersedia untuk admin ini.');
+        }
+
+        app(ActiveAccount::class)->set($account);
+    }
+
+    /**
+     * Import bisa menyentuh beberapa akun (super admin), jadi semua cache
+     * dashboard yang mungkin memuat lead baru ikut dibuang.
+     */
+    private function flushDashboardCache(): void
+    {
+        foreach (User::cachedSuperAdminIds() as $superAdminId) {
+            Cache::forget("dashboard:super_admin:{$superAdminId}");
+        }
+
+        foreach (Account::query()->pluck('id') as $accountId) {
+            Cache::forget("dashboard:admin:{$accountId}");
+        }
     }
 
     public function process(ConsultationImport $import): void
@@ -72,6 +112,8 @@ class ConsultationImportService
         ]);
 
         try {
+            $this->restoreActiveAccount($import);
+
             [$defaultStatus, $defaultCategory] = $this->resolveDefaults();
             $accounts = Account::query()->get(['id', 'name', 'account_group_id', 'account_group']);
             $validAccountIds = $accounts->pluck('id')->all();
@@ -215,6 +257,7 @@ class ConsultationImportService
             ]);
 
             $this->notifyPendingSurveyRequests($import->user);
+            $this->flushDashboardCache();
         } catch (Throwable $exception) {
             $import->update([
                 'status' => 'failed',

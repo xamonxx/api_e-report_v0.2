@@ -16,7 +16,9 @@ trait TracksAuditUser
 
     protected static function hasAuditColumn($model, string $column): bool
     {
-        $key = ($model->getConnectionName() ?? 'default').':'.$model->getTable().':'.$column;
+        // Nama koneksi aktual, bukan 'default': koneksi default bisa berganti
+        // (mis. suite test SQLite fixture) dan cache tidak boleh terbawa.
+        $key = $model->getConnection()->getName().':'.$model->getTable().':'.$column;
 
         if (! array_key_exists($key, static::$columnCache)) {
             static::$columnCache[$key] = $model->getConnection()->getSchemaBuilder()->hasColumn($model->getTable(), $column);

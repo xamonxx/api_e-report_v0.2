@@ -50,6 +50,8 @@ final class AccountGroup
     /** Dipakai saat laporan tidak difilter ke satu grup. */
     public const ALL_LABEL = 'SEMUA GRUP';
 
+    private const MEMO = 'account-group.memo';
+
     /** @return list<string> */
     public static function values(): array
     {
@@ -59,30 +61,64 @@ final class AccountGroup
     /** @return array<string, string> */
     public static function labels(): array
     {
-        if (! Schema::hasTable('account_groups')) {
-            return self::DEFAULT_LABELS;
-        }
+        return self::remember('labels', function () {
+            if (! Schema::hasTable('account_groups')) {
+                return self::DEFAULT_LABELS;
+            }
 
-        return DB::table('account_groups')
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->pluck('name', 'code')
-            ->all();
+            return DB::table('account_groups')
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->pluck('name', 'code')
+                ->all();
+        });
     }
 
     /** @return array<string, string> */
     public static function activeLabels(): array
     {
-        if (! Schema::hasTable('account_groups')) {
-            return self::DEFAULT_LABELS;
+        return self::remember('active_labels', function () {
+            if (! Schema::hasTable('account_groups')) {
+                return self::DEFAULT_LABELS;
+            }
+
+            return DB::table('account_groups')
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->pluck('name', 'code')
+                ->all();
+        });
+    }
+
+    /**
+     * Dibuang saat master grup berubah (lihat App\Models\AccountGroup::booted).
+     */
+    public static function flushCache(): void
+    {
+        app()->forgetInstance(self::MEMO);
+    }
+
+    /**
+     * Memo per request/job: label() dan normalize() dipanggil per baris ekspor,
+     * tanpa memo tiap baris memicu Schema::hasTable + pluck berulang (N+1).
+     * Binding scoped di-reset Laravel antar request, job antrean, dan test.
+     */
+    private static function remember(string $key, callable $load): array
+    {
+        $app = app();
+
+        if (! $app->bound(self::MEMO)) {
+            $app->scoped(self::MEMO, fn () => new \ArrayObject());
         }
 
-        return DB::table('account_groups')
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->pluck('name', 'code')
-            ->all();
+        $memo = $app->make(self::MEMO);
+
+        if (! isset($memo[$key])) {
+            $memo[$key] = $load();
+        }
+
+        return $memo[$key];
     }
 
     public static function label(?string $group): ?string
