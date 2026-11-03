@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Menjadikan grup akun (PC / NPP1 / NPP2) kolom tersendiri.
  *
- * Sebelumnya grup ditebak dari teks bebas `description` â€” yang juga dipakai
+ * Sebelumnya grup ditebak dari teks bebas `description` — yang juga dipakai
  * sebagai filter kategori akun dan ditulis oleh AccountGroupSeeder. Kolom ini
  * memisahkan kedua tugas itu; `description` tetap ada sebagai tagline/kategori.
  */

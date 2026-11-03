@@ -63,7 +63,7 @@ class SurveyPolicy
     }
 
     /**
-     * Menugaskan surveyor + jadwal (requested â†’ scheduled): manager surveyor.
+     * Menugaskan surveyor + jadwal (requested → scheduled): manager surveyor.
      */
     public function assign(User $user, Survey $survey): bool
     {
@@ -105,7 +105,7 @@ class SurveyPolicy
     }
 
     /**
-     * Mengisi hasil survey (scheduled â†’ completed):
+     * Mengisi hasil survey (scheduled → completed):
      * surveyor pemilik, atau manager surveyor.
      */
     public function submitResult(User $user, Survey $survey): bool

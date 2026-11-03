@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
  *
  * Idempotent + safe to re-run:
  *  - Matches an existing account by name (case-insensitive; optional aliases),
- *    and only updates its group â€” the existing name/casing and all other fields
+ *    and only updates its group — the existing name/casing and all other fields
  *    are left untouched.
  *  - Creates the account when no match is found.
  *
@@ -103,6 +103,6 @@ class AccountGroupSeeder extends Seeder
             }
         }
 
-        $this->command?->info("AccountGroupSeeder done â€” created: {$created}, updated: {$updated}, unchanged: {$unchanged}");
+        $this->command?->info("AccountGroupSeeder done — created: {$created}, updated: {$updated}, unchanged: {$unchanged}");
     }
 }

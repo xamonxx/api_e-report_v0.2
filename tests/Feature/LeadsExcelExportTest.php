@@ -15,6 +15,7 @@ use App\Support\PendingConfirmation;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /**
@@ -176,6 +177,34 @@ class LeadsExcelExportTest extends TestCase
         $row = $this->findRowContaining($this->exportXml(), 'Klien Belum Konfirmasi Kebutuhan');
 
         $this->assertStringContainsString('>0</Data>', $row);
+    }
+
+    public function test_kolom_teks_panjang_rata_kiri(): void
+    {
+        $this->lead('CNS-KIRI-1', 'Klien Rata Kiri', ['notes' => 'Catatan rata kiri']);
+
+        $xml = $this->exportXml();
+        $row = $this->findRowContaining($xml, 'Klien Rata Kiri');
+
+        // Nama Akun, Nama Konsumen, Alamat Lengkap, Catatan.
+        $this->assertStringContainsString('ss:StyleID="dataLeadBlueLeft"', $row);
+        $this->assertStringContainsString('ss:StyleID="dataLeadBodyLeft"', $row);
+        $this->assertSame(2, substr_count($row, 'ss:StyleID="dataLeadBodyWrapLeft"'));
+        $this->assertMatchesRegularExpression(
+            '/<Style ss:ID="dataLeadBodyLeft"><Alignment ss:Horizontal="Left"/',
+            $xml
+        );
+    }
+
+    public function test_nama_file_export_huruf_besar_dengan_ekstensi_kecil(): void
+    {
+        Sanctum::actingAs($this->superAdmin());
+
+        $disposition = $this->get('/api/v1/export/leads/excel?month=11&year=2026')
+            ->assertOk()
+            ->headers->get('Content-Disposition');
+
+        $this->assertMatchesRegularExpression('/filename="DATA-LEADS-[A-Z0-9-]+\.xlsx"/', $disposition);
     }
 
     public function test_validasi_dropdown_mengikuti_kolom_yang_bergeser(): void

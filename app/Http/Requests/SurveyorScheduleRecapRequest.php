@@ -10,11 +10,11 @@ use Illuminate\Validation\Rule;
 /**
  * Filter rekap jadwal surveyor.
  *
- * Hanya periode mingguan. Gridnya secara struktur satu minggu Seninâ€“Minggu
- * (7 kolom, satu tanggal masing-masing) â€” sebulan tidak muat, dan menerima
+ * Hanya periode mingguan. Gridnya secara struktur satu minggu Senin–Minggu
+ * (7 kolom, satu tanggal masing-masing) — sebulan tidak muat, dan menerima
  * period_type=monthly berarti diam-diam merender satu minggu saja dari bulan
  * yang diminta. "Minggu ke-1/2/3" cukup dikirim sebagai week_date: resolver
- * menjepret tanggal apapun ke minggu Seninâ€“Minggu miliknya.
+ * menjepret tanggal apapun ke minggu Senin–Minggu miliknya.
  */
 class SurveyorScheduleRecapRequest extends FormRequest
 {

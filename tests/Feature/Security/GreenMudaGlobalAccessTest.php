@@ -123,16 +123,16 @@ class GreenMudaGlobalAccessTest extends TestCase
     {
         $rows = GreenMudaRoster::accounts();
 
-        $this->assertCount(33, $rows);
+        $this->assertCount(31, $rows);
         $this->assertSame(AccountGroup::values(), array_keys(GreenMudaRoster::GROUPS));
         $this->assertCount(7, GreenMudaRoster::SURVEYORS);
-        $this->assertCount(33, collect($rows)->pluck('account')->unique());
-        $this->assertCount(18, collect($rows)->pluck('admin')->unique());
-        $this->assertSame('SRI', collect($rows)->firstWhere('account', 'FURNITURE CIMAHI')['admin']);
-        $this->assertSame('LISA', collect($rows)->firstWhere('account', 'MEWAH INTERIOR')['admin']);
-        $this->assertSame('HASNI', collect($rows)->firstWhere('account', 'MEDIAN INTERIOR')['admin']);
-        $this->assertSame('HASNI', collect($rows)->firstWhere('account', 'INTERIOR KITA')['admin']);
-        $this->assertSame('HASNI', collect($rows)->firstWhere('account', 'ALLFAR INTERIOR')['admin']);
+        $this->assertCount(31, collect($rows)->pluck('account')->unique());
+        $this->assertCount(17, collect($rows)->pluck('admin')->unique());
+        $this->assertSame('ADI', collect($rows)->firstWhere('account', 'FURNITURE CIMAHI')['admin']);
+        $this->assertSame('ADI', collect($rows)->firstWhere('account', 'MEWAH INTERIOR')['admin']);
+        $this->assertSame('AGUNG', collect($rows)->firstWhere('account', 'MEDIAN INTERIOR')['admin']);
+        $this->assertSame('AGUNG', collect($rows)->firstWhere('account', 'BROTO INTERIOR')['admin']);
+        $this->assertSame('ANNISA', collect($rows)->firstWhere('account', 'SOLUTION INTERIOR')['admin']);
         $this->assertSame('superadmin@ereport.app', GreenMudaRoster::SUPER_ADMIN['email']);
     }
 

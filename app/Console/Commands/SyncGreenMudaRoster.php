@@ -19,11 +19,12 @@ class SyncGreenMudaRoster extends Command
 {
     protected $signature = 'app:sync-green-muda-roster {--apply : Terapkan perubahan (default dry-run)} {--credentials= : Path file kredensial baru di luar Git} {--since=2026-10-21 : Tanggal awal migrasi grup data konsultasi}';
 
-    protected $description = 'Sinkronkan 33 akun, super admin, admin multi-akun, manager global, dan 7 surveyor Green Muda';
+    protected $description = 'Sinkronkan 31 akun, super admin, admin multi-akun, manager global, dan 7 surveyor Green Muda';
 
     private const ALIASES = [
-        'FULLHOME' => 'FULLHOME ID',
-        'FULLHOME INTERIOR' => 'FULLHOME ID',
+        'FULLHOME ID' => 'FULLHOME',
+        'FULLHOME INTERIOR' => 'FULLHOME',
+        'DEMOAKUN INTERIOR' => 'SOLUTION INTERIOR',
         'NACIRA STUDIO' => 'NACIRA INTERIOR',
         'NISCALA FURN' => 'NISCALA FURNITURE',
         'PUTRA M' => 'PUTRA MOULDING',
@@ -31,6 +32,7 @@ class SyncGreenMudaRoster extends Command
     ];
 
     private const ADMIN_NAME_ALIASES = [
+        'SANDIKA' => ['Sandika'],
         'DIAN G' => ['DIAN'],
         'HASNI' => ['PAK HAS'],
     ];
@@ -44,14 +46,14 @@ class SyncGreenMudaRoster extends Command
         }
 
         $rows = GreenMudaRoster::accounts();
-        if (count($rows) !== 33 || count(GreenMudaRoster::GROUPS) !== 5) {
-            throw new RuntimeException('Kontrak roster rusak: harus tepat 33 akun dan 5 grup.');
+        if (count($rows) !== 31 || count(GreenMudaRoster::GROUPS) !== 5) {
+            throw new RuntimeException('Kontrak roster rusak: harus tepat 31 akun dan 5 grup.');
         }
 
         $since = $this->option('since') ?: '2026-10-21';
         $pendingConsultations = $this->pendingConsultationsCount($rows, $since);
         $adminCount = collect($rows)->pluck('admin')->unique()->count();
-        $this->info(($this->option('apply') ? 'APPLY' : 'DRY-RUN').": 33 akun, 5 grup, {$adminCount} admin unik, 1 super admin, 7 surveyor global. Konsultasi sejak {$since} butuh update: {$pendingConsultations}.");
+        $this->info(($this->option('apply') ? 'APPLY' : 'DRY-RUN').": 31 akun, 5 grup, {$adminCount} admin unik, 1 super admin, 7 surveyor global. Konsultasi sejak {$since} butuh update: {$pendingConsultations}.");
         if (! $this->option('apply')) {
             foreach ($rows as $row) {
                 $this->line("{$row['group']} | {$row['admin']} -> {$row['account']}");
@@ -121,35 +123,115 @@ class SyncGreenMudaRoster extends Command
 
         $hasAccountGroupsTable = Schema::hasTable('account_groups');
 
-        foreach ($rows as $row) {
-            $target = $row['account'];
-            $lookup = $this->normalize($target);
-            $account = $byNormalized->get($lookup);
-            if (! $account) {
-                $legacy = collect(self::ALIASES)->search($target, true);
-                $account = $legacy ? $byNormalized->get($this->normalize($legacy)) : null;
+        Schema::disableForeignKeyConstraints();
+        try {
+            // Fase 1: Geser semua akun yang ID-nya belum sesuai target ke offset +1000 agar bebas tabrakan PK
+            $matchedAccounts = [];
+            foreach ($rows as $row) {
+                $target = $row['account'];
+                $expectedId = $row['id'] ?? GreenMudaRoster::ACCOUNT_IDS[$target] ?? null;
+                $lookup = $this->normalize($target);
+                $account = $byNormalized->get($lookup);
+                if (! $account) {
+                    $legacy = collect(self::ALIASES)->search($target, true);
+                    $account = $legacy ? $byNormalized->get($this->normalize($legacy)) : null;
+                }
+                if ($account) {
+                    $matchedAccounts[$target] = $account;
+                }
             }
-            $account ??= new Account;
-            $account->name = $target;
-            $account->account_group = $row['group'];
-            if ($hasAccountGroupsTable) {
-                $groupModel = AccountGroup::firstOrCreate(
-                    ['code' => $row['group']],
-                    ['name' => GreenMudaRoster::GROUPS[$row['group']] ?? $row['group'], 'is_active' => true]
-                );
-                $account->account_group_id = $groupModel->id;
+
+            // Geser juga akun non-roster yang kebetulan menduduki expectedId
+            $targetIds = collect($rows)->map(fn ($r) => $r['id'] ?? GreenMudaRoster::ACCOUNT_IDS[$r['account']])->filter()->all();
+            $matchedCurrentIds = collect($matchedAccounts)->pluck('id')->all();
+            Account::withTrashed()
+                ->whereIn('id', $targetIds)
+                ->whereNotIn('id', $matchedCurrentIds)
+                ->orderByDesc('id')
+                ->get()
+                ->each(function (Account $other) {
+                    $tempId = 2000 + (int) $other->id;
+                    $this->remapAccountReferences((int) $other->id, $tempId);
+                    DB::table('accounts')->where('id', $other->id)->update(['id' => $tempId]);
+                });
+
+            foreach ($matchedAccounts as $target => $account) {
+                $expectedId = GreenMudaRoster::ACCOUNT_IDS[$target] ?? null;
+                if ($expectedId && (int) $account->id !== $expectedId) {
+                    $tempId = 1000 + $expectedId;
+                    $this->remapAccountReferences((int) $account->id, $tempId);
+                    DB::table('accounts')->where('id', $account->id)->update(['id' => $tempId]);
+                    $account->id = $tempId;
+                }
             }
-            $account->save();
-            if ($account->trashed()) {
-                $account->restore();
+
+            // Fase 2: Tempatkan setiap akun roster ke expectedId eksaknya
+            foreach ($rows as $row) {
+                $target = $row['account'];
+                $expectedId = $row['id'] ?? GreenMudaRoster::ACCOUNT_IDS[$target] ?? null;
+                $account = $matchedAccounts[$target] ?? null;
+
+                $groupId = null;
+                if ($hasAccountGroupsTable) {
+                    $groupModel = AccountGroup::firstOrCreate(
+                        ['code' => $row['group']],
+                        ['name' => $row['group'], 'is_active' => true]
+                    );
+                    $groupId = $groupModel->id;
+                }
+
+                if ($account) {
+                    if ($expectedId && (int) $account->id !== $expectedId) {
+                        $oldId = (int) $account->id;
+                        DB::table('accounts')->where('id', $oldId)->update(['id' => $expectedId]);
+                        $this->remapAccountReferences($oldId, $expectedId);
+                    }
+                    $account = Account::withTrashed()->findOrFail($expectedId ?: $account->id);
+                    $account->name = $target;
+                    $account->account_group = $row['group'];
+                    if ($hasAccountGroupsTable) {
+                        $account->account_group_id = $groupId;
+                    }
+                    $account->save();
+                } else {
+                    $insertData = [
+                        'name' => $target,
+                        'account_group' => $row['group'],
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                    if ($expectedId) {
+                        $insertData['id'] = $expectedId;
+                    }
+                    if ($hasAccountGroupsTable) {
+                        $insertData['account_group_id'] = $groupId;
+                    }
+                    $insertedId = DB::table('accounts')->insertGetId($insertData);
+                    $account = Account::withTrashed()->findOrFail($expectedId ?: $insertedId);
+                }
+
+                if ($account->trashed()) {
+                    $account->restore();
+                }
+                $activeIds[] = $account->id;
+                $resolved[$target] = $account;
             }
-            $activeIds[] = $account->id;
-            $resolved[$target] = $account;
+        } finally {
+            Schema::enableForeignKeyConstraints();
         }
 
         Account::query()->whereNotIn('id', $activeIds)->each(fn (Account $account) => $account->delete());
 
         return $resolved;
+    }
+
+    private function remapAccountReferences(int $oldId, int $newId): void
+    {
+        foreach (['users', 'account_user', 'consultations', 'consultation_sequences', 'consultation_imports', 'surveys', 'report_attendances'] as $table) {
+            if (Schema::hasTable($table)) {
+                DB::table($table)->where('account_id', $oldId)->update(['account_id' => $newId]);
+            }
+        }
     }
 
     private function syncAdmins(array $rows, array $accounts, array &$credentials): void
@@ -168,7 +250,7 @@ class SyncGreenMudaRoster extends Command
                 if (User::withTrashed()->whereRaw('LOWER(email) = ?', [mb_strtolower($email)])->exists()) {
                     throw new RuntimeException("Konflik email {$email}; sinkronisasi dihentikan.");
                 }
-                $password = Str::password(20);
+                $password = env('SEED_DEFAULT_PASSWORD', 'Putraramadhan93');
                 $user = new User(['email' => $email, 'password' => Hash::make($password)]);
                 $user->role = UserRole::Admin;
                 $credentials[] = [$displayName, $email, $password, 'admin'];
@@ -327,14 +409,17 @@ class SyncGreenMudaRoster extends Command
         User::query()->where('role', UserRole::ManagerSurveyor->value)->update(['survey_team' => null]);
         $keep = [];
         foreach (GreenMudaRoster::SURVEYORS as $name) {
+            $email = Str::slug($name, '.').'.surveyor@ereport.app';
             $user = User::withTrashed()->where('role', UserRole::Surveyor->value)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first();
+                ->where(function ($query) use ($name, $email) {
+                    $query->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+                        ->orWhereRaw('LOWER(email) = ?', [mb_strtolower($email)]);
+                })->first();
             if (! $user) {
-                $email = Str::slug($name, '.').'.surveyor@ereport.app';
                 if (User::withTrashed()->whereRaw('LOWER(email) = ?', [mb_strtolower($email)])->exists()) {
                     throw new RuntimeException("Konflik email {$email}; sinkronisasi dihentikan.");
                 }
-                $password = Str::password(20);
+                $password = env('SEED_DEFAULT_PASSWORD', 'Putraramadhan93');
                 $user = new User(['email' => $email, 'password' => Hash::make($password)]);
                 $user->role = UserRole::Surveyor;
                 $credentials[] = [$name, $email, $password, 'surveyor'];

@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Schema;
  * rejects the `surveyor` / `manager_surveyor` values already declared in
  * App\Enums\UserRole. We convert the column to a plain string: role validity
  * is already enforced at the application layer (UserRole cast + Enum rule in
- * MasterDataController), so the DB-level enum is redundant and brittle â€” a
+ * MasterDataController), so the DB-level enum is redundant and brittle — a
  * string means future roles need no further migration.
  */
 return new class extends Migration

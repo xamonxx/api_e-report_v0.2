@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Audit transisi state survey (requested â†’ scheduled â†’ completed â†’ ...).
+ * Audit transisi state survey (requested → scheduled → completed → ...).
  * Meniru pola consultation_status_histories.
  */
 return new class extends Migration

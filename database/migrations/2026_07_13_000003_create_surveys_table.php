@@ -5,12 +5,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Dimensi survey â€” terpisah dari status pipeline lead. Satu consultation bisa
+ * Dimensi survey — terpisah dari status pipeline lead. Satu consultation bisa
  * punya banyak survey historis (mis. re-survey), umumnya satu yang aktif.
  *
- * Lifecycle state: requested â†’ scheduled â†’ completed (atau cancelled).
- * - requested : admin "Ajukan Survey" â†’ masuk antrian Manager Surveyor.
- * - scheduled : Manager pilih surveyor + jadwal â†’ "Masuk Survey".
+ * Lifecycle state: requested → scheduled → completed (atau cancelled).
+ * - requested : admin "Ajukan Survey" → masuk antrian Manager Surveyor.
+ * - scheduled : Manager pilih surveyor + jadwal → "Masuk Survey".
  * - completed : Surveyor isi result_status (mis. "Hold Up Desain") + catatan.
  */
 return new class extends Migration

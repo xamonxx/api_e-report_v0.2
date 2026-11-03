@@ -11,14 +11,14 @@ use Illuminate\Support\Collection;
 
 /**
  * Rekap jadwal surveyor: beban survey tiap surveyor dalam satu minggu
- * Seninâ€“Minggu.
+ * Senin–Minggu.
  *
- * Satu sumber data untuk dua konsumen â€” halaman rekap (JSON) dan
+ * Satu sumber data untuk dua konsumen — halaman rekap (JSON) dan
  * SurveyorScheduleRecapExcelExporter. Semua yang bisa berselisih antar keduanya
  * (subtitle, jumlah baris, urutan nama) dihitung di sini, sekali.
  *
  * Sengaja TANPA cache. Stempel `analytics:last_updated` hanya digerakkan event
- * model Consultation & ReportAttendance (AppServiceProvider), bukan Survey â€”
+ * model Consultation & ReportAttendance (AppServiceProvider), bukan Survey —
  * ikut memakainya berarti rekap basi sampai 3 menit setiap kali surveyor
  * ditugaskan, tepat pada halaman yang gunanya menampilkan jadwal terkini.
  * Datanya cuma 7 hari dan sudah ter-index; bila kelak melambat, tambahkan
@@ -46,14 +46,14 @@ class SurveyorScheduleRecapService
     {
     }
 
-    /** Grid Seninâ€“Minggu = 7 kolom. Kontrak ini dipegang exporter juga. */
+    /** Grid Senin–Minggu = 7 kolom. Kontrak ini dipegang exporter juga. */
     public const DAYS_IN_WEEK = 7;
 
     public function buildForUser(User $user, array $filters, array $options = []): array
     {
         // array_merge, bukan operator +: mingguan harus MENANG atas apapun yang
         // dikirim pemanggil. Dengan `+`, period_type=monthly milik pemanggil
-        // tetap dipakai dan menghasilkan 31 slot hari â€” grid dan exporter
+        // tetap dipakai dan menghasilkan 31 slot hari — grid dan exporter
         // sama-sama mengasumsikan tepat 7.
         $period = $this->periodResolver->resolve(array_merge($filters, ['period_type' => 'weekly']));
         $accountGroup = AccountGroup::normalize($filters['account_group'] ?? null);
@@ -122,7 +122,7 @@ class SurveyorScheduleRecapService
     }
 
     /**
-     * Tepat 7 slot hari, walau kosong â€” gridnya selalu Seninâ€“Minggu.
+     * Tepat 7 slot hari, walau kosong — gridnya selalu Senin–Minggu.
      */
     private function buildDays(array $period, Collection $surveys): Collection
     {
@@ -232,7 +232,7 @@ class SurveyorScheduleRecapService
     }
 
     /**
-     * Minggu Seninâ€“Minggu bisa melintasi batas bulan (mis. 29 Jun â€“ 5 Jul).
+     * Minggu Senin–Minggu bisa melintasi batas bulan (mis. 29 Jun – 5 Jul).
      * Menyebut satu bulan saja akan menyesatkan, jadi keduanya ditulis saat
      * berbeda: "JUNI - JULI 2026", atau "DESEMBER 2026 - JANUARI 2027".
      */

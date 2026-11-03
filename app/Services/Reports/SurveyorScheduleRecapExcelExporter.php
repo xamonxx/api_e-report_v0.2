@@ -5,10 +5,10 @@ namespace App\Services\Reports;
 use InvalidArgumentException;
 
 /**
- * Excel "Rekap Jadwal Surveyor": grid Seninâ€“Minggu + tabel jumlah per surveyor
+ * Excel "Rekap Jadwal Surveyor": grid Senin–Minggu + tabel jumlah per surveyor
  * di sebelah kanannya.
  *
- * Menerima apa adanya hasil SurveyorScheduleRecapService::buildForUser() â€”
+ * Menerima apa adanya hasil SurveyorScheduleRecapService::buildForUser() —
  * subtitle, jumlah baris, dan urutan nama sudah final di sana, jadi angka di
  * layar dan di file ini tidak bisa berselisih.
  *
@@ -16,7 +16,7 @@ use InvalidArgumentException;
  *  - Baris di-key berdasarkan nomornya. Dua <Row> bernomor sama membuat yang
  *    pertama hilang TANPA error dan file tetap terbuka. Karena tabel ringkasan
  *    berada di baris yang sama dengan grid, baris TIDAK boleh dirakit sebagai
- *    dua aliran terpisah â€” makanya di sini dipakai peta baris.
+ *    dua aliran terpisah — makanya di sini dipakai peta baris.
  *  - Sel dalam satu baris harus urut naik menurut kolom, atau Excel menolaknya.
  *  - Warna border di-hardcode hitam oleh converter; jangan menulis border
  *    berwarna lalu berharap ia muncul.
@@ -49,11 +49,11 @@ class SurveyorScheduleRecapExcelExporter
 
         // Tata letak ini mengunci hari ke kolom B..H dan ringkasan ke J..K.
         // Lebih dari 7 hari akan menempatkan hari ke-9 tepat di kolom ringkasan
-        // dan saling menimpa di peta baris â€” tanpa error, file tetap terbuka,
+        // dan saling menimpa di peta baris — tanpa error, file tetap terbuka,
         // datanya diam-diam hilang. Lebih baik gagal keras di sini.
         if (count($days) !== SurveyorScheduleRecapService::DAYS_IN_WEEK) {
             throw new InvalidArgumentException(sprintf(
-                'Rekap jadwal butuh tepat %d hari, diberi %d. Tata letak Excel-nya hanya muat satu minggu Seninâ€“Minggu.',
+                'Rekap jadwal butuh tepat %d hari, diberi %d. Tata letak Excel-nya hanya muat satu minggu Senin–Minggu.',
                 SurveyorScheduleRecapService::DAYS_IN_WEEK,
                 count($days)
             ));
@@ -145,7 +145,7 @@ class SurveyorScheduleRecapExcelExporter
 
     /**
      * Ringkasan mulai baris 4 (sejajar baris tanggal) lalu TOTAL. Panjangnya
-     * bebas terhadap grid â€” bila surveyornya lebih banyak dari baris grid,
+     * bebas terhadap grid — bila surveyornya lebih banyak dari baris grid,
      * tabel ini memang menjulur ke bawah, dan peta baris menanganinya sendiri.
      */
     private function putSummary(array $summary, int $total): void
@@ -182,7 +182,7 @@ class SurveyorScheduleRecapExcelExporter
     /**
      * Merender peta baris jadi <Row>/<Cell>.
      *
-     * ss:Index dipasang hanya saat ada lompatan kolom â€” inilah yang membuat
+     * ss:Index dipasang hanya saat ada lompatan kolom — inilah yang membuat
      * tabel ringkasan bisa duduk di baris yang sama dengan grid.
      */
     private function renderRows(): string

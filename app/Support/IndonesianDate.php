@@ -10,12 +10,12 @@ use Carbon\CarbonInterface;
  * Carbon->locale('id') butuh ekstensi intl untuk translatedFormat yang
  * konsisten; peta eksplisit ini sudah lebih dulu dipakai (dan diduplikasi) di
  * LeadsReportService::DAY_NAMES dan AdminReportAttendanceExcelExporter::dayName().
- * Kelas ini menjadi rumah untuk kode baru â€” dua salinan lama sengaja dibiarkan
+ * Kelas ini menjadi rumah untuk kode baru — dua salinan lama sengaja dibiarkan
  * agar perubahan ini tidak menyentuh laporan yang sedang berjalan.
  */
 final class IndonesianDate
 {
-    /** Diindeks ISO: 1 = Senin â€¦ 7 = Minggu. */
+    /** Diindeks ISO: 1 = Senin … 7 = Minggu. */
     private const DAY_NAMES = [
         1 => 'Senin',
         2 => 'Selasa',

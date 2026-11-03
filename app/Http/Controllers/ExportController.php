@@ -27,6 +27,12 @@ class ExportController extends Controller
     /**
      * Optimized CSV export: select only needed columns to reduce memory usage.
      * Uses lazy() for chunked processing to handle large datasets.
+     *
+     * Ditulis UTF-16LE + BOM dengan pemisah tab supaya dobel-klik di Excel
+     * langsung benar di locale apa pun. Format lama (UTF-8 BOM + baris `sep=,`)
+     * terbukti mojibake di Excel id-ID: begitu ada `sep=`, Excel mengabaikan
+     * BOM dan membaca isi sebagai Windows-1252. Tanpa `sep=`, koma tidak
+     * dipecah jadi kolom karena list separator id-ID adalah `;`.
      */
     public function exportCsv(Request $request): StreamedResponse
     {
@@ -69,14 +75,14 @@ class ExportController extends Controller
         return response()->streamDownload(function () use ($query) {
             $handle = fopen('php://output', 'w');
 
-            fputs($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputs($handle, "sep=,\n");
+            fwrite($handle, "\xFF\xFE");
+            stream_filter_append($handle, 'convert.iconv.UTF-8/UTF-16LE', STREAM_FILTER_WRITE);
 
             fputcsv($handle, [
                 'ID Konsultasi', 'Nama Klien', 'No. Telepon', 'Provinsi', 'Kota',
                 'Akun', 'Nama Produk', 'Detail Produk', 'Status', 'Catatan',
                 'Tanggal Konsultasi', 'Dibuat Oleh', 'Tanggal Update',
-            ]);
+            ], "\t");
 
             foreach ($query->orderBy('consultation_date', 'desc')->lazy(500) as $consultation) {
                 $phone = $consultation->phone ? "'" . $consultation->phone : '';
@@ -95,12 +101,12 @@ class ExportController extends Controller
                     $consultation->consultation_date?->format('d/m/Y') ?? '',
                     $this->sanitizeCsvCell($consultation->creator?->name),
                     $consultation->updated_at?->format('d/m/Y H:i') ?? '',
-                ]);
+                ], "\t");
             }
 
             fclose($handle);
         }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Type' => 'text/csv; charset=UTF-16LE',
             'Pragma' => 'public',
             'Cache-Control' => 'no-cache, must-revalidate',
         ]);
@@ -291,6 +297,7 @@ class ExportController extends Controller
             ->slug()
             ->toString();
 
-        return sprintf('data-leads-%s-%s.%s', $account, $period, $extension);
+        // Nama file huruf besar (DATA-LEADS-SEMUA-AKUN-NOVEMBER-2026), ekstensi tetap kecil.
+        return mb_strtoupper(sprintf('data-leads-%s-%s', $account, $period)) . '.' . $extension;
     }
 }

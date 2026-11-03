@@ -132,7 +132,7 @@ final class AccountGroup
      * Judul laporan untuk sebuah grup.
      *
      * Payung sengaja tidak dipakai mentah: NPP1 dan NPP2 sama-sama "BISNIS
-     * PRIBADI", jadi dua export dengan data berbeda akan berjudul identik â€”
+     * PRIBADI", jadi dua export dengan data berbeda akan berjudul identik —
      * berbahaya untuk laporan. Label grup ditambahkan dalam kurung hanya bila
      * payungnya memang dipakai lebih dari satu grup, sehingga peta UMBRELLA
      * tetap satu-satunya yang perlu diubah bila penamaan berubah.
@@ -157,7 +157,7 @@ final class AccountGroup
 
     /**
      * Menyeragamkan input pengguna/permintaan ke nilai kanonis.
-     * "npp 1", "NPP 1", "npp1" â†’ "NPP1". Nilai tak dikenal â†’ null.
+     * "npp 1", "NPP 1", "npp1" → "NPP1". Nilai tak dikenal → null.
      */
     public static function normalize(?string $value): ?string
     {
@@ -178,7 +178,7 @@ final class AccountGroup
      * PC-vs-NPP identik setelah backfill.
      *
      * Satu perbedaan yang disengaja: logika lama melempar kasus kosong/tak
-     * dikenal ke NPP, di sini ke PC â€” sesuai keputusan bahwa akun tanpa
+     * dikenal ke NPP, di sini ke PC — sesuai keputusan bahwa akun tanpa
      * penanda adalah bagian dari grup utama.
      */
     public static function fromDescription(?string $description): string

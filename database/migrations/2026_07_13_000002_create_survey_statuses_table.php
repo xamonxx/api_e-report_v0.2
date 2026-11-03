@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Master "Status Survey" â€” status hasil survey yang diisi surveyor
+ * Master "Status Survey" — status hasil survey yang diisi surveyor
  * (mis. "Hold Up Desain", "Deal", "Revisi Desain"). Meniru pola
  * status_categories: global, reorderable via sort_order, configurable
  * oleh super_admin. Terpisah dari status pipeline marketing.

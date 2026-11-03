@@ -81,7 +81,7 @@ class SurveyController extends Controller
 
     /**
      * POST /api/v1/consultations/{consultation}/survey
-     * Admin/sales mengajukan survey â†’ state=requested (masuk antrian manager).
+     * Admin/sales mengajukan survey → state=requested (masuk antrian manager).
      */
     public function store(Request $request, Consultation $consultation): JsonResponse
     {
@@ -317,7 +317,7 @@ class SurveyController extends Controller
     /**
      * PATCH /api/v1/surveys/{survey}/reschedule
      * Admin mengubah jadwal yang diajukan (requested_date/time) pada survey
-     * yang belum berjalan â†’ simpan riwayat + notifikasi ke Manager Surveyor
+     * yang belum berjalan → simpan riwayat + notifikasi ke Manager Surveyor
      * dengan penanda "reschedule".
      */
     public function reschedule(Request $request, Survey $survey): JsonResponse
@@ -350,7 +350,7 @@ class SurveyController extends Controller
             ? Carbon::parse($survey->requested_date->format('Y-m-d').' '.($survey->requested_time ?: '23:59:59'))
             : null;
 
-        // Tidak ada perubahan â†’ tolak agar tidak spam notifikasi.
+        // Tidak ada perubahan → tolak agar tidak spam notifikasi.
         if ($oldAt && $oldAt->equalTo($newRequestedAt)) {
             return response()->json(['message' => 'Jadwal yang dimasukkan sama dengan jadwal saat ini.'], 422);
         }
@@ -471,7 +471,7 @@ class SurveyController extends Controller
 
     /**
      * GET /api/v1/surveys/recap
-     * Rekap jadwal surveyor satu minggu Seninâ€“Minggu.
+     * Rekap jadwal surveyor satu minggu Senin–Minggu.
      */
     public function recap(
         SurveyorScheduleRecapRequest $request,
@@ -716,7 +716,7 @@ class SurveyController extends Controller
 
     /**
      * PATCH /api/v1/surveys/{survey}/assign
-     * Manager menetapkan surveyor + jadwal awal: requested â†’ scheduled.
+     * Manager menetapkan surveyor + jadwal awal: requested → scheduled.
      */
     public function assign(Request $request, Survey $survey): JsonResponse
     {

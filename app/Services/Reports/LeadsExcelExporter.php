@@ -594,12 +594,12 @@ class LeadsExcelExporter
             ! empty($item['consultation_date_excel'])
                 ? $this->cell($item['consultation_date_excel'], 'dataLeadDate', 'DateTime')
                 : $this->cell('', 'dataLeadDate'),
-            $this->cell($item['account'] ?? '', 'dataLeadBlue'),
-            $this->cell($item['client_name'] ?? '', 'dataLeadBody'),
+            $this->cell($item['account'] ?? '', 'dataLeadBlueLeft'),
+            $this->cell($item['client_name'] ?? '', 'dataLeadBodyLeft'),
             // Disimpan E.164 tanpa pemisah; ditampilkan dalam bentuk
             // internasional yang enak dibaca sesuai negaranya.
             $this->cell(PhoneNumber::format($item['phone'] ?? ''), 'dataLeadPhone'),
-            $this->cell($item['full_address'] ?? '', 'dataLeadBodyWrap'),
+            $this->cell($item['full_address'] ?? '', 'dataLeadBodyWrapLeft'),
             $this->cell($item['domicile'] ?? '', 'dataLeadAuto', formula: $this->domicileByCityFormula()),
             $this->cell($item['province'] ?? '', 'dataLeadBlue'),
             $this->cell($this->excelCityName($item['city'] ?? ''), 'dataLeadBlue'),
@@ -612,7 +612,7 @@ class LeadsExcelExporter
                 ? $this->cell($item['category_label'] ?? '', 'dataLeadAuto')
                 : $this->cell('', 'dataLeadAuto', formula: $this->categoryLabelFormula()),
             $this->cell($item['product_details'] ?? '', 'dataLeadBodyWrap'),
-            $this->cell($item['notes'] ?? '', 'dataLeadBodyWrap'),
+            $this->cell($item['notes'] ?? '', 'dataLeadBodyWrapLeft'),
             $this->cell($item['status'] ?? '', 'dataLeadBlue'),
             ! empty($item['updated_at_excel'])
                 ? $this->cell($item['updated_at_excel'], 'dataLeadDate', 'DateTime')
@@ -1156,6 +1156,11 @@ class LeadsExcelExporter
             . $this->style('dataLeadPhone', '#FFFFFF', '#000000', true, 11, 'Center', 'Center', numberFormat: '@', borderWeight: 2)
             . $this->style('dataLeadBlue', '#6699FF', '#000000', true, 11, 'Center', 'Center', borderWeight: 2)
             . $this->style('dataLeadBlueWrap', '#6699FF', '#000000', true, 11, 'Center', 'Center', true, borderWeight: 2)
+            // Varian rata kiri khusus kolom teks panjang (Nama Akun, Nama
+            // Konsumen, Alamat Lengkap, Catatan) supaya enak dibaca.
+            . $this->style('dataLeadBodyLeft', '#FFFFFF', '#000000', true, 11, 'Left', 'Center', borderWeight: 2)
+            . $this->style('dataLeadBodyWrapLeft', '#FFFFFF', '#000000', true, 11, 'Left', 'Center', true, borderWeight: 2)
+            . $this->style('dataLeadBlueLeft', '#6699FF', '#000000', true, 11, 'Left', 'Center', borderWeight: 2)
             . $this->style('dataLeadDate', '#FFFFFF', '#000000', true, 11, 'Center', 'Center', numberFormat: 'dd/mm/yyyy', borderWeight: 2)
             . $this->style('analysisTitle', '#FFFFFF', '#000000', true, 14, 'Left', 'Center', border: false)
             . $this->style('analysisMetaLabel', '#FFFFFF', '#000000', true, 14, 'Left', 'Center', border: false)

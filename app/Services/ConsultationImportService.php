@@ -120,6 +120,24 @@ class ConsultationImportService
             $accountNameMap = $accounts
                 ->mapWithKeys(fn (Account $account) => [$this->normalizeLookup($account->name) => $account->id])
                 ->all();
+
+            $legacyAccountAliases = [
+                'fullhome id' => 'fullhome',
+                'fullhome interior' => 'fullhome',
+                'demoakun interior' => 'solution interior',
+                'nacira studio' => 'nacira interior',
+                'niscala furn' => 'niscala furniture',
+                'putra m' => 'putra moulding',
+                'kitchenset bandung barat' => 'kitchenset solution bandung',
+            ];
+            foreach ($legacyAccountAliases as $legacyAlias => $canonicalName) {
+                $legacyKey = $this->normalizeLookup($legacyAlias);
+                $canonicalKey = $this->normalizeLookup($canonicalName);
+                if (! isset($accountNameMap[$legacyKey]) && isset($accountNameMap[$canonicalKey])) {
+                    $accountNameMap[$legacyKey] = $accountNameMap[$canonicalKey];
+                }
+            }
+
             $accountGroupMap = $accounts->pluck('account_group', 'id')->all();
             $accountGroupIdMap = $accounts->pluck('account_group_id', 'id')->all();
             $needsCategoryMap = NeedsCategory::query()
@@ -166,6 +184,7 @@ class ConsultationImportService
                 ->mapWithKeys(fn (StatusCategory $status) => [$this->normalizeLookup($status->name) => $status->id])
                 ->all();
 
+            $this->normalizeEncoding($import->stored_path);
             $file = $this->openFile($import->stored_path);
             $file->setFlags(SplFileObject::READ_CSV | SplFileObject::SKIP_EMPTY);
             $file->setCsvControl($this->detectDelimiter($import->stored_path), '"', '');
@@ -878,6 +897,35 @@ class ConsultationImportService
         }
 
         return null;
+    }
+
+    /**
+     * Tulis ulang file upload sebagai UTF-8 tanpa BOM sebelum dibaca.
+     *
+     * Excel Windows menyimpan "CSV (Comma delimited)" sebagai ANSI
+     * (Windows-1252) dan "Unicode Text" sebagai UTF-16LE; export CSV aplikasi
+     * sendiri juga UTF-16LE. Tanpa normalisasi, byte non-UTF-8 ditolak kolom
+     * utf8mb4 atau tersimpan sebagai teks rusak.
+     */
+    private function normalizeEncoding(string $storedPath): void
+    {
+        $content = Storage::get($storedPath);
+
+        if ($content === null || $content === '') {
+            return;
+        }
+
+        $normalized = match (true) {
+            str_starts_with($content, "\xFF\xFE") => mb_convert_encoding(substr($content, 2), 'UTF-8', 'UTF-16LE'),
+            str_starts_with($content, "\xFE\xFF") => mb_convert_encoding(substr($content, 2), 'UTF-8', 'UTF-16BE'),
+            str_starts_with($content, "\xEF\xBB\xBF") => substr($content, 3),
+            mb_check_encoding($content, 'UTF-8') => $content,
+            default => mb_convert_encoding($content, 'UTF-8', 'Windows-1252'),
+        };
+
+        if ($normalized !== $content) {
+            Storage::put($storedPath, $normalized);
+        }
     }
 
     private function detectDelimiter(string $storedPath): string

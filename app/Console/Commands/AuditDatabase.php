@@ -149,7 +149,7 @@ class AuditDatabase extends Command
     }
 
     /**
-     * Enum PHP vs kolom DB â€” sumber insiden "Data truncated for column 'role'".
+     * Enum PHP vs kolom DB — sumber insiden "Data truncated for column 'role'".
      */
     private function auditEnums(): void
     {
@@ -173,7 +173,7 @@ class AuditDatabase extends Command
                 $this->components->twoColumnDetail('Cakupan enum', '<fg=green>lengkap</>');
             }
         } else {
-            $this->components->twoColumnDetail('Cakupan enum', '<fg=green>kolom string â€” semua role muat</>');
+            $this->components->twoColumnDetail('Cakupan enum', '<fg=green>kolom string — semua role muat</>');
         }
         $this->newLine();
     }
@@ -190,7 +190,7 @@ class AuditDatabase extends Command
         $found = StatusCategory::whereIn('name', array_filter([$deal, 'Selesai/Deal', 'Selesai Deal']))->pluck('name');
 
         if ($found->isEmpty()) {
-            $this->problems[] = "Status deal (config statuses.deal = '{$deal}') tidak ada di status_categories â€” perhitungan konversi akan selalu 0";
+            $this->problems[] = "Status deal (config statuses.deal = '{$deal}') tidak ada di status_categories — perhitungan konversi akan selalu 0";
             $this->components->twoColumnDetail("Status deal ('{$deal}')", '<fg=red>tidak ditemukan</>');
         } else {
             $this->components->twoColumnDetail("Status deal ('{$deal}')", '<fg=green>ada</>');
@@ -203,7 +203,7 @@ class AuditDatabase extends Command
             }
             $count = DB::table($table)->count();
             if ($count === 0) {
-                $this->warnings[] = "Tabel referensi {$table} kosong â€” dropdown terkait akan kosong";
+                $this->warnings[] = "Tabel referensi {$table} kosong — dropdown terkait akan kosong";
                 $this->components->twoColumnDetail($table, '<fg=yellow>kosong</>');
             } else {
                 $this->components->twoColumnDetail($table, '<fg=green>' . $count . ' baris</>');
@@ -217,7 +217,7 @@ class AuditDatabase extends Command
      * Null bila kolom/tabel tidak ada.
      *
      * Sengaja memakai Schema::getColumns() dan BUKAN
-     * `SHOW COLUMNS FROM x LIKE ?` â€” MySQL/PDO tidak mengikat parameter pada
+     * `SHOW COLUMNS FROM x LIKE ?` — MySQL/PDO tidak mengikat parameter pada
      * statement SHOW, sehingga hasilnya selalu kosong (false negative).
      */
     private function columnType(string $table, string $column): ?string

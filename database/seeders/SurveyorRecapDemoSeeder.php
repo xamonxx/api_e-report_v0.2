@@ -16,13 +16,13 @@ use Illuminate\Support\Str;
 /**
  * Data demo untuk memverifikasi Rekap Jadwal Surveyor.
  *
- * Distribusinya sengaja timpang â€” itu yang menguji layout dan aturannya:
- *  - satu hari > 10 survey  â†’ grid harus tumbuh melewati minimum 10 baris
- *  - satu hari 0 survey     â†’ kolom kosong harus tetap terender penuh
- *  - satu surveyor 3x sehari â†’ nama harus berulang di kolom yang sama
- *  - Senin & Minggu terisi   â†’ sel kuning & oranye ada isinya
+ * Distribusinya sengaja timpang — itu yang menguji layout dan aturannya:
+ *  - satu hari > 10 survey  → grid harus tumbuh melewati minimum 10 baris
+ *  - satu hari 0 survey     → kolom kosong harus tetap terender penuh
+ *  - satu surveyor 3x sehari → nama harus berulang di kolom yang sama
+ *  - Senin & Minggu terisi   → sel kuning & oranye ada isinya
  *  - 1 cancelled ber-scheduled_at + 1 requested tanpa scheduled_at
- *    â†’ dua aturan pengecualian; tanpa ini, pengecualiannya tidak teruji
+ *    → dua aturan pengecualian; tanpa ini, pengecualiannya tidak teruji
  *
  * Idempoten: baris demo ditandai lewat location_notes lalu dihapus permanen
  * sebelum diisi ulang, jadi menjalankan berkali-kali tidak menggandakan data.
@@ -50,7 +50,7 @@ class SurveyorRecapDemoSeeder extends Seeder
             ->get(['id', 'account_id']);
 
         if ($consultations->isEmpty()) {
-            $this->command?->error('Tidak ada konsultasi. Jalankan DatabaseSeeder dulu â€” survey butuh consultation_id.');
+            $this->command?->error('Tidak ada konsultasi. Jalankan DatabaseSeeder dulu — survey butuh consultation_id.');
 
             return;
         }
@@ -65,7 +65,7 @@ class SurveyorRecapDemoSeeder extends Seeder
         $created = $this->seedWeek($monday, $surveyors, $assigner, $consultations);
 
         $this->command?->info(sprintf(
-            'SurveyorRecapDemoSeeder selesai â€” %d survey demo untuk minggu %s s/d %s.',
+            'SurveyorRecapDemoSeeder selesai — %d survey demo untuk minggu %s s/d %s.',
             $created,
             $monday->format('d/m/Y'),
             $monday->copy()->endOfWeek(Carbon::SUNDAY)->format('d/m/Y')
@@ -188,7 +188,7 @@ class SurveyorRecapDemoSeeder extends Seeder
             'assigned_by' => $surveyor ? $assigner?->id : null,
             'assigned_at' => $surveyor ? $requestedDate->copy()->setTime(10, 0) : null,
             'scheduled_at' => $scheduledAt,
-            // Penanda idempotensi â€” juga dipakai purgePreviousDemo().
+            // Penanda idempotensi — juga dipakai purgePreviousDemo().
             'location_notes' => self::MARKER,
             'cancelled_at' => $state === Survey::STATE_CANCELLED ? $scheduledAt?->copy()->subHour() : null,
             'cancellation_reason' => $state === Survey::STATE_CANCELLED ? 'Dibatalkan klien (data demo)' : null,
